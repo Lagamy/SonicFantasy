@@ -1,0 +1,32 @@
+#pragma once
+#include <vector>
+#include <glad/glad.h>
+#include <glm/glm.hpp>
+#include "PoolId.h"
+
+namespace Graphics
+{
+/*
+Per-entity state of a shared SAMesh, and everything needed to draw it: the shader and the textures.
+The instance holds one user of the mesh and of its TextureSet (both released by destroy).
+textureSetId is the TextureSet, textureBindingId that set's
+TextureBinding for the mesh, giving each submesh's texture; both are UninitializedPoolId for an untextured instance.
+currentSAAnimation is the SAMotion it plays (UninitializedPoolId = none; set by Loading::playSAMotion, one user of it),
+animationFrame the current frame in it. update advances it and fills nodePose: one entry per SAMesh node, same order,
+overriding its localTransform.
+*/
+struct SAInstance
+{
+	PoolId saMeshId;
+	PoolId shaderId;
+	PoolId textureSetId;
+	PoolId textureBindingId;
+	PoolId currentSAAnimation;
+	float animationFrame;
+	std::vector<glm::mat4> nodePose;
+
+	void update(float deltaTime_);
+	void draw(const glm::mat4& rBase_);
+	void destroy();
+};
+}
