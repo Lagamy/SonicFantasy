@@ -22,28 +22,28 @@ constexpr float RenderWareYawDegrees = 90.0f;
 /*
 Hypothesis, unverified: Shadow's motions play at 60 frames per second (its game logic rate), at speed 1.
 */
-constexpr float STH2005MotionFramesPerSecond = 60.0f;
+constexpr float ONEMotionFramesPerSecond = 60.0f;
 
 /*
 Hypothesis, unverified: the Euler angles of a motion (and of a .BON) are applied Rz * Ry * Rx (X first, as the SA code
 does), which reproduces every DFF frame rotation of SH.BON (observed, error below 3e-4). Ry * Rz * Rx fits the rest
 pose just as well, since y is about 0 there, but the motions use non-zero y. Set this to true to try the other one.
 */
-constexpr bool STH2005EulerYZX = false;
+constexpr bool ONEEulerYZX = false;
 
 /*
 The value of a track at frame_: cubic Hermite between the keys around it (tangents are the slope per frame, hypothesis),
 the first or last value outside them.
 */
-static float sampleTrack(const MotionTrack& rTrack_, float frame_)
+static float sampleTrack(const STH2005::MotionTrack& rTrack_, float frame_)
 {
 	if(frame_ <= rTrack_.front().frame) return rTrack_.front().value;
 	if(frame_ >= rTrack_.back().frame) return rTrack_.back().value;
 
 	size_t k = 0;
 	while(frame_ >= rTrack_[k + 1].frame) k++;
-	const MotionKey& rA = rTrack_[k];
-	const MotionKey& rB = rTrack_[k + 1];
+	const STH2005::Keyframe& rA = rTrack_[k];
+	const STH2005::Keyframe& rB = rTrack_[k + 1];
 	float span = static_cast<float>(rB.frame - rA.frame);
 	float t = (frame_ - rA.frame) / span;
 	float t2 = t * t;
@@ -52,7 +52,7 @@ static float sampleTrack(const MotionTrack& rTrack_, float frame_)
 		+ (-2.0f * t3 + 3.0f * t2) * rB.value + (t3 - t2) * span * rB.tangent;
 }
 
-static glm::vec3 sampleVec3(const MotionTrack (&rTracks_)[3], float frame_)
+static glm::vec3 sampleVec3(const STH2005::MotionTrack (&rTracks_)[3], float frame_)
 {
 	return glm::vec3(sampleTrack(rTracks_[0], frame_), sampleTrack(rTracks_[1], frame_), sampleTrack(rTracks_[2], frame_));
 }
@@ -61,17 +61,17 @@ static glm::vec3 sampleVec3(const MotionTrack (&rTracks_)[3], float frame_)
 Plays a motion of the instance's archive (decoded on first use) from its first frame, looping. A motion of the same
 skeleton (same first bone name) that is already playing is replaced. The key's archive has to be the instance's.
 */
-void ONEInstance::playMotion(const STH2005MotionKey& rKey_)
+void ONEInstance::playMotion(const STH2005::MotionKey& rKey_)
 {
-	if(sth2005Archives.getName(this->archiveId) != rKey_.archive.path)
+	if(oneArchives.getName(this->archiveId) != rKey_.archive.path)
 	{
-		throw std::runtime_error(std::format("ONEInstance: {} is not the archive of this instance ({}).", rKey_.archive.path, sth2005Archives.getName(this->archiveId)));
+		throw std::runtime_error(std::format("ONEInstance: {} is not the archive of this instance ({}).", rKey_.archive.path, oneArchives.getName(this->archiveId)));
 	}
-	Importers::STH2005ONE& rArchive = sth2005Archives[this->archiveId];
+	STH2005::ONE& rArchive = oneArchives[this->archiveId];
 	uint32_t motionIndex = rArchive.useMotion(rKey_);
 	const std::string& rSkeleton = rArchive.motions[motionIndex].bones.front().name;
 
-	ONEMotion motion{motionIndex, 0.0f, Importers::STH2005NoIndex, {}, rKey_.attachedPart};
+	ONEMotion motion{motionIndex, 0.0f, STH2005::NoIndex, {}, rKey_.attachedPart};
 	for(ONEMotion& rActive : this->motions)
 	{
 		if(rArchive.motions[rActive.motionIndex].bones.front().name == rSkeleton)
@@ -94,7 +94,7 @@ Hypothesis, unverified: the scale is the last three channels of a bone.
 void ONEInstance::update(float deltaTime_)
 {
 	if(this->motions.empty()) return;
-	Importers::STH2005ONE& rArchive = sth2005Archives[this->archiveId];
+	STH2005::ONE& rArchive = oneArchives[this->archiveId];
 	RenderWareMesh& rMesh = rArchive.meshes[this->meshIndex];
 
 	this->framePose.resize(rMesh.frames.size());
@@ -105,7 +105,7 @@ void ONEInstance::update(float deltaTime_)
 
 	for(ONEMotion& rActive : this->motions)
 	{
-		const STH2005Motion& rMotion = rArchive.motions[rActive.motionIndex];
+		const STH2005::Motion& rMotion = rArchive.motions[rActive.motionIndex];
 		if(rActive.boneFramesMesh != this->meshIndex)
 		{
 			rActive.boneFrames.assign(rMotion.bones.size(), -1);
@@ -121,15 +121,15 @@ void ONEInstance::update(float deltaTime_)
 
 		if(rMotion.lastFrame > 0)
 		{
-			rActive.frame = std::fmod(rActive.frame + deltaTime_ * STH2005MotionFramesPerSecond, static_cast<float>(rMotion.lastFrame));
+			rActive.frame = std::fmod(rActive.frame + deltaTime_ * ONEMotionFramesPerSecond, static_cast<float>(rMotion.lastFrame));
 		}
 		for(size_t b = rActive.attachedPart ? 1 : 0; b < rMotion.bones.size(); b++)
 		{
 			if(rActive.boneFrames[b] < 0) continue;
-			const MotionBone& rBone = rMotion.bones[b];
+			const STH2005::MotionBone& rBone = rMotion.bones[b];
 			glm::vec3 rotation = sampleVec3(rBone.rotation, rActive.frame);
 			glm::mat4 transform = glm::translate(glm::mat4(1.0f), sampleVec3(rBone.translation, rActive.frame));
-			if(STH2005EulerYZX)
+			if(ONEEulerYZX)
 			{
 				transform = glm::rotate(transform, rotation.y, glm::vec3(0.0f, 1.0f, 0.0f));
 				transform = glm::rotate(transform, rotation.z, glm::vec3(0.0f, 0.0f, 1.0f));
@@ -158,10 +158,10 @@ void ONEInstance::draw(const glm::mat4& rBase_)
 {
 	Shader& rShader = shaders[this->shaderId];
 	glUseProgram(rShader.id);
-	Importers::STH2005ONE& rArchive = sth2005Archives[this->archiveId];
+	STH2005::ONE& rArchive = oneArchives[this->archiveId];
 	RenderWareMesh& rMesh = rArchive.meshes[this->meshIndex];
 	rMesh.use();
-	const TextureBinding* pBinding = this->bindingIndex == Importers::STH2005NoIndex ? nullptr : &rArchive.bindings[this->bindingIndex];
+	const TextureBinding* pBinding = this->bindingIndex == STH2005::NoIndex ? nullptr : &rArchive.bindings[this->bindingIndex];
 	glm::mat4 base = glm::rotate(rBase_, glm::radians(RenderWareYawDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
 
 	std::vector<glm::mat4> world(rMesh.frames.size());
@@ -208,11 +208,11 @@ void ONEInstance::draw(const glm::mat4& rBase_)
 }
 
 /* The key's archive has to be the instance's: an instance uses one archive. */
-static void checkArchive(PoolId archiveId_, const STH2005ArchiveKey& rKey_)
+static void checkArchive(PoolId archiveId_, const STH2005::ArchiveKey& rKey_)
 {
-	if(sth2005Archives.getName(archiveId_) != rKey_.path)
+	if(oneArchives.getName(archiveId_) != rKey_.path)
 	{
-		throw std::runtime_error(std::format("ONEInstance: {} is not the archive of this instance ({}).", rKey_.path, sth2005Archives.getName(archiveId_)));
+		throw std::runtime_error(std::format("ONEInstance: {} is not the archive of this instance ({}).", rKey_.path, oneArchives.getName(archiveId_)));
 	}
 }
 
@@ -220,12 +220,12 @@ static void checkArchive(PoolId archiveId_, const STH2005ArchiveKey& rKey_)
 Switches to another mesh of the archive (built from the key's recipe if it is not yet). The pose is dropped (it is per
 frame of the old mesh) and the texture binding is rebuilt for the new mesh against the current texture dictionary.
 */
-void ONEInstance::changeActiveMesh(const STH2005ModelKey& rKey_)
+void ONEInstance::changeActiveMesh(const STH2005::ModelKey& rKey_)
 {
 	checkArchive(this->archiveId, rKey_.archive);
-	Importers::STH2005ONE& rArchive = sth2005Archives[this->archiveId];
+	STH2005::ONE& rArchive = oneArchives[this->archiveId];
 	uint32_t meshIndex = rArchive.useMesh(rKey_);
-	uint32_t bindingIndex = this->textureDictionaryIndex == Importers::STH2005NoIndex ? Importers::STH2005NoIndex : rArchive.useBinding(meshIndex, this->textureDictionaryIndex);
+	uint32_t bindingIndex = this->textureDictionaryIndex == STH2005::NoIndex ? STH2005::NoIndex : rArchive.useBinding(meshIndex, this->textureDictionaryIndex);
 	this->meshIndex = meshIndex;
 	this->bindingIndex = bindingIndex;
 	this->framePose.clear();
@@ -237,21 +237,21 @@ hand with a different one, without listing every combination as a mesh key. The 
 on first use and reused afterwards. Like changeActiveMesh, the pose is dropped and the binding rebuilt: the textures the
 new part's materials name have to be in the current texture dictionary.
 */
-void ONEInstance::switchMeshPart(const STH2005ModelPart& rPrevious_, const STH2005ModelPart& rDesired_)
+void ONEInstance::switchMeshPart(const STH2005::ModelPart& rPrevious_, const STH2005::ModelPart& rDesired_)
 {
-	Importers::STH2005ONE& rArchive = sth2005Archives[this->archiveId];
+	STH2005::ONE& rArchive = oneArchives[this->archiveId];
 	uint32_t meshIndex = rArchive.switchPart(this->meshIndex, rPrevious_, rDesired_);
-	uint32_t bindingIndex = this->textureDictionaryIndex == Importers::STH2005NoIndex ? Importers::STH2005NoIndex : rArchive.useBinding(meshIndex, this->textureDictionaryIndex);
+	uint32_t bindingIndex = this->textureDictionaryIndex == STH2005::NoIndex ? STH2005::NoIndex : rArchive.useBinding(meshIndex, this->textureDictionaryIndex);
 	this->meshIndex = meshIndex;
 	this->bindingIndex = bindingIndex;
 	this->framePose.clear();
 }
 
 /* Switches to another texture dictionary (a .TXD entry of the archive, decoded on first use) for the active mesh. */
-void ONEInstance::changeActiveTexture(const STH2005TextureKey& rKey_)
+void ONEInstance::changeActiveTexture(const STH2005::TextureKey& rKey_)
 {
 	checkArchive(this->archiveId, rKey_.archive);
-	Importers::STH2005ONE& rArchive = sth2005Archives[this->archiveId];
+	STH2005::ONE& rArchive = oneArchives[this->archiveId];
 	uint32_t dictionaryIndex = rArchive.useTextureDictionary(rKey_.entry);
 	uint32_t bindingIndex = rArchive.useBinding(this->meshIndex, dictionaryIndex);
 	this->textureDictionaryIndex = dictionaryIndex;
@@ -261,6 +261,6 @@ void ONEInstance::changeActiveTexture(const STH2005TextureKey& rKey_)
 /* Gives back the instance's user of its archive; the archive removes its meshes and textures when no instance uses it. */
 void ONEInstance::destroy()
 {
-	Loading::releaseSTH2005ONE(this->archiveId);
+	Loading::releaseONE(this->archiveId);
 }
 }

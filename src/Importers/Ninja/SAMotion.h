@@ -3,7 +3,7 @@
 #include <vector>
 #include "SAAnimation.h"
 
-namespace Importers
+namespace Ninja
 {
 /*
 Reads the Ninja motion (NJS_MOTION) at offset_ for a model of nodeCount_ nodes. Pointers inside rBytes_ must be file

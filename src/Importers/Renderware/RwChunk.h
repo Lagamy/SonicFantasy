@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace Importers
+namespace Renderware
 {
 constexpr uint32_t ChunkStruct = 0x01;
 constexpr uint32_t ChunkExtension = 0x03;

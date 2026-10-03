@@ -3,10 +3,10 @@
 #include <string>
 #include <vector>
 
-namespace Graphics
+namespace STH2005
 {
 /* One key of a motion track: its frame, the slope of the curve there (value per frame) and its value. */
-struct MotionKey
+struct Keyframe
 {
 	uint32_t frame;
 	float tangent;
@@ -14,7 +14,7 @@ struct MotionKey
 };
 
 /* The keys of one channel, in frame order (always at least one). */
-using MotionTrack = std::vector<MotionKey>;
+using MotionTrack = std::vector<Keyframe>;
 
 /*
 The tracks of one bone of a Shadow the Hedgehog motion: its name (from the .BON the motion was read with) and, per axis
@@ -31,9 +31,9 @@ struct MotionBone
 /*
 A Shadow the Hedgehog motion (one entry of a .MTP, see readMtpMotion): one MotionBone per node of its skeleton's .BON,
 in the .BON's order. lastFrame is the last key frame of all tracks, where it loops.
-It lives in its STH2005ONE (STH2005ONE::motions).
+It lives in its ONE (ONE::motions).
 */
-struct STH2005Motion
+struct Motion
 {
 	std::string name;
 	uint32_t lastFrame;

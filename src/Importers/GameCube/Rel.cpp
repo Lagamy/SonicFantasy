@@ -5,7 +5,7 @@
 #include <format>
 #include <stdexcept>
 
-namespace Importers
+namespace GameCube
 {
 /*
 REL layout (external, YAGCD / Dolphin's REL loader; confirmed on ModelsMiles.rel from the SADX GC disc), big-endian.

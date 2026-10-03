@@ -10,7 +10,7 @@
 enum SourceEngineEnum
 {
 	SA_NINJA,
-	STH2005
+	STH2005_ONE
 };
 
 /*
@@ -32,13 +32,13 @@ struct Entity
 
 	void setSAGPUInstance(PoolId shaderId_, const SAModelKey& rMesh_, const SATextureSetKey& rTextures_);
 	void setSAGPUInstance(PoolId shaderId_, const SAModelKey& rMesh_);
-	void setONEGPUInstance(PoolId shaderId_, const STH2005ModelKey& rMesh_, const STH2005TextureKey& rTextures_);
-	void setONEGPUInstance(PoolId shaderId_, const STH2005ModelKey& rMesh_);
-	void changeActiveMesh(const STH2005ModelKey& rKey_);
-	void switchMeshPart(const STH2005ModelPart& rPrevious_, const STH2005ModelPart& rDesired_);
-	void changeActiveTexture(const STH2005TextureKey& rKey_);
+	void setONEGPUInstance(PoolId shaderId_, const STH2005::ModelKey& rMesh_, const STH2005::TextureKey& rTextures_);
+	void setONEGPUInstance(PoolId shaderId_, const STH2005::ModelKey& rMesh_);
+	void changeActiveMesh(const STH2005::ModelKey& rKey_);
+	void switchMeshPart(const STH2005::ModelPart& rPrevious_, const STH2005::ModelPart& rDesired_);
+	void changeActiveTexture(const STH2005::TextureKey& rKey_);
 	void playSAMotion(const SAMotionKey& rKey_);
-	void playONEMotion(const STH2005MotionKey& rKey_);
+	void playONEMotion(const STH2005::MotionKey& rKey_);
 	void update(float deltaTime_);
 	void draw();
 	void destroy();

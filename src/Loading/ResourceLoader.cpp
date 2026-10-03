@@ -5,7 +5,7 @@
 #include "Gvm.h"
 #include "SAMdl.h"
 #include "SAMotion.h"
-#include "STH2005ONE.h"
+#include "ONE.h"
 #include <algorithm>
 #include <format>
 #include <stdexcept>
@@ -36,7 +36,7 @@ namespace Loading
         rCreated_ = true;
         try
         {
-            Importers::importGvm(rKey_.path, Globals::Discs::sadx.readFile(rKey_.path));
+            Ninja::importGvm(rKey_.path, Globals::Discs::sadx.readFile(rKey_.path));
         }
         catch(...)
         {
@@ -53,7 +53,7 @@ namespace Loading
         auto module = relModules.find(rel_);
         if(module == relModules.end())
         {
-            module = relModules.emplace(rel_, RelModule{Importers::relocateRel(Globals::Discs::sadx.readFile(rel_)), 0}).first;
+            module = relModules.emplace(rel_, RelModule{GameCube::relocateRel(Globals::Discs::sadx.readFile(rel_)), 0}).first;
         }
         return module;
     }
@@ -87,7 +87,7 @@ namespace Loading
         auto module = findOrLoadRelModule(rKey_.rel);
         try
         {
-            PoolId meshId = Importers::importSAModel(name.c_str(), module->second.bytes, rKey_.rootOffset, true);
+            PoolId meshId = Ninja::importSAModel(name.c_str(), module->second.bytes, rKey_.rootOffset, true);
             saMeshes[meshId].rel = rKey_.rel;
             module->second.users++;
             return meshId;
@@ -125,7 +125,7 @@ namespace Loading
         auto module = findOrLoadRelModule(rKey_.rel);
         try
         {
-            PoolId motionId = saMotions.add(name.c_str(), Importers::readSAMotion(module->second.bytes, rKey_.offset, rKey_.nodeCount, true));
+            PoolId motionId = saMotions.add(name.c_str(), Ninja::readSAMotion(module->second.bytes, rKey_.offset, rKey_.nodeCount, true));
             saMotions[motionId].rel = rKey_.rel;
             module->second.users++;
             return motionId;
@@ -236,23 +236,23 @@ namespace Loading
     The archive at the key's path on the Shadow disc: the one already in the pool, or read and parsed now.
     created tells the caller whether it has to undo the load if a later step fails. It is not counted as used here.
     */
-    static PoolId findOrLoadSTH2005ONE(const STH2005ArchiveKey& rKey_, bool& rCreated_)
+    static PoolId findOrLoadONE(const STH2005::ArchiveKey& rKey_, bool& rCreated_)
     {
-        auto found = sth2005Archives.nameToId.find(rKey_.path);
-        if(found != sth2005Archives.nameToId.end())
+        auto found = oneArchives.nameToId.find(rKey_.path);
+        if(found != oneArchives.nameToId.end())
         {
             rCreated_ = false;
             return found->second;
         }
         rCreated_ = true;
-        return sth2005Archives.add(rKey_.path, Importers::openSTH2005ONE(Globals::Discs::shadow.readFile(rKey_.path)));
+        return oneArchives.add(rKey_.path, STH2005::openONE(Globals::Discs::shadow.readFile(rKey_.path)));
     }
 
-    void releaseSTH2005ONE(PoolId archiveId_)
+    void releaseONE(PoolId archiveId_)
     {
-        if(--sth2005Archives[archiveId_].users == 0)
+        if(--oneArchives[archiveId_].users == 0)
         {
-            sth2005Archives.remove(archiveId_);
+            oneArchives.remove(archiveId_);
         }
     }
 
@@ -291,7 +291,7 @@ namespace Loading
     loaded, then the instance holds one user of the archive until destroyed. pTextures_ nullptr = untextured, and its
     archive has to be the mesh's (whether the game can mix archives is unknown).
     */
-    PoolId addONEInstance(PoolId shaderId_, const STH2005ModelKey& rMesh_, const STH2005TextureKey* pTextures_)
+    PoolId addONEInstance(PoolId shaderId_, const STH2005::ModelKey& rMesh_, const STH2005::TextureKey* pTextures_)
     {
         if(pTextures_ != nullptr && std::string_view(pTextures_->archive.path) != rMesh_.archive.path)
         {
@@ -299,13 +299,13 @@ namespace Loading
         }
 
         bool created = false;
-        PoolId archiveId = findOrLoadSTH2005ONE(rMesh_.archive, created);
+        PoolId archiveId = findOrLoadONE(rMesh_.archive, created);
         uint32_t meshIndex;
-        uint32_t dictionaryIndex = Importers::STH2005NoIndex;
-        uint32_t bindingIndex = Importers::STH2005NoIndex;
+        uint32_t dictionaryIndex = STH2005::NoIndex;
+        uint32_t bindingIndex = STH2005::NoIndex;
         try
         {
-            Importers::STH2005ONE& rArchive = sth2005Archives[archiveId];
+            STH2005::ONE& rArchive = oneArchives[archiveId];
             meshIndex = rArchive.useMesh(rMesh_);
             if(pTextures_ != nullptr)
             {
@@ -315,10 +315,10 @@ namespace Loading
         }
         catch(...)
         {
-            if(created) sth2005Archives.remove(archiveId);
+            if(created) oneArchives.remove(archiveId);
             throw;
         }
-        sth2005Archives[archiveId].users++;
+        oneArchives[archiveId].users++;
         return oneInstances.add(ONEInstance{archiveId, shaderId_, meshIndex, dictionaryIndex, bindingIndex});
     }
 }

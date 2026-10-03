@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace Importers
+namespace GameCube
 {
 /*
 Applies a GameCube .rel module's relocations against itself and returns the patched bytes.

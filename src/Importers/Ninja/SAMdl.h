@@ -3,7 +3,7 @@
 #include <vector>
 #include "PoolId.h"
 
-namespace Importers
+namespace Ninja
 {
 /*
 Loads a .sa1mdl file (SA Tools export of a Ninja Basic model) into a new Graphics::SAMesh

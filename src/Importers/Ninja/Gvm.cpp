@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace Importers
+namespace Ninja
 {
 /* GVR data format numbers (external, Puyo Tools; GX_TF_RGB5A3 and GX_TF_CMPR of the GameCube). */
 constexpr uint8_t GVRFormatRGB5A3 = 0x05;
@@ -37,8 +37,8 @@ static void decodeCMPR(const std::vector<uint8_t>& rBytes_, uint32_t offset_, ui
 				uint16_t value0 = readBE<uint16_t>(rBytes_, cursor);
 				uint16_t value1 = readBE<uint16_t>(rBytes_, cursor + 2);
 				std::array<std::array<uint8_t, 4>, 4> palette;
-				palette[0] = colorRGB565(value0);
-				palette[1] = colorRGB565(value1);
+				palette[0] = GameCube::colorRGB565(value0);
+				palette[1] = GameCube::colorRGB565(value1);
 				for(uint32_t c = 0; c < 3; c++)
 				{
 					if(value0 > value1)
@@ -82,7 +82,7 @@ static void decodeRGB5A3(const std::vector<uint8_t>& rBytes_, uint32_t offset_, 
 			{
 				for(uint32_t x = 0; x < 4; x++)
 				{
-					std::array<uint8_t, 4> color = colorRGB5A3(readBE<uint16_t>(rBytes_, cursor));
+					std::array<uint8_t, 4> color = GameCube::colorRGB5A3(readBE<uint16_t>(rBytes_, cursor));
 					std::memcpy(rPixels_.data() + ((tileY + y) * width_ + tileX + x) * 4, color.data(), 4);
 					cursor += 2;
 				}

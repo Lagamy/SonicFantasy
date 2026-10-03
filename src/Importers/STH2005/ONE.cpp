@@ -1,16 +1,16 @@
-#include "STH2005ONE.h"
+#include "ONE.h"
 #include "Prs.h"
 #include "BinaryRead.h"
 #include "GPU_Globals.h"
-#include "STH2005Model.h"
-#include "STH2005Mtp.h"
+#include "Model.h"
+#include "Mtp.h"
 #include "Bon.h"
 #include <algorithm>
 #include <cstring>
 #include <format>
 #include <stdexcept>
 
-namespace Importers
+namespace STH2005
 {
 /*
 "One Ver 0.60" layout (external, HeroesONE-Reloaded ONEShadowArchive; confirmed on character/shadow.one), little-endian:
@@ -24,15 +24,15 @@ constexpr uint32_t ONEHeaderSize = 0xC;
 constexpr uint32_t ONEEntriesOffset = 0x40;
 constexpr uint32_t ONEEntrySize = 56;
 
-STH2005ONE openSTH2005ONE(std::vector<uint8_t> bytes_)
+ONE openONE(std::vector<uint8_t> bytes_)
 {
-	STH2005ONE archive;
+	ONE archive;
 	archive.bytes = std::move(bytes_);
 	const std::vector<uint8_t>& rBytes = archive.bytes;
 
 	if(rBytes.size() < ONEEntriesOffset || std::memcmp(rBytes.data() + 0x0C, "One Ver 0.60", 13) != 0)
 	{
-		throw std::runtime_error("STH2005ONE: not a \"One Ver 0.60\" archive.");
+		throw std::runtime_error("STH2005::ONE: not a \"One Ver 0.60\" archive.");
 	}
 
 	uint32_t fileCount = readLE<uint32_t>(rBytes, 0x1C);
@@ -44,7 +44,7 @@ STH2005ONE openSTH2005ONE(std::vector<uint8_t> bytes_)
 			continue;
 		}
 		const char* pName = reinterpret_cast<const char*>(rBytes.data() + entry);
-		archive.entries.push_back(STH2005ONEEntry{
+		archive.entries.push_back(ONEEntry{
 			std::string(pName, strnlen(pName, 44)),
 			readLE<uint32_t>(rBytes, entry + 44),
 			readLE<uint32_t>(rBytes, entry + 48),
@@ -58,7 +58,7 @@ STH2005ONE openSTH2005ONE(std::vector<uint8_t> bytes_)
 		uint32_t next = (i + 1 < archive.entries.size()) ? archive.entries[i + 1].offset : dataEnd;
 		if(next < archive.entries[i].offset || next > dataEnd)
 		{
-			throw std::runtime_error(std::format("STH2005ONE: entry {} has an invalid data range.", archive.entries[i].name));
+			throw std::runtime_error(std::format("STH2005::ONE: entry {} has an invalid data range.", archive.entries[i].name));
 		}
 		archive.entries[i].compressedSize = next - archive.entries[i].offset;
 	}
@@ -66,9 +66,9 @@ STH2005ONE openSTH2005ONE(std::vector<uint8_t> bytes_)
 	return archive;
 }
 
-std::vector<uint8_t> STH2005ONE::readFile(const std::string& name_) const
+std::vector<uint8_t> ONE::readFile(const std::string& name_) const
 {
-	for(const STH2005ONEEntry& rEntry : this->entries)
+	for(const ONEEntry& rEntry : this->entries)
 	{
 		if(rEntry.name != name_)
 		{
@@ -79,19 +79,19 @@ std::vector<uint8_t> STH2005ONE::readFile(const std::string& name_) const
 		std::vector<uint8_t> data = decompressPrs(compressed);
 		if(data.size() != rEntry.size)
 		{
-			throw std::runtime_error(std::format("STH2005ONE: {} decompressed to {} bytes, expected {}.", name_, data.size(), rEntry.size));
+			throw std::runtime_error(std::format("STH2005::ONE: {} decompressed to {} bytes, expected {}.", name_, data.size(), rEntry.size));
 		}
 		return data;
 	}
-	throw std::runtime_error(std::format("STH2005ONE: no entry named {}.", name_));
+	throw std::runtime_error(std::format("STH2005::ONE: no entry named {}.", name_));
 }
 
 /* name_ must not already be a mesh of this archive. rParts_ is the recipe it was built from. Returns the mesh's index. */
-uint32_t STH2005ONE::addMesh(const char* name_, Graphics::RenderWareMesh&& mesh_, const std::vector<STH2005ModelPart>& rParts_)
+uint32_t ONE::addMesh(const char* name_, Graphics::RenderWareMesh&& mesh_, const std::vector<ModelPart>& rParts_)
 {
 	if(this->meshByName.contains(name_))
 	{
-		throw std::runtime_error(std::format("STH2005ONE: mesh {} already exists.", name_));
+		throw std::runtime_error(std::format("STH2005::ONE: mesh {} already exists.", name_));
 	}
 	uint32_t index = static_cast<uint32_t>(this->meshes.size());
 	this->meshes.push_back(std::move(mesh_));
@@ -105,16 +105,16 @@ uint32_t STH2005ONE::addMesh(const char* name_, Graphics::RenderWareMesh&& mesh_
 Index of the mesh the key names: the one already built, or built now from the key's recipe.
 A key whose name exists with different parts is a different recipe under the same name and throws.
 */
-uint32_t STH2005ONE::useMesh(const STH2005ModelKey& rKey_)
+uint32_t ONE::useMesh(const ModelKey& rKey_)
 {
 	auto found = this->meshByName.find(rKey_.name);
 	if(found == this->meshByName.end())
 	{
-		return importSTH2005Model(rKey_.name, *this, rKey_.parts);
+		return importModel(rKey_.name, *this, rKey_.parts);
 	}
 	if(this->meshParts[found->second] != rKey_.parts)
 	{
-		throw std::runtime_error(std::format("STH2005ONE: mesh {} was built from different parts than the key's.", rKey_.name));
+		throw std::runtime_error(std::format("STH2005::ONE: mesh {} was built from different parts than the key's.", rKey_.name));
 	}
 	return found->second;
 }
@@ -124,13 +124,13 @@ Index of the mesh that is meshIndex_ with the part equal to rPrevious_ replaced 
 exists (e.g. when switching back) it is reused, otherwise it is built now, named "<mesh>|<previous dff>><desired dff>".
 Throws if the mesh has no such part.
 */
-uint32_t STH2005ONE::switchPart(uint32_t meshIndex_, const STH2005ModelPart& rPrevious_, const STH2005ModelPart& rDesired_)
+uint32_t ONE::switchPart(uint32_t meshIndex_, const ModelPart& rPrevious_, const ModelPart& rDesired_)
 {
-	std::vector<STH2005ModelPart> parts = this->meshParts[meshIndex_];
+	std::vector<ModelPart> parts = this->meshParts[meshIndex_];
 	auto part = std::find(parts.begin(), parts.end(), rPrevious_);
 	if(part == parts.end())
 	{
-		throw std::runtime_error(std::format("STH2005ONE: mesh {} has no part {}.", this->meshNames[meshIndex_], rPrevious_.dff));
+		throw std::runtime_error(std::format("STH2005::ONE: mesh {} has no part {}.", this->meshNames[meshIndex_], rPrevious_.dff));
 	}
 	*part = rDesired_;
 
@@ -139,14 +139,14 @@ uint32_t STH2005ONE::switchPart(uint32_t meshIndex_, const STH2005ModelPart& rPr
 		if(this->meshParts[i] == parts) return i;
 	}
 	std::string name = std::format("{}|{}>{}", this->meshNames[meshIndex_], rPrevious_.dff, rDesired_.dff);
-	return importSTH2005Model(name.c_str(), *this, parts);
+	return importModel(name.c_str(), *this, parts);
 }
 
 /*
 Index of the texture dictionary stored in the .TXD entry name_. The first use decodes the entry and uploads its
 textures to the GPU; later uses find it again.
 */
-uint32_t STH2005ONE::useTextureDictionary(const char* name_)
+uint32_t ONE::useTextureDictionary(const char* name_)
 {
 	auto found = this->textureDictionaryByName.find(name_);
 	if(found != this->textureDictionaryByName.end())
@@ -154,7 +154,7 @@ uint32_t STH2005ONE::useTextureDictionary(const char* name_)
 		return found->second;
 	}
 	uint32_t index = static_cast<uint32_t>(this->textureDictionaries.size());
-	this->textureDictionaries.push_back(importTxd(this->readFile(name_)));
+	this->textureDictionaries.push_back(Renderware::importTxd(this->readFile(name_)));
 	this->textureDictionaryNames.push_back(name_);
 	this->textureDictionaryByName.emplace(name_, index);
 	return index;
@@ -165,7 +165,7 @@ Index of the binding of a mesh against a texture dictionary: every submesh's tex
 dictionary's byName, once, so draw only indexes the result. A name missing from the dictionary throws;
 an untextured submesh gets UninitializedPoolId.
 */
-uint32_t STH2005ONE::useBinding(uint32_t meshIndex_, uint32_t textureDictionaryIndex_)
+uint32_t ONE::useBinding(uint32_t meshIndex_, uint32_t textureDictionaryIndex_)
 {
 	std::pair<uint32_t, uint32_t> pair(meshIndex_, textureDictionaryIndex_);
 	auto found = this->bindingByPair.find(pair);
@@ -174,7 +174,7 @@ uint32_t STH2005ONE::useBinding(uint32_t meshIndex_, uint32_t textureDictionaryI
 		return found->second;
 	}
 
-	const TxdTextures& rDictionary = this->textureDictionaries[textureDictionaryIndex_];
+	const Renderware::TxdTextures& rDictionary = this->textureDictionaries[textureDictionaryIndex_];
 	Graphics::TextureBinding binding;
 	for(const Graphics::RenderWareAtomic& rAtomic : this->meshes[meshIndex_].atomics)
 	{
@@ -189,7 +189,7 @@ uint32_t STH2005ONE::useBinding(uint32_t meshIndex_, uint32_t textureDictionaryI
 			auto texture = rDictionary.byName.find(rSubmesh.textureName);
 			if(texture == rDictionary.byName.end())
 			{
-				throw std::runtime_error(std::format("STH2005ONE: texture {} is not in {}.", rSubmesh.textureName, this->textureDictionaryNames[textureDictionaryIndex_]));
+				throw std::runtime_error(std::format("STH2005::ONE: texture {} is not in {}.", rSubmesh.textureName, this->textureDictionaryNames[textureDictionaryIndex_]));
 			}
 			rIds.push_back(texture->second);
 		}
@@ -204,7 +204,7 @@ uint32_t STH2005ONE::useBinding(uint32_t meshIndex_, uint32_t textureDictionaryI
 Index of the motion the key names: the one already decoded, or decoded now from its .MTP entry (read and decompressed
 for each new motion) with the node names of its .BON entry. Throws for a motion readMtpMotion doesn't support.
 */
-uint32_t STH2005ONE::useMotion(const STH2005MotionKey& rKey_)
+uint32_t ONE::useMotion(const MotionKey& rKey_)
 {
 	std::string name = std::format("{}|{}", rKey_.mtp, rKey_.motion);
 	auto found = this->motionByName.find(name);
@@ -219,13 +219,13 @@ uint32_t STH2005ONE::useMotion(const STH2005MotionKey& rKey_)
 }
 
 /* Frees the GPU data of the meshes and removes the textures of every decoded dictionary. Called by PoolMap::remove. */
-void STH2005ONE::destroy()
+void ONE::destroy()
 {
 	for(Graphics::RenderWareMesh& rMesh : this->meshes)
 	{
 		rMesh.destroy();
 	}
-	for(const TxdTextures& rDictionary : this->textureDictionaries)
+	for(const Renderware::TxdTextures& rDictionary : this->textureDictionaries)
 	{
 		for(PoolId textureId : rDictionary.ids)
 		{

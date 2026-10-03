@@ -82,21 +82,21 @@ int main() {
 	Globals::Game::cameras.emplace_back(Camera({0.0f, 0.0f, 0.0f}));
 	
 	PoolId saShaderId = Graphics::addShader("SA");
-	PoolId sth2005ShaderId = Graphics::addShader("STH2005");
+	PoolId oneShaderId = Graphics::addShader("STH2005");
 
 	/*
 	The discs stay open for the whole run: everything an instance's resource keys (ResourceKeys.h) name is loaded from
 	them the first time an instance needs it.
 	*/
-	Globals::Discs::sadx = Importers::openGCDisc(sadxDiscPath.c_str());
-	Globals::Discs::shadow = Importers::openGCDisc(shadowDiscPath.c_str());
+	Globals::Discs::sadx = GameCube::openGCDisc(sadxDiscPath.c_str());
+	Globals::Discs::shadow = GameCube::openGCDisc(shadowDiscPath.c_str());
 
 	Entity& rSonic = Globals::Game::entities[addEntity("SASonic", {0, 5.3, 5})];
 	rSonic.setSAGPUInstance(saShaderId, SonicMesh, SonicTextures);
 	rSonic.playSAMotion(SonicIdle);
 
 	Entity& rShadow = Globals::Game::entities[addEntity("Shadow", {0, 0, -5})];
-	rShadow.setONEGPUInstance(sth2005ShaderId, ShadowMesh, ShadowTextures);
+	rShadow.setONEGPUInstance(oneShaderId, ShadowMesh, ShadowTextures);
 	rShadow.playONEMotion(ShadowIdle);
 	rShadow.playONEMotion(ShadowIdleLeftHand);
 	rShadow.playONEMotion(ShadowIdleRightHand);

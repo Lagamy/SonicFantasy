@@ -1,11 +1,11 @@
-#include "STH2005Model.h"
+#include "Model.h"
 #include "Bon.h"
 #include "Dff.h"
 #include "GPU_Globals.h"
 #include <format>
 #include <stdexcept>
 
-namespace Importers
+namespace STH2005
 {
 static int32_t findFrame(const Graphics::RenderWareMesh& rMesh_, const std::string& rName_)
 {
@@ -28,14 +28,14 @@ rPart_.bone. Hypothesis, unverified: the game draws them in sh_j_head's local sp
 offset by sh_j_head (+1.35 Y from sh_root, no rotation) their vertices lie on SHADOW_BODY.DFF's face surface
 (median Z gap 0.13 for EYE_L, 0.02 for MABUTA04), while in sh_root space they float about 0.75 in front of it.
 */
-static Graphics::RenderWareMesh readNamedPart(const STH2005ONE& rArchive_, const STH2005ModelPart& rPart_, std::string& rRootName_, int32_t& rRootFrame_)
+static Graphics::RenderWareMesh readNamedPart(const ONE& rArchive_, const ModelPart& rPart_, std::string& rRootName_, int32_t& rRootFrame_)
 {
-	Graphics::RenderWareMesh mesh = readDff(rArchive_.readFile(rPart_.dff));
+	Graphics::RenderWareMesh mesh = Renderware::readDff(rArchive_.readFile(rPart_.dff));
 	if(rPart_.bon == nullptr)
 	{
 		if(rPart_.bone == nullptr || mesh.atomics.empty())
 		{
-			throw std::runtime_error(std::format("STH2005Model: {} has no .BON, so it needs a bone to attach to and an atomic.", rPart_.dff));
+			throw std::runtime_error(std::format("STH2005::Model: {} has no .BON, so it needs a bone to attach to and an atomic.", rPart_.dff));
 		}
 		rRootName_ = rPart_.bone;
 		rRootFrame_ = mesh.atomics[0].frame;
@@ -45,7 +45,7 @@ static Graphics::RenderWareMesh readNamedPart(const STH2005ONE& rArchive_, const
 	Bon bon = readBon(rArchive_.readFile(rPart_.bon));
 	if(bon.nodes.empty())
 	{
-		throw std::runtime_error(std::format("STH2005Model: {} has no bones.", rPart_.bon));
+		throw std::runtime_error(std::format("STH2005::Model: {} has no bones.", rPart_.bon));
 	}
 
 	for(Graphics::RenderWareFrame& rFrame : mesh.frames)
@@ -76,7 +76,7 @@ static void attachPart(Graphics::RenderWareMesh& rModel_, Graphics::RenderWareMe
 	int32_t anchor = findFrame(rModel_, rRootName_);
 	if(partRoot_ < 0 || anchor < 0)
 	{
-		throw std::runtime_error(std::format("STH2005Model: {} root bone {} has no matching bone in the main model.", partName_, rRootName_));
+		throw std::runtime_error(std::format("STH2005::Model: {} root bone {} has no matching bone in the main model.", partName_, rRootName_));
 	}
 
 	std::vector<int32_t> remap(rPart_.frames.size(), -1);
@@ -94,14 +94,14 @@ static void attachPart(Graphics::RenderWareMesh& rModel_, Graphics::RenderWareMe
 	{
 		if(remap[rAtomic.frame] < 0)
 		{
-			throw std::runtime_error(std::format("STH2005Model: {} has an atomic outside its root bone {}.", partName_, rRootName_));
+			throw std::runtime_error(std::format("STH2005::Model: {} has an atomic outside its root bone {}.", partName_, rRootName_));
 		}
 		rAtomic.frame = remap[rAtomic.frame];
 		for(int32_t& rBoneFrame : rAtomic.skinBoneFrames)
 		{
 			if(remap[rBoneFrame] < 0)
 			{
-				throw std::runtime_error(std::format("STH2005Model: {} has a skin bone outside its root bone {}.", partName_, rRootName_));
+				throw std::runtime_error(std::format("STH2005::Model: {} has a skin bone outside its root bone {}.", partName_, rRootName_));
 			}
 			rBoneFrame = remap[rBoneFrame];
 		}
@@ -109,16 +109,16 @@ static void attachPart(Graphics::RenderWareMesh& rModel_, Graphics::RenderWareMe
 	}
 }
 
-uint32_t importSTH2005Model(const char* name_, STH2005ONE& rArchive_, const std::vector<STH2005ModelPart>& rParts_)
+uint32_t importModel(const char* name_, ONE& rArchive_, const std::vector<ModelPart>& rParts_)
 {
 	if(rParts_.empty())
 	{
-		throw std::runtime_error(std::format("STH2005Model: {} has no parts.", name_));
+		throw std::runtime_error(std::format("STH2005::Model: {} has no parts.", name_));
 	}
 
 	if(rParts_[0].bon == nullptr)
 	{
-		throw std::runtime_error(std::format("STH2005Model: main part {} of {} has no .BON.", rParts_[0].dff, name_));
+		throw std::runtime_error(std::format("STH2005::Model: main part {} of {} has no .BON.", rParts_[0].dff, name_));
 	}
 
 	std::string rootName;

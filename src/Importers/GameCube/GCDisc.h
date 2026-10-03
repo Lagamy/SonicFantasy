@@ -5,7 +5,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace Importers
+namespace GameCube
 {
 struct GCDiscFile
 {

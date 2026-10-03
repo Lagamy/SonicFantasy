@@ -4,7 +4,7 @@
 #include <format>
 #include <stdexcept>
 
-namespace Importers
+namespace Ninja
 {
 /* NJS_MOTION type flags (external, SA Tools); channels are stored in the order of their bits. */
 constexpr uint16_t MotionPosition = 0x1;

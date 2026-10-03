@@ -72,7 +72,7 @@ void Renderer::run(Camera& rCamera_)
 void Renderer::destroy() 
 {
 	glDeleteBuffers(1, &this->boneBuffer); 
-	sth2005Archives.clear();
+	oneArchives.clear();
 	basicMeshes.clear(); 
 	textures.clear();
 	shaders.clear(); 

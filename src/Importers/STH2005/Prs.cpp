@@ -2,7 +2,7 @@
 #include <format>
 #include <stdexcept>
 
-namespace Importers
+namespace STH2005
 {
 struct PrsReader
 {

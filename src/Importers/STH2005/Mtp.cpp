@@ -1,4 +1,4 @@
-#include "STH2005Mtp.h"
+#include "Mtp.h"
 #include "BinaryRead.h"
 #include <algorithm>
 #include <cmath>
@@ -6,7 +6,7 @@
 #include <format>
 #include <stdexcept>
 
-namespace Importers
+namespace STH2005
 {
 /*
 .MTP layout, decoded from SHADOW.MTP (observed, no outside source), big-endian: u16 1, u16 motion count, then at 0x10
@@ -14,12 +14,12 @@ u32 offset of the motion table (0x14). Table entry (12 bytes): u32 name offset (
 u32 data offset, u32 unknown (0, or an offset near the end of the file). Each motion's data starts with
 04 01 00 00, u32 0, u32 data size (equal to the distance to the next motion on SHADOW.MTP), then see readMtpMotion.
 */
-std::vector<STH2005MtpMotion> readMtp(const std::vector<uint8_t>& rBytes_)
+std::vector<MtpMotion> readMtp(const std::vector<uint8_t>& rBytes_)
 {
 	uint16_t count = readBE<uint16_t>(rBytes_, 2);
 	uint32_t table = readBE<uint32_t>(rBytes_, 0x10);
 
-	std::vector<STH2005MtpMotion> motions;
+	std::vector<MtpMotion> motions;
 	for(uint32_t i = 0; i < count; i++)
 	{
 		uint32_t entry = table + i * 12;
@@ -28,16 +28,16 @@ std::vector<STH2005MtpMotion> readMtp(const std::vector<uint8_t>& rBytes_)
 		uint32_t unknown = readBE<uint32_t>(rBytes_, entry + 8);
 		if(nameOffset >= rBytes_.size())
 		{
-			throw std::runtime_error(std::format("STH2005Mtp: motion {} has its name at 0x{:X}, past the end of the file.", i, nameOffset));
+			throw std::runtime_error(std::format("STH2005::Mtp: motion {} has its name at 0x{:X}, past the end of the file.", i, nameOffset));
 		}
 		const char* pName = reinterpret_cast<const char*>(rBytes_.data() + nameOffset);
 		std::string name(pName, strnlen(pName, rBytes_.size() - nameOffset));
 		uint32_t size = readBE<uint32_t>(rBytes_, dataOffset + 8);
 		if(static_cast<uint64_t>(dataOffset) + size > rBytes_.size())
 		{
-			throw std::runtime_error(std::format("STH2005Mtp: motion {} ({} bytes at 0x{:X}) is past the end of the file.", name, size, dataOffset));
+			throw std::runtime_error(std::format("STH2005::Mtp: motion {} ({} bytes at 0x{:X}) is past the end of the file.", name, size, dataOffset));
 		}
-		motions.push_back(STH2005MtpMotion{name, dataOffset, size, unknown});
+		motions.push_back(MtpMotion{name, dataOffset, size, unknown});
 	}
 	return motions;
 }
@@ -82,11 +82,11 @@ rotation, Euler angles in radians.
 Hypothesis, unverified: tangents are the slope per frame (on sh_root's Y track key 0 has -0.0094 and the average slope
 to the next key is -0.0090), so the curve between keys is cubic Hermite.
 */
-Graphics::STH2005Motion readMtpMotion(const std::vector<uint8_t>& rBytes_, const char* pName_, const Bon& rBon_)
+Motion readMtpMotion(const std::vector<uint8_t>& rBytes_, const char* pName_, const Bon& rBon_)
 {
-	STH2005MtpMotion found;
+	MtpMotion found;
 	bool exists = false;
-	for(const STH2005MtpMotion& rMotion : readMtp(rBytes_))
+	for(const MtpMotion& rMotion : readMtp(rBytes_))
 	{
 		if(rMotion.name == pName_)
 		{
@@ -96,7 +96,7 @@ Graphics::STH2005Motion readMtpMotion(const std::vector<uint8_t>& rBytes_, const
 	}
 	if(!exists)
 	{
-		throw std::runtime_error(std::format("STH2005Mtp: no motion named {}.", pName_));
+		throw std::runtime_error(std::format("STH2005::Mtp: no motion named {}.", pName_));
 	}
 
 	uint32_t nodeCount = static_cast<uint32_t>(rBon_.nodes.size());
@@ -109,44 +109,44 @@ Graphics::STH2005Motion readMtpMotion(const std::vector<uint8_t>& rBytes_, const
 		uint8_t size = readBE<uint8_t>(rBytes_, cursor);
 		if(size < 5 || cursor + size > end)
 		{
-			throw std::runtime_error(std::format("STH2005Mtp: {} has a track of {} bytes at 0x{:X}, which doesn't fit.", pName_, size, cursor));
+			throw std::runtime_error(std::format("STH2005::Mtp: {} has a track of {} bytes at 0x{:X}, which doesn't fit.", pName_, size, cursor));
 		}
 		tracks.emplace_back(cursor, size);
 		cursor += size;
 	}
 	if(cursor != end || tracks.size() != expectedTracks)
 	{
-		throw std::runtime_error(std::format("STH2005Mtp: {} has {} tracks ending at 0x{:X}, but {} nodes need {} ending at 0x{:X}: unsupported layout.", pName_, tracks.size(), cursor, nodeCount, expectedTracks, end));
+		throw std::runtime_error(std::format("STH2005::Mtp: {} has {} tracks ending at 0x{:X}, but {} nodes need {} ending at 0x{:X}: unsupported layout.", pName_, tracks.size(), cursor, nodeCount, expectedTracks, end));
 	}
 
-	Graphics::STH2005Motion motion;
+	Motion motion;
 	motion.name = pName_;
 	motion.lastFrame = 0;
 	uint32_t trackIndex = 0;
 	for(uint32_t b = 0; b < nodeCount; b++)
 	{
-		Graphics::MotionBone bone;
+		MotionBone bone;
 		bone.name = rBon_.nodes[b].name;
 		trackIndex += b == 0 ? 0 : 3;
-		for(Graphics::MotionTrack* pTrack : {&bone.translation[0], &bone.translation[1], &bone.translation[2], &bone.rotation[0], &bone.rotation[1], &bone.rotation[2], &bone.scale[0], &bone.scale[1], &bone.scale[2]})
+		for(MotionTrack* pTrack : {&bone.translation[0], &bone.translation[1], &bone.translation[2], &bone.rotation[0], &bone.rotation[1], &bone.rotation[2], &bone.scale[0], &bone.scale[1], &bone.scale[2]})
 		{
 			uint32_t track = tracks[trackIndex].first;
 			uint32_t keyCount = readBE<uint8_t>(rBytes_, track + 2);
 			if(keyCount == 0 || 5 + keyCount * 6 > tracks[trackIndex].second)
 			{
-				throw std::runtime_error(std::format("STH2005Mtp: {} track at 0x{:X} has {} keys in {} bytes.", pName_, track, keyCount, tracks[trackIndex].second));
+				throw std::runtime_error(std::format("STH2005::Mtp: {} track at 0x{:X} has {} keys in {} bytes.", pName_, track, keyCount, tracks[trackIndex].second));
 			}
 			for(uint32_t k = 0; k < keyCount; k++)
 			{
 				uint32_t key = track + 5 + k * 6;
 				if(readBE<uint8_t>(rBytes_, key) != 0xC0)
 				{
-					throw std::runtime_error(std::format("STH2005Mtp: {} key at 0x{:X} starts with 0x{:X}, not 0xC0.", pName_, key, readBE<uint8_t>(rBytes_, key)));
+					throw std::runtime_error(std::format("STH2005::Mtp: {} key at 0x{:X} starts with 0x{:X}, not 0xC0.", pName_, key, readBE<uint8_t>(rBytes_, key)));
 				}
-				Graphics::MotionKey motionKey{readBE<uint8_t>(rBytes_, key + 1), halfToFloat(readBE<uint16_t>(rBytes_, key + 2)), halfToFloat(readBE<uint16_t>(rBytes_, key + 4))};
+				Keyframe motionKey{readBE<uint8_t>(rBytes_, key + 1), halfToFloat(readBE<uint16_t>(rBytes_, key + 2)), halfToFloat(readBE<uint16_t>(rBytes_, key + 4))};
 				if(!pTrack->empty() && motionKey.frame <= pTrack->back().frame)
 				{
-					throw std::runtime_error(std::format("STH2005Mtp: {} key at 0x{:X} is not after the previous one.", pName_, key));
+					throw std::runtime_error(std::format("STH2005::Mtp: {} key at 0x{:X} is not after the previous one.", pName_, key));
 				}
 				pTrack->push_back(motionKey);
 				motion.lastFrame = std::max(motion.lastFrame, motionKey.frame);

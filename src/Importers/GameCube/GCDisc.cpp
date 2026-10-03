@@ -3,7 +3,7 @@
 #include <format>
 #include <stdexcept>
 
-namespace Importers
+namespace GameCube
 {
 /*
 GameCube disc layout (external, YAGCD; confirmed on the Shadow the Hedgehog disc), all big-endian:

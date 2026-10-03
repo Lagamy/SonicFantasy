@@ -26,40 +26,40 @@ void Entity::setSAGPUInstance(PoolId shaderId_, const SAModelKey& rMesh_)
 	this->sourceEngine = SA_NINJA;
 }
 
-void Entity::setONEGPUInstance(PoolId shaderId_, const STH2005ModelKey& rMesh_, const STH2005TextureKey& rTextures_)
+void Entity::setONEGPUInstance(PoolId shaderId_, const STH2005::ModelKey& rMesh_, const STH2005::TextureKey& rTextures_)
 {
 	checkNoInstance(*this);
 	this->instanceId = Loading::addONEInstance(shaderId_, rMesh_, &rTextures_);
-	this->sourceEngine = STH2005;
+	this->sourceEngine = STH2005_ONE;
 }
 
-void Entity::setONEGPUInstance(PoolId shaderId_, const STH2005ModelKey& rMesh_)
+void Entity::setONEGPUInstance(PoolId shaderId_, const STH2005::ModelKey& rMesh_)
 {
 	checkNoInstance(*this);
 	this->instanceId = Loading::addONEInstance(shaderId_, rMesh_, nullptr);
-	this->sourceEngine = STH2005;
+	this->sourceEngine = STH2005_ONE;
 }
 
 static Graphics::ONEInstance& getActiveONEInstance(const Entity& rEntity_)
 {
-	if(rEntity_.instanceId == UninitializedPoolId || rEntity_.sourceEngine != STH2005)
+	if(rEntity_.instanceId == UninitializedPoolId || rEntity_.sourceEngine != STH2005_ONE)
 	{
 		throw std::runtime_error("Entity: has no ONE instance.");
 	}
 	return Graphics::getONEInstance(rEntity_.instanceId);
 }
 
-void Entity::changeActiveMesh(const STH2005ModelKey& rKey_)
+void Entity::changeActiveMesh(const STH2005::ModelKey& rKey_)
 {
 	getActiveONEInstance(*this).changeActiveMesh(rKey_);
 }
 
-void Entity::switchMeshPart(const STH2005ModelPart& rPrevious_, const STH2005ModelPart& rDesired_)
+void Entity::switchMeshPart(const STH2005::ModelPart& rPrevious_, const STH2005::ModelPart& rDesired_)
 {
 	getActiveONEInstance(*this).switchMeshPart(rPrevious_, rDesired_);
 }
 
-void Entity::changeActiveTexture(const STH2005TextureKey& rKey_)
+void Entity::changeActiveTexture(const STH2005::TextureKey& rKey_)
 {
 	getActiveONEInstance(*this).changeActiveTexture(rKey_);
 }
@@ -73,7 +73,7 @@ void Entity::playSAMotion(const SAMotionKey& rKey_)
 	Loading::playSAMotion(this->instanceId, rKey_);
 }
 
-void Entity::playONEMotion(const STH2005MotionKey& rKey_)
+void Entity::playONEMotion(const STH2005::MotionKey& rKey_)
 {
 	getActiveONEInstance(*this).playMotion(rKey_);
 }
@@ -86,7 +86,7 @@ void Entity::update(float deltaTime_)
 	case SA_NINJA:
 		Graphics::getSAInstance(this->instanceId).update(deltaTime_);
 		break;
-	case STH2005:
+	case STH2005_ONE:
 		Graphics::getONEInstance(this->instanceId).update(deltaTime_);
 		break;
 	}
@@ -102,7 +102,7 @@ void Entity::draw()
 	case SA_NINJA:
 		Graphics::getSAInstance(this->instanceId).draw(base);
 		break;
-	case STH2005:
+	case STH2005_ONE:
 		Graphics::getONEInstance(this->instanceId).draw(base);
 		break;
 	}
@@ -117,7 +117,7 @@ void Entity::destroy()
 	case SA_NINJA:
 		Graphics::saInstances.remove(this->instanceId);
 		break;
-	case STH2005:
+	case STH2005_ONE:
 		Graphics::oneInstances.remove(this->instanceId);
 		break;
 	}

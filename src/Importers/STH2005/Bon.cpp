@@ -4,7 +4,7 @@
 #include <format>
 #include <stdexcept>
 
-namespace Importers
+namespace STH2005
 {
 /*
 .BON layout, big-endian. Decoded from SH.BON, LTE.BON and RTE.BON in character/shadow.one; no outside source.

@@ -10,7 +10,7 @@
 #include <string>
 #include <utility>
 
-namespace Importers
+namespace Renderware
 {
 constexpr uint32_t ChunkTextureNative = 0x15;
 constexpr uint32_t ChunkTextureDictionary = 0x16;
@@ -106,7 +106,7 @@ static std::pair<std::string, PoolId> readTextureNative(const std::vector<uint8_
 	for(uint32_t i = 0; i < 16; i++)
 	{
 		uint16_t value = readBE<uint16_t>(rBytes_, base + 0x68 + i * 2);
-		palette[i] = paletteFormat == PaletteRGB565 ? colorRGB565(value) : colorRGB5A3(value);
+		palette[i] = paletteFormat == PaletteRGB565 ? GameCube::colorRGB565(value) : GameCube::colorRGB5A3(value);
 	}
 
 	uint32_t cursor = base + TextureHeaderSize;

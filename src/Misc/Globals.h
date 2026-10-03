@@ -27,8 +27,8 @@ namespace Globals {
 
 	/* The opened disc images, kept open so resources can be loaded on demand from resource keys. */
 	namespace Discs {
-		inline Importers::GCDisc sadx;
-		inline Importers::GCDisc shadow;
+		inline GameCube::GCDisc sadx;
+		inline GameCube::GCDisc shadow;
 	}
 
 	namespace Mouse { 

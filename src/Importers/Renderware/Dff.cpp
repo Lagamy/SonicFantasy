@@ -8,7 +8,7 @@
 #include <string>
 #include <utility>
 
-namespace Importers
+namespace Renderware
 {
 /*
 RenderWare binary stream (external, gtamods wiki; confirmed on Shadow's SHADOW_BODY.DFF), little-endian.

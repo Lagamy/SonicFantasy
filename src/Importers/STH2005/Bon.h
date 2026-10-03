@@ -4,7 +4,7 @@
 #include <vector>
 #include <glm/glm.hpp>
 
-namespace Importers
+namespace STH2005
 {
 /*
 One bone of a .BON skeleton. id matches the HAnim node id of the DFF frame it describes.

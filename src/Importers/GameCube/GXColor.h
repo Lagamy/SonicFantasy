@@ -2,7 +2,7 @@
 #include <array>
 #include <cstdint>
 
-namespace Importers
+namespace GameCube
 {
 /*
 GameCube 16 bit color formats to RGBA8, each component scaled to the full 0-255 range.

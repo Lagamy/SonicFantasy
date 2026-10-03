@@ -13,7 +13,7 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/constants.hpp>
 
-namespace Importers
+namespace Ninja
 {
 /*
 .sa1mdl header (external, SA Tools ModelFile.cs): bytes 0-6 are the magic "SA1MDL", byte 7 the version,

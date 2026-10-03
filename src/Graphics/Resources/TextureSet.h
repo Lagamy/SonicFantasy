@@ -12,7 +12,7 @@ material's texture id indexes (see importGvm).
 A set is named by its source path (e.g. "sonic.gvm") and loaded on demand when an instance with its SATextureSetKey is
 created; users counts the instances using it, and at 0 the set removes its textures and bindings.
 saBindings are the TextureBindings built for this set, one per SAMesh (mesh id, binding id).
-Shadow's textures do not use sets: they belong to their STH2005ONE.
+Shadow's textures do not use sets: they belong to their STH2005::ONE.
 */
 struct TextureSet
 {

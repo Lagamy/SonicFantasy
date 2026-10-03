@@ -24,7 +24,7 @@ namespace Graphics
 
     PoolId addSAMesh(const char* name_)
     {
-        return Importers::importSAMdl(name_, std::format("{}{}.sa1mdl", modelFolderPath, name_).c_str()); 
+        return Ninja::importSAMdl(name_, std::format("{}{}.sa1mdl", modelFolderPath, name_).c_str()); 
     }
 
     PoolId addTextureSet(const char* name_)

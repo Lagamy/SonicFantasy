@@ -3,7 +3,7 @@
 #include <vector>
 #include "PoolId.h"
 
-namespace Importers
+namespace Ninja
 {
 /*
 Reads a GameCube .gvm texture archive (GVR textures) from memory, adds every texture to the Texture pool under its

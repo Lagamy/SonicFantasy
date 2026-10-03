@@ -3,7 +3,7 @@
 #include <unordered_map>
 #include "SAInstance.h"
 #include "ONEInstance.h"
-#include "STH2005ONE.h"
+#include "ONE.h"
 #include "Renderer.h"
 #include "Pool.h"
 #include "Shader.h"
@@ -27,6 +27,6 @@ namespace Graphics
 	inline std::unordered_map<std::string, RelModule> relModules;
 	inline PoolMap<SAMotion> saMotions = ("SAMotions");
 	inline Pool<SAInstance> saInstances = ("SAInstances"); 
-	inline PoolMap<Importers::STH2005ONE> sth2005Archives = ("STH2005Archives");
+	inline PoolMap<STH2005::ONE> oneArchives = ("ONEArchives");
 	inline Pool<ONEInstance> oneInstances = ("ONEInstances");
 }

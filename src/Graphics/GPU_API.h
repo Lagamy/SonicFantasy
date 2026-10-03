@@ -6,7 +6,7 @@
 #include "TextureBinding.h"
 #include "Shader.h"
 #include "SAMesh.h"
-#include "STH2005ONE.h"
+#include "ONE.h"
 #include "ONEInstance.h"
 #include "PoolId.h"
 #include "SAMdl.h"

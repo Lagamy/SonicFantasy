@@ -40,11 +40,11 @@ add_executable(SonicFantasy
 	src/Importers/GameCube/Rel.cpp
 	src/Importers/Ninja/Gvm.cpp
 	src/Importers/Ninja/SAMotion.cpp
-	src/Importers/SonicTeam/Prs.cpp
-	src/Importers/SonicTeam/STH2005ONE.cpp
-	src/Importers/SonicTeam/Bon.cpp
-	src/Importers/SonicTeam/STH2005Model.cpp
-	src/Importers/SonicTeam/STH2005Mtp.cpp
+	src/Importers/STH2005/Prs.cpp
+	src/Importers/STH2005/ONE.cpp
+	src/Importers/STH2005/Bon.cpp
+	src/Importers/STH2005/Model.cpp
+	src/Importers/STH2005/Mtp.cpp
 	src/Importers/Renderware/Dff.cpp
 	src/Importers/Renderware/Txd.cpp
 	src/Objects/Camera.cpp
@@ -69,7 +69,7 @@ target_include_directories(SonicFantasy PUBLIC
 	src/Importers
 	src/Importers/GameCube
 	src/Importers/Ninja
-	src/Importers/SonicTeam
+	src/Importers/STH2005
 	src/Importers/Renderware
 	src/Loading
 	src/Keys

@@ -4,7 +4,7 @@
 #include "PoolId.h"
 #include "RenderWareMesh.h"
 
-namespace Importers
+namespace Renderware
 {
 /*
 Reads a RenderWare clump (.dff) from memory into a Graphics::RenderWareMesh.
