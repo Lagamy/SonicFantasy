@@ -58,7 +58,7 @@ struct SARotationStep
 
 /*
 A kind of object an SADX stage places (SASet.h): the model it is drawn with, in a .rel, and its textures (the .gvm the texlist of the model names; path nullptr = untextured).
-name is the object list's name for the type (e.g. "SPRING"), for reading; motions and collisions are the ones the generator found. rotation is the order and angles the object's display code turns by when it is not the usual z, x, y of the three angles (empty = the usual; found by the generator from the object's code). variantModels, if there are any, replace model: the record's scale x as a byte, modulo their count, picks one, and one with a null rel is not drawn (O PARASOL; see tools/genSAEntityKeys.py).
+name is the object list's name for the type (e.g. "SPRING"), for reading; motions and collisions are the ones the generator found. rotation is the order and angles the object's display code turns by when it is not the usual z, x, y of the three angles (empty = the usual; found by the generator from the object's code). variantModels, if there are any, replace model: a component of the record's scale (variantField: 0 x, 1 y, 2 z) as a byte, modulo their count, picks one, and one with a null rel is not drawn (O PARASOL by x, O PIER by y; see tools/genSAEntityKeys.py). variantCollisions, if there are any, replace collisions the same way, with their own count (the object's code picks a collision table by the same value).
 Which model an object uses is not stored as data: tools/genSAEntityKeys.py finds it from the relocations of the object's code (hypothesis).
 */
 struct SAEntityKey
@@ -70,6 +70,8 @@ struct SAEntityKey
 	std::vector<SACollisionShapesKey> collisions = {};
 	std::vector<SARotationStep> rotation = {};
 	std::vector<SAModelKey> variantModels = {};
+	std::vector<std::vector<SACollisionShapesKey>> variantCollisions = {};
+	uint8_t variantField = 0;
 };
 
 /* An object type (SAPlacement::type) and what it is made of, in the stage that places it. */
@@ -80,11 +82,20 @@ struct SAPlacedEntityKey
 };
 
 /*
+An object the stage's own code creates instead of a SET record (e.g. Emerald Coast's floating bridge): what it is made of and where, in the land table's space. The orientation is none.
+*/
+struct SAStageEntityKey
+{
+	const SAEntityKey* entity;
+	float position[3];
+};
+
+/*
 A land table (the level's geometry pieces and texlist) of a GameCube .rel module on the SADX disc: the module's path and
 the file offset of the land table (see readSALandTable). Always big-endian. Imported the first time a level needs it.
 skippedTextures are texlist names: a piece whose submeshes all use one of them is not imported (e.g. baked shadows).
 placementFiles are the disc paths of the stage's SET files (SetNNNNx.bin) and entities what each object type in them is made of: a placement whose type is not listed gets a marker
-(CollisionView::markers) labeled with its name from typeNames (type -> name, may be nullptr).
+(CollisionView::markers) labeled with its name from typeNames (type -> name, may be nullptr). stageEntities are objects the stage's code creates, placed as they are (Level::setSAEntities).
 */
 struct SALandTableKey
 {
@@ -94,4 +105,5 @@ struct SALandTableKey
 	std::vector<const char*> placementFiles = {};
 	std::vector<SAPlacedEntityKey> entities = {};
 	const std::map<uint16_t, const char*>* typeNames = nullptr;
+	std::vector<SAStageEntityKey> stageEntities = {};
 };

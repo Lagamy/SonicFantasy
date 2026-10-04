@@ -24,8 +24,8 @@ struct Camera {
 	glm::vec3 front{0.0f, 0.0f, -1.0f};
 
 	/* Free-fly speed in units per second; speedUp multiplies it while the speed-up key is held. */
-	float speed = 50.0f;
-	float speedUp = 3.0f;
+	float speed = 100.0f;
+	float speedUp = 10.0f;
 
 	float yaw = -90.0f;
 	float pitch = 0.0f;
@@ -36,7 +36,7 @@ struct Camera {
 	*/
 	float nearPlane = 1.0f;
 
-	/* Far plane of the projection; it is also the render distance, levels stream by it. */
+	/* Far plane of the projection; it is also the one render distance: levels stream by it and entities are drawn and active within it (the Camera tab changes it). */
 	float farPlane = 50000.0f;
     
 	glm::mat4 view;

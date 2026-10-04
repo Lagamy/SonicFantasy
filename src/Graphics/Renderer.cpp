@@ -2,8 +2,11 @@
 #include "GPU_Globals.h"
 #include "GPU_API.h"
 #include "Globals.h"
+#include "API.h"
 #include "Shader.h"
 #include <glm/gtc/type_ptr.hpp>
+#include <algorithm>
+#include <array>
 
 namespace Graphics 
 {
@@ -76,9 +79,32 @@ void Renderer::run(Camera& rCamera_)
 		if(Globals::Game::levels.alive[i]) Globals::Game::levels.objects[i].draw(rCamera_);
 	}
 
-	for(uint32_t i = 0; i < Globals::Game::entities.objects.size(); i++)
+	/* Entities out of the view or farther than the far plane (the render distance) are not drawn. */
+	std::array<glm::vec4, 6> planes = rCamera_.frustumPlanes();
+	float maxDistance = rCamera_.farPlane;
+	Globals::Game::spatialIndex.rebuildIfDirty();
+	if(Globals::Game::spatialIndex.built)
 	{
-		if(Globals::Game::entities.alive[i]) Globals::Game::entities.objects[i].draw();
+		/* The static entities come from the spatial index, already inside the view; the dynamic ones are walked and culled by draw. */
+		static std::vector<uint32_t> visible;
+		visible.clear();
+		Globals::Game::spatialIndex.queryVisible(planes, rCamera_.position, maxDistance, visible);
+		for(uint32_t index : visible)
+		{
+			Globals::Game::entities.objects[index].draw(planes, rCamera_.position, maxDistance);
+		}
+		Globals::Game::spatialIndex.pruneDynamic();
+		for(PoolId entityId : Globals::Game::spatialIndex.dynamicEntities)
+		{
+			if(entityExists(entityId)) Globals::Game::entities.objects[entityId.id].draw(planes, rCamera_.position, maxDistance);
+		}
+	}
+	else
+	{
+		for(uint32_t i = 0; i < Globals::Game::entities.objects.size(); i++)
+		{
+			if(Globals::Game::entities.alive[i]) Globals::Game::entities.objects[i].draw(planes, rCamera_.position, maxDistance);
+		}
 	}
 
 	collisionView.draw(rCamera_);

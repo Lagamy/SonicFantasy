@@ -8,11 +8,6 @@ the physics of the two test entities. Nothing here is needed by the systems them
 */
 namespace DebugSetup
 {
-/*
-Registers the BoundAreas (see BoundArea.h) of Shadow's stage attributes and of SADX's land table flags.
-*/
-void registerBoundAreas();
-
 /* Sets the global gravity and gives both test entities a physics of weight 1. */
 void enablePhysics(PoolId sonicId_, PoolId shadowId_);
 

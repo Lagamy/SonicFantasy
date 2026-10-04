@@ -41,3 +41,6 @@ I build and run the app myself. Don't build, run, or test anything unless I
 ask. Use errors and logs I paste. After a change, say what changed and that
 nothing was run. Never claim it matches the original game without evidence
 from me.
+
+## Finishing
+When a task that used tools is done, run `python3 tools/notifyDone.py` (a short ring at 10% volume) as the last tool call before the final message. Skip it for plain chat answers.

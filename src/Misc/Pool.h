@@ -1,6 +1,7 @@
 #pragma once 
 #include "PoolId.h"
 #include "Constants.h"
+#include <deque>
 #include <vector> 
 #include <cstdint>
 #include <stdexcept>
@@ -10,7 +11,8 @@
 
 template <typename T> 
 struct Pool {
-	std::vector<T> objects;
+	/* A deque: adding an element never moves the others, so a reference into the pool stays valid until its slot is removed (and reused); across anything that removes, keep the PoolId. */
+	std::deque<T> objects;
 	std::vector<bool> alive;
 	std::vector<uint32_t> generation; 
 	std::vector<uint32_t> freeSlots;	

@@ -25,11 +25,11 @@ stagingPosition and then sets the entity's position to it (Entity::setPosition),
 Entities without a physics are not touched.
 
 An entity whose collision (Entity::collisionId) has shapes of form 0 (a sphere) or 6 (a capsule) is moved by them: the shapes are
-pushed out of the solid triangles they overlap after each step of the move, the body's velocity slides along the surfaces, and the BoundArea of
-every triangle a shape overlaps can be touched (BoundArea.h: the triangle's attribute decides). Triangles are two sided, since the winding is unknown.
+pushed out of the solid triangles they overlap after each step of the move, the body's velocity slides along the surfaces, and the behaviour of
+every triangle a shape overlaps can be touched (BABehavior.h: the triangle's behaviour decides, from its raw value through the collision's remap; a triangle is solid for a shape whose behaviour collides with it). Triangles are two sided, since the winding is unknown.
 Other forms (boxes, cylinders) are only drawn.
 Any other entity keeps a placeholder: a vertical-ish segment from just above its position to its staging position. The nearest triangle that
-segment crosses (either side) stops the entity if it is solid, and the BoundArea of every crossed triangle can be touched: staging
+segment crosses (either side) stops the entity if a Body collides with it, and the behaviour of every crossed triangle can be touched: staging
 becomes the hit point and the body's vertical velocity is zeroed.
 */
 struct CollisionSystem

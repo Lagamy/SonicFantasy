@@ -100,6 +100,7 @@ inline GLFWwindow* createWindow(const uint32_t width, const uint32_t height) {
 
 	
     glfwMakeContextCurrent(window);
+	glfwSwapInterval(Globals::App::vsync ? 1 : 0);
 	glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
 
 	glfwSetCursorPosCallback(window, mouseCallback);

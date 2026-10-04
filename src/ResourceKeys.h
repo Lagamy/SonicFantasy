@@ -33,7 +33,31 @@ of the other two tables), and it is skipped since shadows are to be real time.
 Its SET file is Set0100S.bin (Sonic's, the stage's first act; the letter picks the character, hypothesis) and SAEntityTable_EmeraldCoast (generated, SAEntityKeys.h) makes
 Level::setSAEntities create the objects it places.
 */
-inline const SALandTableKey EmeraldCoastLandTable{"_Stg01.rel", 0x1B8D68, {"m8_shadows"}, {"Set0100S.bin"}, SAEntityTable_EmeraldCoast, &SAObjectTypeNames_EmeraldCoast};
+
+/*
+Emerald Coast's floating bridge, in the pose the game draws it from afar (external, the machine code of _Stg01.rel 0x17BBC / 0x17D4C and the task creator 0x18218, see docs/EMERALD_COAST_OBJECTS.md): the stage's
+own code creates it (no SET record) at (2803, -1, 365) (the constants at _Stg01.rel 0x203B0 to 0x203B8) along +x: the Forward dock at that point, then, from 75 along and 9.5 up, 25 piers 40 apart (the first 20
+further) with a link between each two (24), and the Backward dock 95 after the last pier (1150 from the start). The collisions are the shape tables the docks and piers give the collision init (0x24A4D0, 0x24A590,
+0x24A650); the meshes the game also collides with ("Floating Dock Collision", "Floating Pier Collision") are not used. Not reproduced: the waves and the player's weight that move the piers and tilt them (see the docs).
+*/
+inline const SAEntityKey EmeraldCoastBridgeDockForward{"Floating Dock (Forward)", {"_Stg01.rel", 0x1C8408}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x24A4D0, 4}}};
+inline const SAEntityKey EmeraldCoastBridgeDockBackward{"Floating Dock (Backward)", {"_Stg01.rel", 0x1CACEC}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x24A590, 4}}};
+inline const SAEntityKey EmeraldCoastBridgePier{"Floating Pier", {"_Stg01.rel", 0x1CB9C0}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x24A650, 2}}};
+inline const SAEntityKey EmeraldCoastBridgeLinks{"Floating Pier Links", {"_Stg01.rel", 0x1CBB40}, {"obj_beach.GVM"}};
+inline const std::vector<SAStageEntityKey> EmeraldCoastStageEntities = []
+{
+	constexpr float X = 2803.0f;
+	constexpr float Y = -1.0f;
+	constexpr float Z = 365.0f;
+	std::vector<SAStageEntityKey> entities;
+	entities.push_back({&EmeraldCoastBridgeDockForward, {X, Y, Z}});
+	for(int i = 0; i < 25; i++) entities.push_back({&EmeraldCoastBridgePier, {X + 95.0f + 40.0f * i, Y + 9.5f, Z}});
+	for(int i = 0; i < 24; i++) entities.push_back({&EmeraldCoastBridgeLinks, {X + 115.0f + 40.0f * i, Y + 9.5f, Z}});
+	entities.push_back({&EmeraldCoastBridgeDockBackward, {X + 1150.0f, Y + 9.5f, Z}});
+	return entities;
+}();
+
+inline const SALandTableKey EmeraldCoastLandTable{"_Stg01.rel", 0x1B8D68, {"m8_shadows"}, {"Set0100S.bin"}, SAEntityTable_EmeraldCoast, &SAObjectTypeNames_EmeraldCoast, EmeraldCoastStageEntities};
 inline const SATextureSetKey EmeraldCoastTextures{"BEACH01.GVM"};
 
 /*

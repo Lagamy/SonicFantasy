@@ -29,6 +29,7 @@ add_executable(SonicFantasy
 	src/Graphics/GPU_API.cpp
 	src/Graphics/DebugUI.cpp
 	src/Graphics/CollisionView.cpp
+	src/Graphics/Text.cpp
 	src/Graphics/Resources/Shader.cpp
 	src/Graphics/Resources/Texture.cpp
 	src/Graphics/Resources/TextureSet.cpp
@@ -64,7 +65,12 @@ add_executable(SonicFantasy
 	src/Importers/Renderware/Txd.cpp
 	src/Objects/Camera.cpp
 	src/Objects/Entity.cpp
+	src/Objects/BABehaviors.cpp
+	src/Gameplay/GameplaySystem.cpp
+	src/Gameplay/GameEvents.cpp
+	src/Gameplay/SADXGameplay.cpp
 	src/Objects/Level.cpp
+	src/Objects/SpatialIndex.cpp
 	src/Loading/ResourceLoader.cpp
 	src/DebugSetup.cpp
 	src/Physics/Collision.cpp
@@ -86,6 +92,7 @@ add_executable(SonicFantasy
 target_include_directories(SonicFantasy PUBLIC
     src
 	src/Objects
+	src/Gameplay
 	src/Graphics
 	src/Graphics/Resources
 	src/Graphics/InstanceData

@@ -2,6 +2,7 @@
 #include "LevelStreaming.h"
 #include "ONEInstance.h"
 #include "GPU_Globals.h"
+#include "RenderStats.h"
 #include "ResourceLoader.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
@@ -18,6 +19,7 @@ gives its buffers back (BasicMesh::destroy; the CPU data stays).
 void ONELevelInstance::draw(const glm::mat4& rBase_, const Camera& rCamera_)
 {
 	Shader& rShader = shaders[this->shaderId];
+	renderStats.program(rShader.id);
 	glUseProgram(rShader.id);
 	glm::mat4 base = glm::rotate(rBase_, glm::radians(RenderWareYawDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
 	glUniformMatrix4fv(rShader.modelLocation, 1, GL_FALSE, glm::value_ptr(base));
@@ -43,9 +45,11 @@ void ONELevelInstance::draw(const glm::mat4& rBase_, const Camera& rCamera_)
 			bool hasTexture = rSubmesh.textureId != UninitializedPoolId;
 			if(hasTexture)
 			{
+				renderStats.texture(textures[rSubmesh.textureId].textureId);
 				glBindTextureUnit(0, textures[rSubmesh.textureId].textureId);
 			}
 			glUniform1i(HasTextureLocation, hasTexture);
+			renderStats.levelPiecesDrawn++;
 			rSubmesh.mesh.draw();
 		}
 	}

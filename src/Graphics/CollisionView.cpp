@@ -68,6 +68,25 @@ void CollisionView::selectAttribute(int step_)
 	this->selectedAttribute = ((this->selectedAttribute + 1 + step_) % options + options) % options - 1;
 }
 
+void CollisionView::selectEntityAttribute(int step_)
+{
+	int options = static_cast<int>(this->entityAttributes.size()) + 1;
+	int current = -1;
+	for(int i = 0; this->hasSelectedEntityValue && i < static_cast<int>(this->entityAttributes.size()); i++)
+	{
+		if(this->entityAttributes[i].attribute == this->selectedEntityValue) current = i;
+	}
+	int next = ((current + 1 + step_) % options + options) % options - 1;
+	this->hasSelectedEntityValue = next >= 0;
+	if(next >= 0) this->selectedEntityValue = this->entityAttributes[next].attribute;
+}
+
+/* The name of a behaviour (Globals::Game::behaviors) for the legends, "?" if the id is none. */
+static std::string behaviorName(PoolId behaviorId_)
+{
+	return behaviorId_ != UninitializedPoolId ? Globals::Game::behaviors.names[behaviorId_.id] : "?";
+}
+
 /*
 The value shown for each triangle of a mesh: its own attribute when the mesh stores them per triangle (Shadow), otherwise the surface
 flags of the piece it is in (SADX: one per land table COL). Empty if the mesh has neither, which colors by slope.
@@ -97,11 +116,13 @@ void CollisionView::rebuildLevelLines(const std::vector<PoolId>& rCollisionIds_)
 	std::vector<std::vector<uint32_t>> values;
 	for(PoolId id : rCollisionIds_)
 	{
-		values.push_back(triangleValues(Globals::Physics::collisions[id].mesh));
+		const Physics::Collision& rCollision = Globals::Physics::collisions[id];
+		values.push_back(triangleValues(rCollision.mesh));
 		for(uint32_t value : values.back())
 		{
 			auto found = std::find_if(this->attributes.begin(), this->attributes.end(), [&](const AttributeCount& rEntry_) { return rEntry_.attribute == value; });
-			if(found == this->attributes.end()) this->attributes.push_back(AttributeCount{value, 1, attributeColor(value)});
+			auto behavior = rCollision.behaviorByValue.find(value);
+			if(found == this->attributes.end()) this->attributes.push_back(AttributeCount{value, 1, attributeColor(value), behaviorName(behavior != rCollision.behaviorByValue.end() ? behavior->second : rCollision.fallbackBehavior)});
 			else found->count++;
 		}
 	}
@@ -281,7 +302,7 @@ static void addShapeLines(AddLine addLine_, const Physics::CollisionShape& rShap
 
 void CollisionView::draw(const Camera& rCamera_)
 {
-	if(!this->enabled && this->markers.empty()) return;
+	if(!Globals::App::debugMode || (!this->enabled && this->markers.empty())) return;
 
 	std::vector<PoolId> levelCollisions;
 	if(this->enabled)
@@ -302,14 +323,22 @@ void CollisionView::draw(const Camera& rCamera_)
 		dynamic.push_back(LineVertex{rTo_, rColor_});
 	};
 	float distance = std::min(this->drawDistance, rCamera_.farPlane);
+	std::array<glm::vec4, 6> entityPlanes = rCamera_.frustumPlanes();
+	std::map<uint32_t, std::pair<uint32_t, PoolId>> shapeValues;
 	for(uint32_t i = 0; this->enabled && i < Globals::Game::entities.objects.size(); i++)
 	{
 		if(!Globals::Game::entities.alive[i]) continue;
 		const Entity& rEntity = Globals::Game::entities.objects[i];
-		if(glm::distance(rEntity.position, rCamera_.position) > distance) continue;
+		glm::vec3 entityPosition = rEntity.renderPosition();
+		if(glm::distance(entityPosition, rCamera_.position) > distance) continue;
+
+		/* An entity outside the view (with a margin for a big shape far from its position) is not drawn: building every shape's lines every frame is expensive. */
+		constexpr float EntityCullRadius = 150.0f;
+		if(!sphereInFrustum(entityPlanes, entityPosition, EntityCullRadius)) continue;
+		glm::mat4 entityRotation = rEntity.renderRotation();
 		if(rEntity.physicsId != UninitializedPoolId)
 		{
-			const glm::vec3& rPosition = rEntity.position;
+			const glm::vec3& rPosition = entityPosition;
 			addLine(rPosition + glm::vec3(0.0f, Physics::ProbeStartHeight, 0.0f), rPosition, glm::vec4(1.0f, 1.0f, 0.0f, 1.0f));
 			addLine(rPosition - glm::vec3(1.0f, 0.0f, 0.0f), rPosition + glm::vec3(1.0f, 0.0f, 0.0f), glm::vec4(1.0f, 0.0f, 1.0f, 1.0f));
 			addLine(rPosition - glm::vec3(0.0f, 0.0f, 1.0f), rPosition + glm::vec3(0.0f, 0.0f, 1.0f), glm::vec4(1.0f, 0.0f, 1.0f, 1.0f));
@@ -319,16 +348,25 @@ void CollisionView::draw(const Camera& rCamera_)
 			const Physics::Collision& rCollision = Globals::Physics::collisions[rEntity.collisionId];
 			for(const Physics::CollisionShape& rShape : rCollision.shapes)
 			{
-				addShapeLines(addLine, rShape, rEntity.position, rEntity.sourceEngine == SA_NINJA ? rEntity.rotation : glm::mat4(1.0f), rEntity.sourceEngine == SA_NINJA, glm::vec4(0.0f, 1.0f, 1.0f, 1.0f));
+				std::pair<uint32_t, PoolId>& rValue = shapeValues[rShape.attr];
+				rValue.first++;
+				rValue.second = rShape.behavior;
+				if(this->colorByAttribute && this->hasSelectedEntityValue && rShape.attr != this->selectedEntityValue) continue;
+				glm::vec4 shapeColor = this->colorByAttribute ? attributeColor(rShape.attr) : glm::vec4(0.0f, 1.0f, 1.0f, 1.0f);
+				addShapeLines(addLine, rShape, entityPosition, rEntity.sourceEngine == SA_NINJA ? entityRotation : glm::mat4(1.0f), rEntity.sourceEngine == SA_NINJA, shapeColor);
 			}
 			const Physics::CollisionMesh& rMesh = rCollision.mesh;
 			for(size_t t = 0; t + 2 < rMesh.indices.size(); t += 3)
 			{
-				const glm::vec3 corners[3] = {rMesh.vertices[rMesh.indices[t]] + rEntity.position, rMesh.vertices[rMesh.indices[t + 1]] + rEntity.position, rMesh.vertices[rMesh.indices[t + 2]] + rEntity.position};
+				const glm::vec3 corners[3] = {rMesh.vertices[rMesh.indices[t]] + entityPosition, rMesh.vertices[rMesh.indices[t + 1]] + entityPosition, rMesh.vertices[rMesh.indices[t + 2]] + entityPosition};
 				for(int c = 0; c < 3; c++) addLine(corners[c], corners[(c + 1) % 3], glm::vec4(0.0f, 1.0f, 1.0f, 1.0f));
 			}
 		}
 	}
+
+	this->entityAttributes.clear();
+	for(const auto& rValue : shapeValues) this->entityAttributes.push_back(AttributeCount{rValue.first, rValue.second.first, attributeColor(rValue.first), behaviorName(rValue.second.second)});
+	std::stable_sort(this->entityAttributes.begin(), this->entityAttributes.end(), [](const AttributeCount& rA_, const AttributeCount& rB_) { return rA_.count > rB_.count; });
 
 	for(const Marker& rMarker : this->markers)
 	{

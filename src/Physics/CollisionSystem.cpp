@@ -3,29 +3,12 @@
 #include "SAMesh.h"
 #include <algorithm>
 #include <cmath>
+#include <unordered_map>
 #include <vector>
+#include <glm/gtc/constants.hpp>
 
 namespace Physics
 {
-/*
-The BoundArea of a triangle (see BoundArea.h): the first one whose attribute equals the triangle's value (CollisionMesh::triangleValue: its
-own attribute in Shadow, the piece's surface flags in SADX), nullptr if none. Without an area a Shadow triangle is not solid; an SADX
-triangle (no per-triangle attributes) is, since what its flags mean is unknown, so SADX collision is all solid until areas are registered
-for the flags that are not.
-*/
-static const BoundArea* boundAreaOf(const CollisionMesh& rMesh_, uint32_t triangle_, bool& rSolid_)
-{
-	rSolid_ = rMesh_.triangleAttributes.empty();
-	uint32_t value = rMesh_.triangleValue(triangle_);
-	for(uint32_t i = 0; i < Globals::Game::boundAreas.objects.size(); i++)
-	{
-		if(!Globals::Game::boundAreas.alive[i] || Globals::Game::boundAreas.objects[i].attribute != value) continue;
-		rSolid_ = Globals::Game::boundAreas.objects[i].isCollision;
-		return &Globals::Game::boundAreas.objects[i];
-	}
-	return nullptr;
-}
-
 /*
 Moller-Trumbore segment against triangle, either side. Returns the position of the hit along the segment (0 = start,
 1 = end) in rT_; false if the segment misses or is parallel to the triangle.
@@ -182,7 +165,7 @@ static void closestPointsOfSegmentAndTriangle(const glm::vec3& rP0_, const glm::
 /*
 A sphere or capsule of an entity's collision, in the entity's space: the segment center +- axis * halfLength swept by radius.
 Shape forms 0 (a sphere, radius a) and 6 (a capsule: radius a, half length b along the shape's z axis, turned by its angles with the same
-rotation the lines view uses) are the ones the collision system moves; the others are only drawn.
+rotation the lines view uses) are the ones the collision system moves; the others are only drawn. A capsule has its shape's behaviour (a Body if the shape has none).
 */
 struct Capsule
 {
@@ -190,6 +173,7 @@ struct Capsule
 	glm::vec3 axis;
 	float halfLength;
 	float radius;
+	PoolId behavior;
 };
 
 static std::vector<Capsule> capsulesOf(const Collision& rCollision_)
@@ -197,17 +181,43 @@ static std::vector<Capsule> capsulesOf(const Collision& rCollision_)
 	std::vector<Capsule> capsules;
 	for(const CollisionShape& rShape : rCollision_.shapes)
 	{
+		PoolId behavior = rShape.behavior != UninitializedPoolId ? rShape.behavior : Globals::Game::baBehaviors.body;
 		if(rShape.form == 0)
 		{
-			capsules.push_back(Capsule{rShape.center, glm::vec3(0.0f, 0.0f, 1.0f), 0.0f, rShape.a});
+			capsules.push_back(Capsule{rShape.center, glm::vec3(0.0f, 0.0f, 1.0f), 0.0f, rShape.a, behavior});
 		}
 		else if(rShape.form == 6)
 		{
 			glm::mat4 rotation = Graphics::composeNinjaTransform(glm::vec3(0.0f), glm::vec3(rShape.angle), glm::vec3(1.0f), Graphics::NinjaNoPosition | Graphics::NinjaNoScale);
-			capsules.push_back(Capsule{rShape.center, glm::vec3(rotation * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f)), rShape.b, rShape.a});
+			capsules.push_back(Capsule{rShape.center, glm::vec3(rotation * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f)), rShape.b, rShape.a, behavior});
 		}
 	}
 	return capsules;
+}
+
+/*
+One interaction to call: the function of a behaviour's availableInteractions with the entity that owns the behaviour's collision (parent) and the other one (contact), see BABehavior.h.
+*/
+struct Interaction
+{
+	BAInteraction pFunction;
+	PoolId parent;
+	PoolId contact;
+};
+
+/* The interactions of an overlap of a collision of rA_ owned by aEntity_ and one of rB_ owned by bEntity_: each side's functions for the other's tags, each once. */
+static void collectInteractions(const BABehavior& rA_, PoolId aEntity_, const BABehavior& rB_, PoolId bEntity_, std::vector<Interaction>& rOut_)
+{
+	auto add = [&](BAInteraction pFunction_, PoolId parent_, PoolId contact_)
+	{
+		for(const Interaction& rInteraction : rOut_)
+		{
+			if(rInteraction.pFunction == pFunction_ && rInteraction.parent == parent_ && rInteraction.contact == contact_) return;
+		}
+		rOut_.push_back(Interaction{pFunction_, parent_, contact_});
+	};
+	rA_.forEachInteraction(rB_, [&](BAInteraction pFunction_) { add(pFunction_, aEntity_, bEntity_); });
+	rB_.forEachInteraction(rA_, [&](BAInteraction pFunction_) { add(pFunction_, bEntity_, aEntity_); });
 }
 
 /*
@@ -215,7 +225,7 @@ Moves an entity with sphere/capsule shapes from position to stagingPosition. The
 MaxMoveSteps) so a fast body can't skip over a triangle; after each step the shapes are pushed out of the solid triangles they overlap, along the
 direction from the triangle's closest point to the shape's axis (the triangle's normal, toward where the shape was, if the axis is on it), the deepest
 overlap first, up to MaxPushIterations times. The body's velocity loses its part going into each surface it is pushed away from, so it slides along a
-wall, and a walkable floor (MinFloorNormalY) pushes straight up and stops the fall without making the body slide. Every BoundArea with an OnTouch that a shape overlaps (solid or not) is touched once, last.
+wall, and a walkable floor (MinFloorNormalY) pushes straight up and stops the fall without making the body slide. A triangle is solid for a shape if the shape's behaviour collides with the triangle's (BABehavior::collidesWith); every interaction either side has for the other's tags (BABehavior::availableInteractions) is called once, last, whether the triangle is solid or not.
 */
 static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCapsules_)
 {
@@ -232,8 +242,7 @@ static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCap
 	glm::vec3 step = delta / static_cast<float>(steps);
 
 	std::vector<QuadTreeEntry> candidates;
-	struct Touched { const BoundArea* pArea; void (*pOnTouch)(PoolId); };
-	std::vector<Touched> touched;
+	std::vector<Interaction> interactions;
 	for(int s = 0; s < steps; s++)
 	{
 		glm::vec3 before = position;
@@ -255,9 +264,12 @@ static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCap
 				{
 					const Collision& rCollision = Globals::Physics::collisions[rEntry.collisionId];
 					const CollisionMesh& rMesh = rCollision.mesh;
-					bool solid;
-					const BoundArea* pArea = boundAreaOf(rMesh, rEntry.triangle, solid);
-					bool touchable = pArea != nullptr && pArea->OnTouch != nullptr;
+					PoolId areaId = rCollision.behaviorOf(rEntry.triangle);
+					if(areaId == UninitializedPoolId) continue;
+					const BABehavior& rArea = Globals::Game::behaviors[areaId];
+					const BABehavior& rMoverBehavior = Globals::Game::behaviors[rCapsule.behavior];
+					bool solid = rMoverBehavior.collidesWith(rArea);
+					bool touchable = rMoverBehavior.interactsWith(rArea) || rArea.interactsWith(rMoverBehavior);
 					if(!solid && !touchable) continue;
 
 					glm::vec3 a = rMesh.vertices[rMesh.indices[rEntry.triangle * 3]];
@@ -274,7 +286,7 @@ static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCap
 					float distance = glm::length(away);
 					if(distance >= rCapsule.radius) continue;
 
-					if(touchable && std::find_if(touched.begin(), touched.end(), [pArea](const Touched& rTouched) { return rTouched.pArea == pArea; }) == touched.end()) touched.push_back(Touched{pArea, pArea->OnTouch});
+					if(touchable) collectInteractions(rMoverBehavior, entityId, rArea, rCollision.entityId, interactions);
 					if(!solid) continue;
 
 					float depth = rCapsule.radius - distance;
@@ -312,12 +324,395 @@ static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCap
 	}
 
 	rEntity.stagingPosition = position;
-	rEntity.setPosition(position);
+	rEntity.moveTo(position);
 
-	/* The callbacks run last: they may add or remove entities or areas, which invalidates rEntity and the area pointers (kept only to tell areas apart). */
-	for(const Touched& rTouched : touched)
+	/* The callbacks run last: they may add or remove entities or behaviours, which invalidates rEntity (the areas are kept by PoolId). */
+	for(const Interaction& rInteraction : interactions)
 	{
-		rTouched.pOnTouch(entityId);
+		rInteraction.pFunction(rInteraction.parent, rInteraction.contact);
+	}
+}
+
+/*
+A shape of an entity's collision in world space, for the contacts between entities: a capsule (a segment swept by a radius, a sphere has no length) or a box. Reduced the way the lines view draws the
+shape (CollisionView.cpp, addShapeLines), so what is drawn is what touches: the entity's rotation applies to SADX entities only, and an SADX capsule (form 6) stands along y while Shadow's (forms 6 and
+11) lies along its z axis. Hypotheses (the forms' meanings are not decoded): a cylinder (forms 1, 2: radius a, height b along y; form 11: radius a, half length b along z) is touched as the capsule
+inscribed in it, and the boxes (forms 3, 4, 5, 7 with half sizes a, b, c) as boxes. Other forms are not touched.
+*/
+struct WorldShape
+{
+	bool isBox;
+	glm::vec3 center;
+	glm::vec3 axis;
+	float halfLength;
+	float radius;
+	glm::mat3 orientation;
+	glm::vec3 halfSizes;
+	float boundingRadius;
+};
+
+static bool worldShapeOf(const Entity& rEntity_, const CollisionShape& rShape_, WorldShape& rOut_)
+{
+	bool sadx = rEntity_.sourceEngine == SA_NINJA;
+	glm::mat4 entityRotation = sadx ? rEntity_.rotation : glm::mat4(1.0f);
+	glm::mat4 rotation = entityRotation * Graphics::composeNinjaTransform(glm::vec3(0.0f), glm::vec3(rShape_.angle), glm::vec3(1.0f), Graphics::NinjaNoPosition | Graphics::NinjaNoScale);
+	if(sadx && rShape_.form == 6) rotation = rotation * glm::rotate(glm::mat4(1.0f), -glm::half_pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
+	glm::vec3 alongY = glm::vec3(rotation * glm::vec4(0.0f, 1.0f, 0.0f, 0.0f));
+	glm::vec3 alongZ = glm::vec3(rotation * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f));
+
+	rOut_.isBox = false;
+	rOut_.center = rEntity_.position + glm::vec3(entityRotation * glm::vec4(rShape_.center, 0.0f));
+	rOut_.axis = alongZ;
+	rOut_.halfLength = 0.0f;
+	rOut_.radius = rShape_.a;
+	rOut_.orientation = glm::mat3(1.0f);
+	rOut_.halfSizes = glm::vec3(0.0f);
+	if(rShape_.form == 0)
+	{
+	}
+	else if(rShape_.form == 6)
+	{
+		rOut_.halfLength = rShape_.b;
+	}
+	else if(rShape_.form == 1 || rShape_.form == 2)
+	{
+		rOut_.axis = alongY;
+		rOut_.halfLength = std::max(rShape_.b * 0.5f - rShape_.a, 0.0f);
+	}
+	else if(rShape_.form == 11)
+	{
+		rOut_.halfLength = std::max(rShape_.b - rShape_.a, 0.0f);
+	}
+	else if((rShape_.form >= 3 && rShape_.form <= 5) || rShape_.form == 7)
+	{
+		rOut_.isBox = true;
+		rOut_.orientation = glm::mat3(rotation);
+		rOut_.halfSizes = glm::vec3(rShape_.a, rShape_.b, rShape_.c);
+	}
+	else
+	{
+		return false;
+	}
+	rOut_.boundingRadius = rOut_.isBox ? glm::length(rOut_.halfSizes) : rOut_.halfLength + rOut_.radius;
+	return true;
+}
+
+/* The squared distance from a point in a box's own space to the box [-half, half]. */
+static float boxDistanceSquared(const glm::vec3& rPoint_, const glm::vec3& rHalf_)
+{
+	glm::vec3 outside = glm::max(glm::abs(rPoint_) - rHalf_, glm::vec3(0.0f));
+	return glm::dot(outside, outside);
+}
+
+/*
+The point of the capsule's segment closest to the box, in the box's own space (rSegmentPoint_), found by narrowing down along the segment: the distance to a convex box is convex along a line.
+*/
+static void closestSegmentPointToBox(const WorldShape& rCapsule_, const WorldShape& rBox_, glm::vec3& rSegmentPoint_)
+{
+	glm::mat3 toLocal = glm::transpose(rBox_.orientation);
+	glm::vec3 from = toLocal * (rCapsule_.center - rCapsule_.axis * rCapsule_.halfLength - rBox_.center);
+	glm::vec3 to = toLocal * (rCapsule_.center + rCapsule_.axis * rCapsule_.halfLength - rBox_.center);
+	float low = 0.0f;
+	float high = 1.0f;
+	for(int i = 0; i < 24; i++)
+	{
+		float a = low + (high - low) / 3.0f;
+		float b = high - (high - low) / 3.0f;
+		if(boxDistanceSquared(from + (to - from) * a, rBox_.halfSizes) < boxDistanceSquared(from + (to - from) * b, rBox_.halfSizes)) high = b;
+		else low = a;
+	}
+	rSegmentPoint_ = from + (to - from) * ((low + high) * 0.5f);
+}
+
+static bool boxesOverlap(const WorldShape& rA_, const WorldShape& rB_)
+{
+	glm::vec3 between = rB_.center - rA_.center;
+	auto separated = [&](glm::vec3 axis_)
+	{
+		if(glm::dot(axis_, axis_) < 1e-8f) return false;
+		axis_ = glm::normalize(axis_);
+		float reachA = 0.0f;
+		float reachB = 0.0f;
+		for(int i = 0; i < 3; i++)
+		{
+			reachA += rA_.halfSizes[i] * glm::abs(glm::dot(rA_.orientation[i], axis_));
+			reachB += rB_.halfSizes[i] * glm::abs(glm::dot(rB_.orientation[i], axis_));
+		}
+		return glm::abs(glm::dot(between, axis_)) > reachA + reachB;
+	};
+	for(int i = 0; i < 3; i++)
+	{
+		if(separated(rA_.orientation[i]) || separated(rB_.orientation[i])) return false;
+		for(int j = 0; j < 3; j++)
+		{
+			if(separated(glm::cross(rA_.orientation[i], rB_.orientation[j]))) return false;
+		}
+	}
+	return true;
+}
+
+static bool shapesOverlap(const WorldShape& rA_, const WorldShape& rB_)
+{
+	if(glm::distance(rA_.center, rB_.center) > rA_.boundingRadius + rB_.boundingRadius) return false;
+	if(rA_.isBox && rB_.isBox) return boxesOverlap(rA_, rB_);
+	if(!rA_.isBox && !rB_.isBox)
+	{
+		glm::vec3 onA;
+		glm::vec3 onB;
+		closestPointsOfSegments(rA_.center - rA_.axis * rA_.halfLength, rA_.center + rA_.axis * rA_.halfLength, rB_.center - rB_.axis * rB_.halfLength, rB_.center + rB_.axis * rB_.halfLength, onA, onB);
+		return glm::distance(onA, onB) < rA_.radius + rB_.radius;
+	}
+	const WorldShape& rCapsule = rA_.isBox ? rB_ : rA_;
+	const WorldShape& rBox = rA_.isBox ? rA_ : rB_;
+	glm::vec3 closest;
+	closestSegmentPointToBox(rCapsule, rBox, closest);
+	return boxDistanceSquared(closest, rBox.halfSizes) < rCapsule.radius * rCapsule.radius;
+}
+
+/*
+How far and which way a capsule or sphere (rMover_) has to move to stop overlapping another shape: rPush_ is a unit direction (away from rOther_) and rDepth_ the distance; false if they do not overlap.
+Inside a box the way out is along the box axis it is nearest to the surface of.
+*/
+static bool pushOutOf(const WorldShape& rMover_, const WorldShape& rOther_, glm::vec3& rPush_, float& rDepth_)
+{
+	if(glm::distance(rMover_.center, rOther_.center) > rMover_.boundingRadius + rOther_.boundingRadius) return false;
+	if(!rOther_.isBox)
+	{
+		glm::vec3 onMover;
+		glm::vec3 onOther;
+		closestPointsOfSegments(rMover_.center - rMover_.axis * rMover_.halfLength, rMover_.center + rMover_.axis * rMover_.halfLength, rOther_.center - rOther_.axis * rOther_.halfLength, rOther_.center + rOther_.axis * rOther_.halfLength, onMover, onOther);
+		float distance = glm::distance(onMover, onOther);
+		float reach = rMover_.radius + rOther_.radius;
+		if(distance >= reach) return false;
+		rPush_ = distance > 1e-5f ? (onMover - onOther) / distance : glm::vec3(0.0f, 1.0f, 0.0f);
+		rDepth_ = reach - distance;
+		return true;
+	}
+
+	glm::vec3 local;
+	closestSegmentPointToBox(rMover_, rOther_, local);
+	glm::vec3 clamped = glm::clamp(local, -rOther_.halfSizes, rOther_.halfSizes);
+	glm::vec3 away = local - clamped;
+	float distance = glm::length(away);
+	if(distance >= rMover_.radius) return false;
+	if(distance > 1e-5f)
+	{
+		rPush_ = rOther_.orientation * (away / distance);
+		rDepth_ = rMover_.radius - distance;
+		return true;
+	}
+	int nearest = 0;
+	float nearestGap = 1e30f;
+	for(int i = 0; i < 3; i++)
+	{
+		float gap = rOther_.halfSizes[i] - glm::abs(local[i]);
+		if(gap < nearestGap)
+		{
+			nearestGap = gap;
+			nearest = i;
+		}
+	}
+	rPush_ = rOther_.orientation[nearest] * (local[nearest] >= 0.0f ? 1.0f : -1.0f);
+	rDepth_ = rMover_.radius + nearestGap;
+	return true;
+}
+
+/*
+The contacts between the shapes of different entities, after every entity has moved. Only shapes whose behaviour has any rule (BABehavior::hasRules) start a test (a pair is looked at once, from its first
+active shape), and a pair is overlap-tested only if one side has an interaction for a tag of the other:
+- A capsule or sphere shape of an entity with a physics is pushed out of every shape of another entity that its behaviour collides with (BABehavior::collidesWith: the deepest first, up to MaxPushIterations times), the entity
+  (all its shapes) moves by the sum and its velocity loses the part going into the shapes. The other entity is not moved (a physics entity is pushed by what it collides with, not by what collides with it).
+- Every overlap of two shapes calls the interactions each side has for the other's tags (BABehavior::availableInteractions) with the shape's own entity as the parent and the other shape's entity as the contact
+  (Collision::entityId), each once, last (the callbacks may change the pools). A pair with a collision rule but no interaction is not tested (the push-out above has done what it does).
+*/
+/* True if two bounding spheres do not touch (squared distances, no square root: this runs for every pair). */
+static bool spheresApart(const glm::vec3& rCenterA_, float radiusA_, const glm::vec3& rCenterB_, float radiusB_)
+{
+	glm::vec3 between = rCenterA_ - rCenterB_;
+	float reach = radiusA_ + radiusB_;
+	return glm::dot(between, between) > reach * reach;
+}
+
+/*
+Where a shape's bounding sphere is, without building its orientation (the angles of the shape do not move a sphere around its center): the center in the world and the radius, the same as WorldShape's
+boundingRadius. False for a form that is not touched. Cheap enough to do for every shape every frame; the full WorldShape is only built for the pairs that get past it.
+*/
+static bool boundsOf(const Entity& rEntity_, const CollisionShape& rShape_, glm::vec3& rCenter_, float& rRadius_)
+{
+	if(rShape_.form == 0) rRadius_ = rShape_.a;
+	else if(rShape_.form == 6) rRadius_ = rShape_.b + rShape_.a;
+	else if(rShape_.form == 1 || rShape_.form == 2) rRadius_ = std::max(rShape_.b * 0.5f - rShape_.a, 0.0f) + rShape_.a;
+	else if(rShape_.form == 11) rRadius_ = std::max(rShape_.b - rShape_.a, 0.0f) + rShape_.a;
+	else if((rShape_.form >= 3 && rShape_.form <= 5) || rShape_.form == 7) rRadius_ = glm::length(glm::vec3(rShape_.a, rShape_.b, rShape_.c));
+	else return false;
+	glm::vec3 center = rShape_.center;
+	if(rEntity_.sourceEngine == SA_NINJA) center = glm::vec3(rEntity_.rotation * glm::vec4(center, 0.0f));
+	rCenter_ = rEntity_.position + center;
+	return true;
+}
+
+static void updateEntityContacts()
+{
+	struct ShapeRef
+	{
+		uint32_t entity;
+		PoolId parent;
+		PoolId behaviorId;
+		const BABehavior* pBehavior;
+		const CollisionShape* pShape;
+		glm::vec3 center;
+		float radius;
+		bool active;
+		bool built;
+		WorldShape shape;
+	};
+	std::vector<ShapeRef> shapes;
+	bool anyActive = false;
+	/* Only the active entities have shapes in the contacts (SpatialIndex::updateActive). */
+	for(uint32_t i : Globals::Game::spatialIndex.activeEntities)
+	{
+		if(!Globals::Game::entities.alive[i]) continue;
+		const Entity& rEntity = Globals::Game::entities.objects[i];
+		if(rEntity.collisionId == UninitializedPoolId) continue;
+		const Collision& rCollision = Globals::Physics::collisions[rEntity.collisionId];
+		for(const CollisionShape& rShape : rCollision.shapes)
+		{
+			if(rShape.behavior == UninitializedPoolId) continue;
+			ShapeRef ref;
+			ref.entity = i;
+			ref.parent = rCollision.entityId;
+			ref.behaviorId = rShape.behavior;
+			ref.pBehavior = &Globals::Game::behaviors[rShape.behavior];
+			ref.pShape = &rShape;
+			ref.active = ref.pBehavior->hasRules();
+			ref.built = false;
+			if(!boundsOf(rEntity, rShape, ref.center, ref.radius)) continue;
+			anyActive = anyActive || ref.active;
+			shapes.push_back(ref);
+		}
+	}
+	if(!anyActive) return;
+
+	/* The full shape of a reference, built the first time it is needed (the entity does not change while this runs, except by the push-outs, which move built shapes along). */
+	auto shapeOf = [&](ShapeRef& rRef_) -> const WorldShape&
+	{
+		if(!rRef_.built)
+		{
+			worldShapeOf(Globals::Game::entities.objects[rRef_.entity], *rRef_.pShape, rRef_.shape);
+			rRef_.built = true;
+		}
+		return rRef_.shape;
+	};
+
+	/*
+	A uniform grid of the shapes' bounding spheres (each shape is in every cell its box touches), so a shape is only tested against the shapes of the cells around it instead of against all of them: with a
+	few hundred objects with rules and thousands of shapes, testing every pair every tick was what made the frames slow. candidatesOf gives each shape near a reference once (stamps tell the ones already given).
+	*/
+	constexpr float CellSize = 128.0f;
+	std::unordered_map<uint64_t, std::vector<uint32_t>> grid;
+	auto cellKey = [](int x_, int y_, int z_) -> uint64_t
+	{
+		return (static_cast<uint64_t>(x_ & 0x1FFFFF) << 42) | (static_cast<uint64_t>(y_ & 0x1FFFFF) << 21) | static_cast<uint64_t>(z_ & 0x1FFFFF);
+	};
+	auto forEachCell = [&](const glm::vec3& rCenter_, float radius_, auto&& rVisit_)
+	{
+		glm::ivec3 low = glm::ivec3(glm::floor((rCenter_ - glm::vec3(radius_)) / CellSize));
+		glm::ivec3 high = glm::ivec3(glm::floor((rCenter_ + glm::vec3(radius_)) / CellSize));
+		for(int x = low.x; x <= high.x; x++)
+		{
+			for(int y = low.y; y <= high.y; y++)
+			{
+				for(int z = low.z; z <= high.z; z++) rVisit_(cellKey(x, y, z));
+			}
+		}
+	};
+	for(uint32_t s = 0; s < shapes.size(); s++)
+	{
+		forEachCell(shapes[s].center, shapes[s].radius, [&](uint64_t key_) { grid[key_].push_back(s); });
+	}
+	std::vector<uint32_t> stamps(shapes.size(), 0);
+	uint32_t stamp = 0;
+	auto candidatesOf = [&](const glm::vec3& rCenter_, float radius_, std::vector<uint32_t>& rOut_)
+	{
+		rOut_.clear();
+		stamp++;
+		forEachCell(rCenter_, radius_, [&](uint64_t key_)
+		{
+			auto found = grid.find(key_);
+			if(found == grid.end()) return;
+			for(uint32_t index : found->second)
+			{
+				if(stamps[index] == stamp) continue;
+				stamps[index] = stamp;
+				rOut_.push_back(index);
+			}
+		});
+	};
+	std::vector<uint32_t> candidates;
+
+	std::vector<glm::vec3> shifts(Globals::Game::entities.objects.size(), glm::vec3(0.0f));
+	for(ShapeRef& rMover : shapes)
+	{
+		const Entity& rEntity = Globals::Game::entities.objects[rMover.entity];
+		if(rEntity.physicsId == UninitializedPoolId || rMover.pBehavior->availableCollisions.empty() || rMover.pShape->form > 6) continue;
+		if(shapeOf(rMover).isBox) continue;
+		for(int iteration = 0; iteration < MaxPushIterations; iteration++)
+		{
+			float deepest = 0.0f;
+			glm::vec3 direction(0.0f);
+			candidatesOf(rMover.center, rMover.radius * 2.0f, candidates);
+			for(uint32_t index : candidates)
+			{
+				ShapeRef& rOther = shapes[index];
+				if(rOther.entity == rMover.entity || !rMover.pBehavior->collidesWith(*rOther.pBehavior)) continue;
+				if(spheresApart(rMover.center, rMover.radius, rOther.center, rOther.radius)) continue;
+				glm::vec3 push;
+				float depth;
+				if(pushOutOf(rMover.shape, shapeOf(rOther), push, depth) && depth > deepest)
+				{
+					deepest = depth;
+					direction = push;
+				}
+			}
+			if(deepest <= 0.0f) break;
+			for(ShapeRef& rShape : shapes)
+			{
+				if(rShape.entity != rMover.entity) continue;
+				rShape.center += direction * deepest;
+				if(rShape.built) rShape.shape.center += direction * deepest;
+			}
+			shifts[rMover.entity] += direction * deepest;
+			glm::vec3& rVelocity = Globals::Physics::bodies[rEntity.physicsId].velocity;
+			float into = glm::dot(rVelocity, direction);
+			if(into < 0.0f) rVelocity -= direction * into;
+		}
+	}
+	for(uint32_t i = 0; i < shifts.size(); i++)
+	{
+		if(shifts[i] == glm::vec3(0.0f)) continue;
+		Entity& rEntity = Globals::Game::entities.objects[i];
+		rEntity.moveTo(rEntity.position + shifts[i]);
+	}
+
+	std::vector<Interaction> interactions;
+	for(size_t i = 0; i < shapes.size(); i++)
+	{
+		if(!shapes[i].active) continue;
+		candidatesOf(shapes[i].center, shapes[i].radius, candidates);
+		for(uint32_t j : candidates)
+		{
+			if(shapes[j].entity == shapes[i].entity || (shapes[j].active && j < i)) continue;
+			if(spheresApart(shapes[i].center, shapes[i].radius, shapes[j].center, shapes[j].radius)) continue;
+			const BABehavior& rA = *shapes[i].pBehavior;
+			const BABehavior& rB = *shapes[j].pBehavior;
+			if(!rA.interactsWith(rB) && !rB.interactsWith(rA)) continue;
+			if(!shapesOverlap(shapeOf(shapes[i]), shapeOf(shapes[j]))) continue;
+			collectInteractions(rA, shapes[i].parent, rB, shapes[j].parent, interactions);
+		}
+	}
+	for(const Interaction& rInteraction : interactions)
+	{
+		rInteraction.pFunction(rInteraction.parent, rInteraction.contact);
 	}
 }
 
@@ -336,7 +731,8 @@ void CollisionSystem::rebuildQuadTree()
 void CollisionSystem::update()
 {
 	std::vector<QuadTreeEntry> candidates;
-	for(uint32_t i = 0; i < Globals::Game::entities.objects.size(); i++)
+	/* Only the active entities move (SpatialIndex::updateActive). */
+	for(uint32_t i : Globals::Game::spatialIndex.activeEntities)
 	{
 		if(!Globals::Game::entities.alive[i]) continue;
 		Entity& rEntity = Globals::Game::entities.objects[i];
@@ -359,24 +755,28 @@ void CollisionSystem::update()
 		Globals::Physics::quadTree.query(glm::min(start, end), glm::max(start, end), candidates);
 
 		/*
-		Every triangle the move crosses is looked up in the bound areas: the nearest solid one stops the entity, and every area with an
-		OnTouch that is crossed before that point (or anywhere, if nothing solid is hit) is touched, once.
+		Every triangle the move crosses has its behaviour looked at: the nearest one a Body collides with stops the entity, and every interaction of a Body or of the behaviour of a triangle crossed before that point
+		(or anywhere, if nothing solid is hit) is called, once.
 		*/
-		struct Touch { float t; const BoundArea* pArea; void (*pOnTouch)(PoolId); };
+		const BABehavior& rBody = Globals::Game::behaviors[Globals::Game::baBehaviors.body];
+		struct Touch { float t; PoolId area; PoolId parent; };
 		std::vector<Touch> touches;
 		float nearest = 2.0f;
 		for(const QuadTreeEntry& rEntry : candidates)
 		{
 			const Collision& rCollision = Globals::Physics::collisions[rEntry.collisionId];
 			const CollisionMesh& rMesh = rCollision.mesh;
-			bool solid;
-			const BoundArea* pArea = boundAreaOf(rMesh, rEntry.triangle, solid);
-			if(!solid && (pArea == nullptr || pArea->OnTouch == nullptr)) continue;
+			PoolId areaId = rCollision.behaviorOf(rEntry.triangle);
+			if(areaId == UninitializedPoolId) continue;
+			const BABehavior& rArea = Globals::Game::behaviors[areaId];
+			bool solid = rBody.collidesWith(rArea);
+			bool touchable = rBody.interactsWith(rArea) || rArea.interactsWith(rBody);
+			if(!solid && !touchable) continue;
 
 			float t;
 			if(!segmentTriangle(start - rCollision.position, end - rCollision.position, rMesh.vertices[rMesh.indices[rEntry.triangle * 3]], rMesh.vertices[rMesh.indices[rEntry.triangle * 3 + 1]], rMesh.vertices[rMesh.indices[rEntry.triangle * 3 + 2]], t)) continue;
 			if(solid && t < nearest) nearest = t;
-			if(pArea != nullptr && pArea->OnTouch != nullptr) touches.push_back(Touch{t, pArea, pArea->OnTouch});
+			if(touchable) touches.push_back(Touch{t, areaId, rCollision.entityId});
 		}
 		if(nearest <= 1.0f)
 		{
@@ -384,17 +784,22 @@ void CollisionSystem::update()
 			Globals::Physics::bodies[rEntity.physicsId].velocity.y = 0.0f;
 		}
 
-		rEntity.setPosition(rEntity.stagingPosition);
+		rEntity.moveTo(rEntity.stagingPosition);
 
-		/* The callbacks run last: they may add or remove entities or areas, which invalidates rEntity and the area pointers (kept only to tell areas apart). */
+		/* The callbacks run last: they may add or remove entities or behaviours, which invalidates rEntity and rBody (the areas are kept by PoolId). */
 		PoolId entityId = PoolId{i, Globals::Game::entities.generation[i]};
-		std::vector<const BoundArea*> touched;
+		std::vector<Interaction> interactions;
 		for(const Touch& rTouch : touches)
 		{
-			if(rTouch.t > nearest || std::find(touched.begin(), touched.end(), rTouch.pArea) != touched.end()) continue;
-			touched.push_back(rTouch.pArea);
-			rTouch.pOnTouch(entityId);
+			if(rTouch.t > nearest) continue;
+			collectInteractions(rBody, entityId, Globals::Game::behaviors[rTouch.area], rTouch.parent, interactions);
+		}
+		for(const Interaction& rInteraction : interactions)
+		{
+			rInteraction.pFunction(rInteraction.parent, rInteraction.contact);
 		}
 	}
+
+	updateEntityContacts();
 }
 }

@@ -3,13 +3,18 @@
 #include "Level.h"
 #include <format>
 #include <stdexcept>
+#include <utility>
 
 PoolId addEntity(const char* name_, glm::vec3 position_)
 {
-    return Globals::Game::entities.add(name_, Entity{SA_NINJA, UninitializedPoolId, position_}); 
+    PoolId id = Globals::Game::entities.add(name_, Entity{SA_NINJA, UninitializedPoolId, position_});
+    Globals::Game::entities[id].selfId = id;
+    Globals::Game::entities[id].previousPosition = position_;
+    Globals::Game::spatialIndex.addDynamic(id);
+    return id;
 }
 
-/* The reference is valid only until the next addEntity (the pool can move its entities): keep the PoolId, not the reference. */
+/* The reference stays valid while the entity does (the pool does not move its entities when it grows): once it is removed the slot can be reused, so keep the PoolId across anything that removes entities. */
 Entity& getEntity(PoolId id_)
 {
     return Globals::Game::entities[id_];
@@ -34,10 +39,77 @@ PoolId addLevel(const char* name_, glm::vec3 position_)
     return Globals::Game::levels.add(name_, Level{SA_NINJA, UninitializedPoolId, position_}); 
 }
 
-/* Registers what a triangle attribute does (see BoundArea). At most one area per attribute is meant: the first one found for an attribute is used. */
-PoolId addBoundArea(uint32_t attribute_, bool isCollision_, void (*pOnTouch_)(PoolId entityId_))
+/* Adds a collision tag (a category, see BATag) under a name. */
+PoolId addBATag(const BATagKey& rKey_)
 {
-    return Globals::Game::boundAreas.add(BoundArea{attribute_, isCollision_, pOnTouch_});
+    return Globals::Game::baBehaviors.addTag(rKey_);
+}
+
+/* Adds a collision behaviour (a bag of tags and rules, see BABehavior) under its key's name. */
+PoolId addBehavior(const BABehaviorKey& rKey_, BABehavior behavior_)
+{
+    return Globals::Game::baBehaviors.add(rKey_, std::move(behavior_));
+}
+
+/* True if the id names a live entity (its slot is alive and the generation matches), for code that holds an id across things that can remove entities. */
+bool entityExists(PoolId entityId_)
+{
+    return entityId_.id < Globals::Game::entities.alive.size() && Globals::Game::entities.alive[entityId_.id] && Globals::Game::entities.generation[entityId_.id] == entityId_.generation;
+}
+
+/*
+Sets the animation an entity wants (Entity::animationIntent): the graphics side switches to it once a frame, only if it is not already playing, so a behaviour can call this every tick. The key has to outlive the
+entity (the keys of ResourceKeys.h are static); the last call wins. The SA overload loops, as playSAMotion does.
+*/
+void changeAnimation(PoolId entityId_, const SAMotionKey& rKey_)
+{
+    Entity& rEntity = Globals::Game::entities[entityId_];
+    rEntity.animationIntent = AnimationIntent{&rKey_, nullptr, true};
+}
+
+void changeAnimation(PoolId entityId_, const STH2005::MotionKey& rKey_, bool loop_)
+{
+    Entity& rEntity = Globals::Game::entities[entityId_];
+    rEntity.animationIntent = AnimationIntent{nullptr, &rKey_, loop_};
+}
+
+/* Posts a one-shot presentation event (see GameEvents) and registers what handles one by name. */
+void postGameEvent(const char* name_, PoolId entityId_, const glm::vec3& rPosition_)
+{
+    Globals::Game::gameEvents.post(name_, entityId_, rPosition_);
+}
+
+void addGameEventHandler(const char* name_, GameEventHandler pHandler_)
+{
+    Globals::Game::gameEvents.addHandler(name_, pHandler_);
+}
+
+/* The state of an entity's behaviours (EntityState.h), made on the first call. The reference stays valid until the entity is removed. */
+EntityState& entityStateOf(PoolId entityId_)
+{
+    Entity& rEntity = Globals::Game::entities[entityId_];
+    if(rEntity.stateId == UninitializedPoolId)
+    {
+        rEntity.stateId = Globals::Game::entityStates.add(EntityState{});
+    }
+    return Globals::Game::entityStates[rEntity.stateId];
+}
+
+/* Adds an entity behaviour under a name (see EntityBehavior); find it again with Globals::Game::entityBehaviorTypes.nameToId. */
+PoolId addEntityBehavior(const char* name_, void (*pBehave_)(PoolId entityId_))
+{
+    return Globals::Game::entityBehaviorTypes.add(name_, EntityBehavior{pBehave_});
+}
+
+/* Stacks a behaviour on an entity (after the ones it has); its first one makes the entity's record in Globals::Game::entityBehaviors, which the GameplaySystem walks. */
+void giveEntityBehavior(PoolId entityId_, PoolId behaviorId_)
+{
+    Entity& rEntity = Globals::Game::entities[entityId_];
+    if(rEntity.behaviorSetId == UninitializedPoolId)
+    {
+        rEntity.behaviorSetId = Globals::Game::entityBehaviors.add(EntityBehaviorSet{entityId_, {}});
+    }
+    Globals::Game::entityBehaviors[rEntity.behaviorSetId].behaviorIds.push_back(behaviorId_);
 }
 
 /* Moves the player camera (index 0 of Globals::Game::cameras); the view and its UBO are updated by Camera::set. */
@@ -50,7 +122,7 @@ void setCameraPosition(const glm::vec3& rPosition_)
     Globals::Game::cameras[0].set(rPosition_);
 }
 
-/* Same lifetime warning as getEntity: valid only until the next addLevel. */
+/* Same lifetime as getEntity: valid while the level is. */
 Level& getLevel(PoolId id_)
 {
     return Globals::Game::levels[id_];

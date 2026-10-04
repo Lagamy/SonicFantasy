@@ -9,15 +9,15 @@ stage's object list whose model was found, named SAEntity_<stage>_<type>, per st
 The model of an object is a hypothesis (the first model its function refers to, or by name for the shared objects); motions are the INI's, collisions the tables its code loads.
 */
 /* RING: Ring */
-inline const SAEntityKey SAEntity_EmeraldCoast_0{"RING", {"_Main.rel", 0x2A9870}, {"obj_regular.gvm"}, {}, {}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_0{"RING", {"_Main.rel", 0x2A9870}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C6E58, 1}}, {}, {}};
 /* SPRING: Spring */
-inline const SAEntityKey SAEntity_EmeraldCoast_1{"SPRING", {"_Main.rel", 0x2AB780}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C2488, 1}, {"_Main.rel", 0x2C2924, 1}}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_1{"SPRING", {"_Main.rel", 0x2AB780}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C2410, 1}}, {}, {}};
 /* SPRINGB: Rotatable Spring */
-inline const SAEntityKey SAEntity_EmeraldCoast_2{"SPRINGB", {"_Main.rel", 0x2AAC24}, {"obj_regular.gvm"}, {}, {}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_2{"SPRINGB", {"_Main.rel", 0x2AAC24}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C2440, 1}}, {}, {}};
 /* O AXPNL: Dash Panel */
-inline const SAEntityKey SAEntity_EmeraldCoast_3{"O AXPNL", {"_Main.rel", 0x2ADA90}, {"obj_regular.gvm"}, {}, {}, {{'Z', 2, 0, false}, {'X', 0, 0, false}, {'Y', 1, 32768, false}}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_3{"O AXPNL", {"_Main.rel", 0x2ADA90}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C0D30, 1}}, {{'Z', 2, 0, false}, {'X', 0, 0, false}, {'Y', 1, 32768, false}}, {}};
 /* O IRONB: Iron Ball (Joint) */
-inline const SAEntityKey SAEntity_EmeraldCoast_4{"O IRONB", {"_Main.rel", 0x2ACFDC}, {"obj_regular.gvm"}, {}, {}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_4{"O IRONB", {"_Main.rel", 0x2ACFDC}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C1348, 1}}, {}, {}};
 /* O FeBJG: Iron Ball */
 inline const SAEntityKey SAEntity_EmeraldCoast_5{"O FeBJG", {"_Main.rel", 0x2AC9A4}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C1348, 1}}, {}, {}};
 /* O TOGE: Spikes */
@@ -25,69 +25,69 @@ inline const SAEntityKey SAEntity_EmeraldCoast_6{"O TOGE", {"_Main.rel", 0x2B039
 /* O EME P: Master Emerald Shard */
 inline const SAEntityKey SAEntity_EmeraldCoast_7{"O EME P", {"_Main.rel", 0x2AF5DC}, {"obj_regular.gvm"}, {}, {}, {}, {}};
 /* O RELEASE: Capsule */
-inline const SAEntityKey SAEntity_EmeraldCoast_8{"O RELEASE", {"_Main.rel", 0x2AF1EC}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C1ED8, 5}, {"_Main.rel", 0x2C1FC8, 1}, {"_Main.rel", 0x25C770, 1}}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_8{"O RELEASE", {"_Main.rel", 0x2AF1EC}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C1ED8, 5}, {"_Main.rel", 0x2C1FC8, 1}}, {}, {}};
 /* O SWITCH: Switch */
-inline const SAEntityKey SAEntity_EmeraldCoast_9{"O SWITCH", {"_Main.rel", 0x2B0FCC}, {"obj_regular.gvm"}, {}, {}, {{'X', 0, 0, false}, {'Y', 1, 0, false}, {'Z', 2, 0, false}}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_9{"O SWITCH", {"_Main.rel", 0x2B0FCC}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C2924, 1}}, {{'X', 0, 0, false}, {'Y', 1, 0, false}, {'Z', 2, 0, false}}, {}};
 /* CMN KUSA: Weed */
-inline const SAEntityKey SAEntity_EmeraldCoast_10{"CMN KUSA", {"_Main.rel", 0x2B92C4}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C10D0, 1}}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_10{"CMN KUSA", {"_Main.rel", 0x2B92C4}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C0F50, 1}}, {}, {}};
 /* CMN_DRING: Dash Ring */
 inline const SAEntityKey SAEntity_EmeraldCoast_11{"CMN_DRING", {"_Main.rel", 0x2B1E0C}, {"obj_regular.gvm"}, {}, {}, {{'X', 0, 0, false}, {'Y', 1, 0, false}, {'Z', 2, 0, false}}, {}};
 /* O BALOON: Balloon */
-inline const SAEntityKey SAEntity_EmeraldCoast_12{"O BALOON", {"_Main.rel", 0x2B2FC4}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C0E9C, 1}}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_12{"O BALOON", {"_Main.rel", 0x2B2FC4}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C0DB0, 2}}, {}, {}};
 /* O ITEMBOX: Item Box */
-inline const SAEntityKey SAEntity_EmeraldCoast_13{"O ITEMBOX", {"_Main.rel", 0x2B4084}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C14E0, 2}, {"_Main.rel", 0x2C1480, 2}, {"_Main.rel", 0x2C15B8, 1}}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_13{"O ITEMBOX", {"_Main.rel", 0x2B4084}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C14E0, 2}, {"_Main.rel", 0x2C1480, 2}}, {}, {}};
 /* Rocket H: Rocket Platform */
-inline const SAEntityKey SAEntity_EmeraldCoast_14{"Rocket H", {"_Main.rel", 0x2B4CA8}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C2188, 2}}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_14{"Rocket H", {"_Main.rel", 0x2B4CA8}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x25C770, 1}}, {}, {}};
 /* Rocket HS: Rocket Platform */
-inline const SAEntityKey SAEntity_EmeraldCoast_15{"Rocket HS", {"_Main.rel", 0x2B4CA8}, {"obj_regular.gvm"}, {}, {}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_15{"Rocket HS", {"_Main.rel", 0x2B4CA8}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x25C770, 1}}, {}, {}};
 /* Rocket V: Rocket Platform */
 inline const SAEntityKey SAEntity_EmeraldCoast_16{"Rocket V", {"_Main.rel", 0x2B4CA8}, {"obj_regular.gvm"}, {}, {}, {}, {}};
 /* Rocket VS: Rocket Platform */
 inline const SAEntityKey SAEntity_EmeraldCoast_17{"Rocket VS", {"_Main.rel", 0x2B4CA8}, {"obj_regular.gvm"}, {}, {}, {}, {}};
 /* O JPanel: Jump Panel */
-inline const SAEntityKey SAEntity_EmeraldCoast_18{"O JPanel", {"_Main.rel", 0x2B9DF4}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C16A0, 2}}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_18{"O JPanel", {"_Main.rel", 0x2B9DF4}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C1730, 1}, {"_Main.rel", 0x2C16A0, 2}}, {}, {}};
 /* O Save Point: Checkpoint */
-inline const SAEntityKey SAEntity_EmeraldCoast_19{"O Save Point", {"_Main.rel", 0x2BDC60}, {"obj_regular.gvm"}, {}, {}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_19{"O Save Point", {"_Main.rel", 0x2BDC60}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C2308, 1}}, {}, {}};
 /* O TIKAL: Spikes */
 inline const SAEntityKey SAEntity_EmeraldCoast_26{"O TIKAL", {"_Main.rel", 0x2B0398}, {"obj_regular.gvm"}, {}, {}, {}, {}};
 /* O BUBBLE: Dash Ring */
 inline const SAEntityKey SAEntity_EmeraldCoast_27{"O BUBBLE", {"_Main.rel", 0x2B1E0C}, {"obj_regular.gvm"}, {}, {}, {{'X', 0, 0, false}, {'Y', 1, 0, false}, {'Z', 2, 0, false}}, {}};
 /* E SARU: Kiki */
-inline const SAEntityKey SAEntity_EmeraldCoast_29{"E SARU", {"_Main.rel", 0x333A90}, {"e_saru.GVM"}, {{"_Main.rel", 0x338DF0, 38}, {"_Main.rel", 0x339994, 38}, {"_Main.rel", 0x334F50, 38}, {"_Main.rel", 0x335EC4, 38}, {"_Main.rel", 0x337038, 38}, {"_Main.rel", 0x337E7C, 38}}, {{"_Main.rel", 0x33AF3C, 1}, {"_Main.rel", 0x33AF6C, 3}, {"_Main.rel", 0x33EF98, 3}, {"_Main.rel", 0x341A7C, 1}, {"_Main.rel", 0x341AAC, 1}}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_29{"E SARU", {"_Main.rel", 0x333A90}, {"e_saru.GVM"}, {{"_Main.rel", 0x338DF0, 38}, {"_Main.rel", 0x339994, 38}, {"_Main.rel", 0x334F50, 38}, {"_Main.rel", 0x335EC4, 38}, {"_Main.rel", 0x337038, 38}, {"_Main.rel", 0x337E7C, 38}}, {{"_Main.rel", 0x33AF3C, 1}}, {{'Y', 0, 0, false}, {'Y', 1, 0, false}, {'Y', 3, 32768, false}}, {}};
 /* E SAITO: Rhinotank */
-inline const SAEntityKey SAEntity_EmeraldCoast_30{"E SAITO", {"_Main.rel", 0x32B5BC}, {"e_sai.GVM"}, {{"_Main.rel", 0x32BDC4, 13}, {"_Main.rel", 0x32C3A8, 13}}, {}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_30{"E SAITO", {"_Main.rel", 0x32B5BC}, {"e_sai.GVM"}, {{"_Main.rel", 0x32BDC4, 13}, {"_Main.rel", 0x32C3A8, 13}}, {{"_Main.rel", 0x3286D8, 2}}, {}, {}};
 /* E AMEMB: Sweeper */
 inline const SAEntityKey SAEntity_EmeraldCoast_31{"E AMEMB", {"_Main.rel", 0x2D0E68}, {"e_amenbo.GVM"}, {{"_Main.rel", 0x2D4360, 33}, {"_Main.rel", 0x2D8E28, 33}, {"_Main.rel", 0x2D62E4, 33}}, {{"_Main.rel", 0x2D8E3C, 1}}, {}, {}};
 /* YASI0: Palm Tree (Tall) */
 inline const SAEntityKey SAEntity_EmeraldCoast_32{"YASI0", {"_Stg01.rel", 0x1BE8A8}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x24A0F8, 1}}, {}, {}};
 /* YASI1: Palm Tree (Short) */
-inline const SAEntityKey SAEntity_EmeraldCoast_33{"YASI1", {"_Stg01.rel", 0x1BFB80}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x24A0F8, 1}}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_33{"YASI1", {"_Stg01.rel", 0x1BFB80}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x24A128, 1}}, {}, {}};
 /* YASI2: Palm Tree (Curved Top) */
-inline const SAEntityKey SAEntity_EmeraldCoast_34{"YASI2", {"_Stg01.rel", 0x1C0DF0}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x24A0F8, 1}}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_34{"YASI2", {"_Stg01.rel", 0x1C0DF0}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x24A158, 1}}, {}, {}};
 /* YASI3: Palm Tree (Leaning) */
-inline const SAEntityKey SAEntity_EmeraldCoast_35{"YASI3", {"_Stg01.rel", 0x1C2784}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x24A0F8, 1}}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_35{"YASI3", {"_Stg01.rel", 0x1C2784}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x24A188, 1}}, {}, {}};
 /* O BFLOOT: Rock Platform */
 inline const SAEntityKey SAEntity_EmeraldCoast_36{"O BFLOOT", {"_Stg01.rel", 0x1C49CC}, {"obj_beach.GVM"}, {}, {}, {}, {}};
 /* O BUNGA: Bungalow */
 inline const SAEntityKey SAEntity_EmeraldCoast_37{"O BUNGA", {"_Stg01.rel", 0x1C42D4}, {"obj_beach.GVM"}, {}, {}, {}, {}};
 /* O BGIRO: Rubber Rope */
-inline const SAEntityKey SAEntity_EmeraldCoast_38{"O BGIRO", {"_Stg01.rel", 0x2282AC}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x2493E8, 1}, {"_Stg01.rel", 0x249460, 3}}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_38{"O BGIRO", {"_Stg01.rel", 0x2282AC}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x2493E8, 1}, {"_Stg01.rel", 0x249388, 2}}, {{'Y', 1, 0, false}}, {}};
 /* O IWA: Water Platform */
 inline const SAEntityKey SAEntity_EmeraldCoast_39{"O IWA", {"_Stg01.rel", 0x1CC1FC}, {"obj_beach.GVM"}, {}, {}, {{'Z', 2, 0, false}, {'Y', 1, 0, false}, {'X', 0, 0, false}}, {}};
 /* O JUMP: Launch Board */
-inline const SAEntityKey SAEntity_EmeraldCoast_40{"O JUMP", {"_Stg01.rel", 0x224220}, {"obj_beach.GVM"}, {}, {}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_40{"O JUMP", {"_Stg01.rel", 0x224220}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x249558, 1}}, {{'Z', 2, 0, false}, {'Y', 1, 0, false}, {'X', 0, 0, false}}, {}};
 /* O IWAPO: Rock A */
 inline const SAEntityKey SAEntity_EmeraldCoast_41{"O IWAPO", {"_Stg01.rel", 0x224978}, {"obj_beach.GVM"}, {}, {}, {}, {}};
 /* O ROCK: Rock with Leaves */
 inline const SAEntityKey SAEntity_EmeraldCoast_42{"O ROCK", {"_Stg01.rel", 0x21E65C}, {"obj_beach.GVM"}, {}, {}, {}, {}};
 /* O FENA: Long Railing with One Post */
-inline const SAEntityKey SAEntity_EmeraldCoast_43{"O FENA", {"_Stg01.rel", 0x21CD04}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x2492C8, 1}, {"_Stg01.rel", 0x249388, 2}}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_43{"O FENA", {"_Stg01.rel", 0x21CD04}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x2492C8, 1}}, {}, {}};
 /* O FENB: Long Railing Post */
-inline const SAEntityKey SAEntity_EmeraldCoast_44{"O FENB", {"_Stg01.rel", 0x21CFF4}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x2492C8, 1}}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_44{"O FENB", {"_Stg01.rel", 0x21CFF4}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x2492F8, 1}}, {}, {}};
 /* O FENC: Short Railing with One Post */
-inline const SAEntityKey SAEntity_EmeraldCoast_45{"O FENC", {"_Stg01.rel", 0x21D468}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x2492C8, 1}}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_45{"O FENC", {"_Stg01.rel", 0x21D468}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x249328, 1}}, {}, {}};
 /* O FEND: Short Railing Post */
-inline const SAEntityKey SAEntity_EmeraldCoast_46{"O FEND", {"_Stg01.rel", 0x21D758}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x2492C8, 1}}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_46{"O FEND", {"_Stg01.rel", 0x21D758}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x249358, 1}}, {}, {}};
 /* O CORA: Coral 1 */
 inline const SAEntityKey SAEntity_EmeraldCoast_47{"O CORA", {"_Stg01.rel", 0x222298}, {"obj_beach.GVM"}, {}, {}, {}, {}};
 /* O CORB: Coral 2 */
@@ -111,11 +111,11 @@ inline const SAEntityKey SAEntity_EmeraldCoast_56{"O KAMOMEL", {"_Stg01.rel", 0x
 /* O KOMOMO: Sunlight Beam */
 inline const SAEntityKey SAEntity_EmeraldCoast_57{"O KOMOMO", {"_Stg01.rel", 0x227020}, {"obj_beach.GVM"}, {}, {}, {}, {}};
 /* O PARASOL: Parasol A */
-inline const SAEntityKey SAEntity_EmeraldCoast_58{"O PARASOL", {"_Stg01.rel", 0x205F98}, {"obj_beach.GVM"}, {}, {}, {}, {{"_Stg01.rel", 0x205F98}, {"_Stg01.rel", 0x207304}, {"_Stg01.rel", 0x209A80}, {"_Stg01.rel", 0x20B118}, {"_Stg01.rel", 0x20C9FC}}};
-/* O PIER: Pier Collision */
-inline const SAEntityKey SAEntity_EmeraldCoast_59{"O PIER", {"_Stg01.rel", 0x213AE0}, {"obj_beach.GVM"}, {}, {}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_58{"O PARASOL", {"_Stg01.rel", 0x205F98}, {"obj_beach.GVM"}, {}, {}, {}, {{"_Stg01.rel", 0x205F98}, {"_Stg01.rel", 0x207304}, {"_Stg01.rel", 0x209A80}, {"_Stg01.rel", 0x20B118}, {"_Stg01.rel", 0x20C9FC}}, {{{"_Stg01.rel", 0x249CD8, 2}}, {{"_Stg01.rel", 0x249CD8, 2}}, {{"_Stg01.rel", 0x249D38, 2}}, {{"_Stg01.rel", 0x249D38, 2}}, {{"_Stg01.rel", 0x249D38, 2}}}, 0};
+/* O PIER: Pier (Straight) */
+inline const SAEntityKey SAEntity_EmeraldCoast_59{"O PIER", {"_Stg01.rel", 0x215388}, {"obj_beach.GVM"}, {}, {}, {}, {{"_Stg01.rel", 0x215388}, {"_Stg01.rel", 0x219A40}}, {{{"_Stg01.rel", 0x249F74, 2}}, {{"_Stg01.rel", 0x249FD4, 2}}}, 1};
 /* O ASIATO: Sonic Footprints (Left) */
-inline const SAEntityKey SAEntity_EmeraldCoast_61{"O ASIATO", {"_Stg01.rel", 0x22D064}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x2490C8, 2}}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_61{"O ASIATO", {"_Stg01.rel", 0x22D064}, {"obj_beach.GVM"}, {}, {}, {}, {}};
 /* O BKUSA: Water Plant */
 inline const SAEntityKey SAEntity_EmeraldCoast_62{"O BKUSA", {"_Stg01.rel", 0x229490}, {"obj_beach.GVM"}, {}, {}, {}, {}};
 /* O K2: Leaf Cluster 2 */
@@ -123,19 +123,17 @@ inline const SAEntityKey SAEntity_EmeraldCoast_64{"O K2", {"_Stg01.rel", 0x22A29
 /* O TAKI: Palm Tree (Leaning) */
 inline const SAEntityKey SAEntity_EmeraldCoast_70{"O TAKI", {"_Stg01.rel", 0x1C2784}, {"obj_beach.GVM"}, {}, {}, {}, {}};
 /* O Rock2: Rock */
-inline const SAEntityKey SAEntity_EmeraldCoast_71{"O Rock2", {"_Stg01.rel", 0x23BBC8}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x24A088, 1}}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_71{"O Rock2", {"_Stg01.rel", 0x23BBC8}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x24A0B8, 1}}, {}, {}};
 /* O BED: Beach Bed */
-inline const SAEntityKey SAEntity_EmeraldCoast_73{"O BED", {"_Stg01.rel", 0x20E418}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x249128, 2}, {"_Stg01.rel", 0x2491EC, 1}}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_73{"O BED", {"_Stg01.rel", 0x20E418}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x249128, 2}}, {}, {}};
 /* O KASA: Straw Umbrella */
 inline const SAEntityKey SAEntity_EmeraldCoast_74{"O KASA", {"_Stg01.rel", 0x208E88}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x2495B8, 2}}, {{'Y', 1, 0, false}}, {}};
 /* S KAERU: Big Froggy */
 inline const SAEntityKey SAEntity_EmeraldCoast_77{"S KAERU", {"_Main.rel", 0x3490EC}, {"big_kaeru.GVM"}, {{"_Main.rel", 0x34C2B4, 15}, {"_Main.rel", 0x34DA18, 15}, {"_Main.rel", 0x350F9C, 15}}, {}, {}, {}};
 /* S GENE: Deep Sea Angler Fish Antenna */
 inline const SAEntityKey SAEntity_EmeraldCoast_78{"S GENE", {"_Stg01.rel", 0x266DF0}, {"anko_t.GVM"}, {{"_Stg01.rel", 0x27B780, 5}, {"_Stg01.rel", 0x27BCE4, 5}, {"_Stg01.rel", 0x27C248, 5}}, {}, {{'Y', 1, 32768, false}, {'Z', 2, 0, false}, {'X', 0, 0, false}}, {}};
-/* O BEWIND: Floating Pier */
-inline const SAEntityKey SAEntity_EmeraldCoast_79{"O BEWIND", {"_Stg01.rel", 0x1CB9C0}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x24A650, 2}, {"_Stg01.rel", 0x24A4D0, 4}, {"_Stg01.rel", 0x24A590, 4}}, {}, {}};
 /* O ItemBoxAir: Item Box (Air) */
-inline const SAEntityKey SAEntity_EmeraldCoast_82{"O ItemBoxAir", {"_Main.rel", 0x2BFF9C}, {"obj_regular.gvm"}, {}, {}, {}, {}};
+inline const SAEntityKey SAEntity_EmeraldCoast_82{"O ItemBoxAir", {"_Main.rel", 0x2BFF9C}, {"obj_regular.gvm"}, {}, {{"_Main.rel", 0x2C15B8, 1}}, {}, {}};
 
 inline const std::map<uint16_t, const char*> SAObjectTypeNames_EmeraldCoast{
 	{0, "RING"},
@@ -287,6 +285,5 @@ inline const std::vector<SAPlacedEntityKey> SAEntityTable_EmeraldCoast{
 	{74, SAEntity_EmeraldCoast_74},
 	{77, SAEntity_EmeraldCoast_77},
 	{78, SAEntity_EmeraldCoast_78},
-	{79, SAEntity_EmeraldCoast_79},
 	{82, SAEntity_EmeraldCoast_82},
 };

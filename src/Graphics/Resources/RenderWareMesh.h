@@ -1,4 +1,5 @@
 #pragma once
+#include "BoundingSphere.h"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -50,7 +51,12 @@ struct RenderWareMesh
 	std::vector<RenderWareFrame> frames;
 	std::vector<RenderWareAtomic> atomics;
 
+	BoundingSphere bounds;
+
 	void use();
 	void destroy();
+
+	/* Fills bounds from the vertices in the rest pose (a skinned vertex as if on its atomic's frame), once. */
+	void computeBounds();
 };
 }

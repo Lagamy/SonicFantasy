@@ -24,7 +24,7 @@ meshIndex, textureDictionaryIndex and bindingIndex are indices into that archive
 bindings (STH2005::NoIndex = untextured). They are interchangeable: changeActiveMesh / changeActiveTexture pick another
 one by key, loading it from the same archive if needed.
 framePose has one entry per frame of the active mesh, same order, overriding its localTransform when animated.
-motions are the motions the instance plays (playMotion), at most one per skeleton; update advances them and fills framePose. A motion that does not loop stops on its last frame.
+motions are the motions the instance plays (playMotion), at most one per skeleton; update advances them; draw then fills framePose (buildPose, only for an instance that is drawn). A motion that does not loop stops on its last frame.
 */
 struct ONEMotion
 {
@@ -45,9 +45,11 @@ struct ONEInstance
 	uint32_t bindingIndex;
 	std::vector<glm::mat4> framePose;
 	std::vector<ONEMotion> motions;
+	bool poseDirty = false;
 
 	void playMotion(const STH2005::MotionKey& rKey_, bool loop_ = true);
 	void update(float deltaTime_);
+	void buildPose();
 	void draw(const glm::mat4& rBase_);
 	void changeActiveMesh(const STH2005::ModelKey& rKey_);
 	void switchMeshPart(const STH2005::ModelPart& rPrevious_, const STH2005::ModelPart& rDesired_);

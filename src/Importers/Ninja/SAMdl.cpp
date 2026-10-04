@@ -196,7 +196,9 @@ u32 attributes. A meshset uses the material of its id (hypothesis, unverified: t
 The attributes' bit 15 (0x8000) clamps V and bit 16 (0x10000) clamps U, a clamped axis stays on the edge texel and an
 unclamped one repeats the texture. Observed on the land tables of _Stg01 and _Stg04 (3635 textured meshsets): with the bit set
 the axis' UVs are within one texture (V 100%, U 99%), with it clear they are not (0%), so the unclamped ones tile. The meaning of
-the other bits (the flip bits 17 and 18 are a guess) is unknown and they are ignored, as is the diffuse color (0xB2B2B2 on all of
+the other bits is unknown and they are ignored, except bit 17 (0x20000) and bit 18 (0x40000), read as flip V and flip U: an axis that is not clamped then mirrors the texture at
+every repeat (hypothesis: Ninja's NJD_FLAG_FLIP_V / FLIP_U as remembered, not decoded from a file; seen set, with no clamp bit, on the coil of the spring "Rotatable Spring" (0x94262400), whose UVs run
+from 2 to 12 times the texture in U and -1 to 1 in V). The diffuse color is ignored too (0xB2B2B2 on all of
 Sonic's materials), since the lighting that uses them is not implemented.
 */
 static void readAttach(const SAModelSource& rSrc_, uint32_t attachOffset_, Graphics::SANode& rNode_)
@@ -243,6 +245,8 @@ static void readAttach(const SAModelSource& rSrc_, uint32_t attachOffset_, Graph
 			uint32_t attributes = read<uint32_t>(rSrc_, materialsOffset + materialId * 0x14 + 0x10);
 			submesh.clampV = (attributes & 0x8000) != 0;
 			submesh.clampU = (attributes & 0x10000) != 0;
+			submesh.flipV = (attributes & 0x20000) != 0;
+			submesh.flipU = (attributes & 0x40000) != 0;
 		}
 
 		submesh.mesh.create();

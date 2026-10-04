@@ -8,6 +8,7 @@
 #include "Placement.h"
 #include "RingLine.h"
 #include "SASet.h"
+#include "SADXGameplay.h"
 #include "SAMesh.h"
 #include "BinaryRead.h"
 #include <cstdio>
@@ -204,7 +205,7 @@ static glm::mat4 saObjectRotation(const glm::ivec3& rBams_, const std::vector<SA
 }
 
 /*
-Entities of an SADX stage's SET files, see Level.h. Positions are the records' own (the land table and the objects share a space, observed on Emerald Coast: the SET positions are in
+Entities of an SADX stage's SET files, see Level.h, and of the objects its own code creates (SALandTableKey::stageEntities, placed as they are). Positions are the records' own (the land table and the objects share a space, observed on Emerald Coast: the SET positions are in
 the land table's range) and the rotation is the record's three BAMS angles in the order the game's object code uses most (saObjectRotation). An object that
 fails to load is reported on stderr and skipped, as in setONEEntities.
 */
@@ -214,6 +215,42 @@ void Level::setSAEntities(PoolId shaderId_, const SALandTableKey& rLandTable_)
 	{
 		throw std::runtime_error("Level: already has entities.");
 	}
+
+	/* One entity: its model, textures, collision shapes and first motion. what_ names the source in a message. */
+	auto createEntity = [&](const SAEntityKey& rKey_, const SAModelKey& rModel_, const std::vector<SACollisionShapesKey>& rCollisions_, const glm::vec3& rPosition_, const glm::mat4& rRotation_, const std::string& what_, const Ninja::SAPlacement* pPlacement_)
+	{
+		PoolId id = addEntity(std::format("{}#{}", rKey_.name, this->entityIds.size()).c_str(), rPosition_);
+		try
+		{
+			Entity& rEntity = getEntity(id);
+			rEntity.setRotation(rRotation_);
+			if(rKey_.textures.path != nullptr) rEntity.setSAGPUInstance(shaderId_, rModel_, rKey_.textures);
+			else rEntity.setSAGPUInstance(shaderId_, rModel_);
+			if(!rCollisions_.empty()) rEntity.setSACollisionShapes(rCollisions_);
+			SADXGameplay::setupObject(id, rKey_.name, pPlacement_);
+
+			/* Without behaviour nothing chooses a motion: the first one the key lists loops (the generator puts one that looks like an idle first). A motion that can't be read is reported. */
+			if(!rKey_.motions.empty())
+			{
+				try
+				{
+					rEntity.playSAMotion(rKey_.motions[0]);
+				}
+				catch(const std::runtime_error& rError)
+				{
+					std::fprintf(stderr, "Level: %s %s has no motion: %s\n", rKey_.name, what_.c_str(), rError.what());
+				}
+			}
+		}
+		catch(const std::runtime_error& rError)
+		{
+			std::fprintf(stderr, "Level: skipped %s %s: %s\n", rKey_.name, what_.c_str(), rError.what());
+			Globals::Game::entities.remove(id);
+			return;
+		}
+		this->entityIds.push_back(id);
+	};
+
 	for(const char* pPath : rLandTable_.placementFiles)
 	{
 		std::vector<Ninja::SAPlacement> placements = Ninja::readSAPlacements(Globals::Discs::sadx.readFile(pPath));
@@ -233,42 +270,20 @@ void Level::setSAEntities(PoolId shaderId_, const SALandTableKey& rLandTable_)
 				continue;
 			}
 			const SAEntityKey& rKey = found->entity;
-			const SAModelKey& rModel = rKey.variantModels.empty() ? rKey.model : rKey.variantModels[static_cast<uint32_t>(static_cast<int32_t>(rPlacement.scale.x) & 0xFF) % rKey.variantModels.size()];
+			uint32_t variantValue = static_cast<uint32_t>(static_cast<int32_t>(rPlacement.scale[rKey.variantField]) & 0xFF);
+			const SAModelKey& rModel = rKey.variantModels.empty() ? rKey.model : rKey.variantModels[variantValue % rKey.variantModels.size()];
+			const std::vector<SACollisionShapesKey>& rCollisions = rKey.variantCollisions.empty() ? rKey.collisions : rKey.variantCollisions[variantValue % rKey.variantCollisions.size()];
 			if(rModel.rel == nullptr)
 			{
 				Graphics::collisionView.markers.push_back(Graphics::CollisionView::Marker{position, rPlacement.type, rKey.name});
 				continue;
 			}
-			PoolId id = addEntity(std::format("{}#{}", rKey.name, this->entityIds.size()).c_str(), position);
-			try
-			{
-				Entity& rEntity = getEntity(id);
-				rEntity.setRotation(saObjectRotation(rPlacement.rotation, rKey.rotation));
-				if(rKey.textures.path != nullptr) rEntity.setSAGPUInstance(shaderId_, rModel, rKey.textures);
-				else rEntity.setSAGPUInstance(shaderId_, rModel);
-				if(!rKey.collisions.empty()) rEntity.setSACollisionShapes(rKey.collisions);
-
-				/* Without behaviour nothing chooses a motion: the first one the key lists loops (the generator puts one that looks like an idle first). A motion that can't be read is reported. */
-				if(!rKey.motions.empty())
-				{
-					try
-					{
-						rEntity.playSAMotion(rKey.motions[0]);
-					}
-					catch(const std::runtime_error& rError)
-					{
-						std::fprintf(stderr, "Level: %s (type %u) of %s has no motion: %s\n", rKey.name, static_cast<unsigned>(rPlacement.type), pPath, rError.what());
-					}
-				}
-			}
-			catch(const std::runtime_error& rError)
-			{
-				std::fprintf(stderr, "Level: skipped %s (type %u) of %s: %s\n", rKey.name, static_cast<unsigned>(rPlacement.type), pPath, rError.what());
-				Globals::Game::entities.remove(id);
-				continue;
-			}
-			this->entityIds.push_back(id);
+			createEntity(rKey, rModel, rCollisions, position, saObjectRotation(rPlacement.rotation, rKey.rotation), std::format("(type {}) of {}", static_cast<unsigned>(rPlacement.type), pPath), &rPlacement);
 		}
+	}
+	for(const SAStageEntityKey& rStageEntity : rLandTable_.stageEntities)
+	{
+		createEntity(*rStageEntity.entity, rStageEntity.entity->model, rStageEntity.entity->collisions, glm::vec3(rStageEntity.position[0], rStageEntity.position[1], rStageEntity.position[2]) + this->position, glm::mat4(1.0f), "(created by the stage)", nullptr);
 	}
 }
 
@@ -319,7 +334,7 @@ void Level::destroy()
 {
 	for(PoolId id : this->entityIds)
 	{
-		Globals::Game::entities.remove(id);
+		if(entityExists(id)) Globals::Game::entities.remove(id);
 	}
 	this->entityIds.clear();
 	if(this->collisionId != UninitializedPoolId)

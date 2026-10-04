@@ -1,5 +1,6 @@
 #include "SAInstance.h"
 #include "GPU_Globals.h"
+#include "RenderStats.h"
 #include "GPU_API.h"
 #include "ResourceLoader.h"
 #include <cmath>
@@ -52,8 +53,8 @@ static glm::vec3 sampleKeys(const std::vector<SAKeyframe>& rKeys_, float frame_,
 }
 
 /*
-Advances the motion by deltaTime_ (looping over its frame count) and fills nodePose. Each node takes its channels from
-the motion and the rest value for the channels the motion doesn't key. External (decomp: SADX GC main.dol fn_80049638):
+Advances the motion by deltaTime_ (looping over its frame count); nodePose is rebuilt by draw (buildPose) if the instance is drawn.
+buildPose fills nodePose: each node takes its channels from the motion and the rest value for the channels the motion doesn't key. External (decomp: SADX GC main.dol fn_80049638):
 while a motion plays, the node's NoPosition / NoRotate / NoScale flags are ignored, so translate, rotate and scale
 always apply, keyed or not.
 */
@@ -61,10 +62,17 @@ void SAInstance::update(float deltaTime_)
 {
 	if(this->currentSAAnimation == UninitializedPoolId) return;
 	SAMotion& rMotion = saMotions[this->currentSAAnimation];
-	SAMesh& rSAMesh = saMeshes[this->saMeshId];
 	if(rMotion.frameCount == 0) return;
 
 	this->animationFrame = std::fmod(this->animationFrame + deltaTime_ * SAMotionFramesPerSecond, static_cast<float>(rMotion.frameCount));
+	this->poseDirty = true;
+}
+
+void SAInstance::buildPose()
+{
+	this->poseDirty = false;
+	SAMotion& rMotion = saMotions[this->currentSAAnimation];
+	SAMesh& rSAMesh = saMeshes[this->saMeshId];
 	this->nodePose.resize(rSAMesh.nodes.size());
 	for(size_t i = 0; i < rSAMesh.nodes.size(); i++)
 	{
@@ -101,11 +109,15 @@ with the wrap of its material set on the texture before each draw (a texture use
 void SAInstance::draw(const glm::mat4& rBase_)
 {
 	Shader& rShader = shaders[this->shaderId];
+	renderStats.program(rShader.id);
 	glUseProgram(rShader.id);
 	SAMesh& rSAMesh = saMeshes[this->saMeshId];
 	rSAMesh.use();
+	if(this->poseDirty) this->buildPose();
 	const TextureBinding* pBinding = this->textureBindingId == UninitializedPoolId ? nullptr : &textureBindings[this->textureBindingId];
-	std::vector<glm::mat4> world(rSAMesh.nodes.size());
+	/* The world matrices live in a vector kept between calls: a heap allocation per entity per frame cost more than the math. */
+	static std::vector<glm::mat4> world;
+	world.resize(rSAMesh.nodes.size());
 
 	for(size_t i = 0; i < rSAMesh.nodes.size(); i++)
 	{
@@ -114,6 +126,7 @@ void SAInstance::draw(const glm::mat4& rBase_)
 		world[i] = (rNode.parent < 0 ? rBase_ : world[rNode.parent]) * rLocal;
 
 		if(rNode.submeshes.empty()) continue;
+		renderStats.uniformUploads++;
 		glUniformMatrix4fv(rShader.modelLocation, 1, GL_FALSE, glm::value_ptr(world[i]));
 		for(size_t s = 0; s < rNode.submeshes.size(); s++)
 		{
@@ -123,9 +136,21 @@ void SAInstance::draw(const glm::mat4& rBase_)
 			if(hasTexture)
 			{
 				GLuint glTexture = textures[textureId].textureId;
+				renderStats.texture(glTexture);
 				glBindTextureUnit(0, glTexture);
-				glTextureParameteri(glTexture, GL_TEXTURE_WRAP_S, rSubmesh.clampU ? GL_CLAMP_TO_EDGE : GL_REPEAT);
-				glTextureParameteri(glTexture, GL_TEXTURE_WRAP_T, rSubmesh.clampV ? GL_CLAMP_TO_EDGE : GL_REPEAT);
+				Texture& rTexture = textures[textureId];
+				GLint wrapS = rSubmesh.clampU ? GL_CLAMP_TO_EDGE : rSubmesh.flipU ? GL_MIRRORED_REPEAT : GL_REPEAT;
+				GLint wrapT = rSubmesh.clampV ? GL_CLAMP_TO_EDGE : rSubmesh.flipV ? GL_MIRRORED_REPEAT : GL_REPEAT;
+				if(rTexture.appliedWrapS != wrapS)
+				{
+					glTextureParameteri(glTexture, GL_TEXTURE_WRAP_S, wrapS);
+					rTexture.appliedWrapS = wrapS;
+				}
+				if(rTexture.appliedWrapT != wrapT)
+				{
+					glTextureParameteri(glTexture, GL_TEXTURE_WRAP_T, wrapT);
+					rTexture.appliedWrapT = wrapT;
+				}
 			}
 			glUniform1i(HasTextureLocation, hasTexture);
 			rSubmesh.mesh.draw();

@@ -12,7 +12,7 @@ constexpr uint32_t WholeCollision = 0xFFFFFFFF;
 
 /*
 What the tree stores: the PoolId of a Collision (Globals::Physics::collisions) and the index of one of its triangles. The tree
-never holds a Collision or a reference to one (Pool::add can reallocate), so geometry is fetched through the id when needed.
+never holds a Collision or a reference to one (a collision can be removed and its slot reused), so geometry is fetched through the id when needed.
 */
 struct QuadTreeEntry
 {

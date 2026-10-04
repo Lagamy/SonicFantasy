@@ -482,6 +482,7 @@ namespace Loading
         }
         eraseRelModuleIfUnused(rLandTable_.rel);
         collision.computeBounds();
+        Globals::Game::baBehaviors.resolve(collision, BARemapSADXLevel);
         return Globals::Physics::collisions.add(std::move(collision));
     }
 
@@ -499,6 +500,7 @@ namespace Loading
             {
                 std::vector<Physics::CollisionShape> shapes = Ninja::readSACollisionShapes(findOrLoadRelModule(rKey.rel)->second.bytes, rKey.offset, rKey.count);
                 collision.shapes.insert(collision.shapes.end(), shapes.begin(), shapes.end());
+                collision.name += std::format("{}{}@0x{:X}", collision.name.empty() ? "" : ", ", rKey.rel, rKey.offset);
             }
             catch(...)
             {
@@ -507,6 +509,7 @@ namespace Loading
             }
             eraseRelModuleIfUnused(rKey.rel);
         }
+        Globals::Game::baBehaviors.resolve(collision, BARemapSADXShape);
         return Globals::Physics::collisions.add(std::move(collision));
     }
 
@@ -516,6 +519,7 @@ namespace Loading
         try
         {
             collision.shapes = Ninja::readSACollisionShapes(findOrLoadRelModule(rShapes_.rel)->second.bytes, rShapes_.offset, rShapes_.count);
+            collision.name = std::format("{}@0x{:X}", rShapes_.rel, rShapes_.offset);
         }
         catch(...)
         {
@@ -523,6 +527,7 @@ namespace Loading
             throw;
         }
         eraseRelModuleIfUnused(rShapes_.rel);
+        Globals::Game::baBehaviors.resolve(collision, BARemapSADXShape);
         return Globals::Physics::collisions.add(std::move(collision));
     }
 
@@ -535,6 +540,8 @@ namespace Loading
         STH2005::ONE archive = STH2005::openONE(Globals::Discs::shadow.readFile(rShapes_.archive.path));
         Physics::Collision collision;
         collision.shapes = STH2005::readCCL(archive.readFile(rShapes_.entry));
+        collision.name = rShapes_.entry;
+        Globals::Game::baBehaviors.resolve(collision, BARemapShadowShape);
         return Globals::Physics::collisions.add(std::move(collision));
     }
 
@@ -549,7 +556,9 @@ namespace Loading
             STH2005::ONE archive = STH2005::openONE(Globals::Discs::shadow.readFile(rKey.archive.path));
             std::vector<Physics::CollisionShape> shapes = STH2005::readCCL(archive.readFile(rKey.entry));
             collision.shapes.insert(collision.shapes.end(), shapes.begin(), shapes.end());
+            collision.name += std::format("{}{}", collision.name.empty() ? "" : ", ", rKey.entry);
         }
+        Globals::Game::baBehaviors.resolve(collision, BARemapShadowShape);
         return Globals::Physics::collisions.add(std::move(collision));
     }
 
@@ -575,6 +584,7 @@ namespace Loading
             }
         }
         collision.computeBounds();
+        Globals::Game::baBehaviors.resolve(collision, BARemapShadowLevel);
         return Globals::Physics::collisions.add(std::move(collision));
     }
 

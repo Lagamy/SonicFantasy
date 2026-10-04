@@ -9,24 +9,6 @@
 
 namespace DebugSetup
 {
-/*
-Shadow (observed, from you, in the attribute view of stg0100): 0x2, 0x202, 0x20001, 0x8 and 0x28001 (the loop) are collision, 0x10 is some
-kind of bound or trigger and 0x20 a death plane; the last two have no OnTouch yet. Any other value is ignored.
-SADX (the surface flags of a land table COL, see the lines view with the SADX level on): what the bits mean is unknown (only 0x80000000,
-drawn, is a hypothesis, see ResourceLoader.cpp), so nothing is registered and all of its collision stays solid. Register a flags value
-here once you know it, e.g. addBoundArea(flags, false) for one that is not solid.
-*/
-void registerBoundAreas()
-{
-	addBoundArea(0x2, true);
-	addBoundArea(0x202, true);
-	addBoundArea(0x20001, true);
-	addBoundArea(0x8, true);
-	addBoundArea(0x28001, true);
-	addBoundArea(0x10, false);
-	addBoundArea(0x20, false);
-}
-
 void enablePhysics(PoolId sonicId_, PoolId shadowId_)
 {
 	Globals::Physics::gravity = {0.0f, -98.0f, 0.0f};
@@ -49,9 +31,12 @@ void addShadowShape(PoolId shadowId_)
 	shape.a = 5.5f;
 	shape.b = 0.0f;
 	shape.center = glm::vec3(0.0f, shape.a, 0.0f);
+	shape.behavior = Globals::Game::baBehaviors.body;
 	Physics::Collision collision;
 	collision.shapes.push_back(shape);
+	collision.entityId = shadowId_;
 	getEntity(shadowId_).collisionId = Globals::Physics::collisions.add(std::move(collision));
+	getEntity(shadowId_).refreshBounds();
 }
 
 /*
@@ -61,21 +46,25 @@ entry's size from a per-character record (Sonic: 4) and its center to the task p
 the record at _Main.rel 0x2C61E8); a sphere (form 0) of that size and center is what moves him.
 The game's positions are hypothesized to be at the feet, while the model origin is about 5.3 above them (observed, from you: main.cpp places
 Sonic 5.3 above the ground), so the center is moved down by that height into the entity's space (observed: without it the sphere was at the
-top of his head), which puts it 0.1 above the entity position. The sphere's bottom is then 1.4 above his feet (5.4 - 4), so resting it on the
-ground sinks the model by that much; the game may keep the feet on the ground with a separate probe that is not modeled here.
+top of his head), which puts it 0.1 above the entity position. With the game's radius the sphere's bottom is 1.4 above his feet (5.4 - 4), so resting it on the
+ground sank the model by that much (observed, from you); the game may keep the feet on the ground with a separate probe that is not modeled here. The radius is
+therefore made 5.4 (not the game's 4) so that the bottom of the sphere is at his feet (0.1 - 5.4 = -5.3, the model origin's height).
 */
 void addSonicShape(PoolId sonicId_)
 {
-	constexpr float BodyRadius = 4.0f;
+	constexpr float BodyRadius = 5.4f;
 	constexpr float BodyHeight = 5.4f;
 	constexpr float ModelOriginHeight = 5.3f;
 	Physics::CollisionShape shape{};
 	shape.form = 0;
 	shape.a = BodyRadius;
 	shape.center = glm::vec3(0.0f, BodyHeight - ModelOriginHeight, 0.0f);
+	shape.behavior = Globals::Game::baBehaviors.body;
 	Physics::Collision collision;
 	collision.shapes.push_back(shape);
+	collision.entityId = sonicId_;
 	getEntity(sonicId_).collisionId = Globals::Physics::collisions.add(std::move(collision));
+	getEntity(sonicId_).refreshBounds();
 }
 
 /*

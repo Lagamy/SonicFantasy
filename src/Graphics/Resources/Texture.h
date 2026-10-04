@@ -15,6 +15,10 @@ struct Texture
 	GLuint textureId;
 	GLint filter = GL_NEAREST;
 	GLint wrap = GL_CLAMP_TO_EDGE;
+
+	/* The wrap modes last set by a draw (SAInstance::draw sets them per material), 0 = not set yet: a draw only changes the state when the mode differs. */
+	GLint appliedWrapS = 0;
+	GLint appliedWrapT = 0;
 	bool mipmaps = true;
 	bool alive = false; 
 

@@ -26,11 +26,12 @@ void DebugUI::init(GLFWwindow* pWindow_)
 Starts a frame, builds the panels and draws them over the scene. The window's framebuffer is sRGB (GL_FRAMEBUFFER_SRGB),
 which would encode ImGui's colors, already in display space, a second time and wash them out, so it is off while drawing.
 */
-void DebugUI::draw(const Camera& rCamera_)
+void DebugUI::draw(Camera& rCamera_)
 {
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
+	collisionView.entityTabActive = false;
 
 	/*
 	One window with a tab per panel. The cursor is captured by the camera until the free-cursor key is pressed (see main.cpp), so the controls can only be used then.
@@ -43,7 +44,28 @@ void DebugUI::draw(const Camera& rCamera_)
 		if(ImGui::BeginTabItem("Camera"))
 		{
 			ImGui::Text("Position: %.1f, %.1f, %.1f", rCamera_.position.x, rCamera_.position.y, rCamera_.position.z);
-			ImGui::Text("Tab: free the cursor for these panels, click the scene to look around again.");
+			ImGui::SliderFloat("Speed (units/s)", &rCamera_.speed, 1.0f, 5000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+			if(ImGui::SliderFloat("Render distance (far plane: levels, entities, behaviours)", &rCamera_.farPlane, 100.0f, 500000.0f, "%.0f", ImGuiSliderFlags_Logarithmic))
+			{
+				rCamera_.updateProjection(static_cast<float>(Globals::App::windowWidth) / static_cast<float>(Globals::App::windowHeight));
+				rCamera_.updateUBO();
+			}
+			ImGui::SliderFloat("Boost (Shift multiplier)", &rCamera_.speedUp, 1.0f, 100.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
+			ImGui::Text("Esc: free the cursor for these panels, click the scene to look around again. Tab: leave the debug mode.");
+			ImGui::EndTabItem();
+		}
+
+		/* The game being played: the ring count (the player's state is a placeholder, see SADXGameplay.cpp). */
+		if(ImGui::BeginTabItem("Game"))
+		{
+			ImGui::Text("Rings: %d", Globals::Game::rings);
+			ImGui::Text("Debug mode: W A S D, Space, Ctrl fly the camera. Tab leaves it: they control Sonic (Space jumps) and the camera follows him (placeholder controls).");
+			ImGui::Text("FPS: %.0f", Globals::App::fps);
+			ImGui::Text("Entities: %u static (%u kept by the last query), %u dynamic, %u active", static_cast<uint32_t>(Globals::Game::spatialIndex.items.size()), Globals::Game::spatialIndex.lastVisibleStatic, static_cast<uint32_t>(Globals::Game::spatialIndex.dynamicEntities.size()), static_cast<uint32_t>(Globals::Game::spatialIndex.activeEntities.size()));
+			if(ImGui::Checkbox("VSync", &Globals::App::vsync)) glfwSwapInterval(Globals::App::vsync ? 1 : 0);
+			ImGui::Text("Frame: %.1f ms, gameplay ticks this frame: %d (%.2f ms)", Globals::App::deltaTime * 1000.0f, Globals::Game::gameplaySystem.ticksLastFrame, Globals::Game::gameplaySystem.tickMillisecondsLastFrame);
+			ImGui::Checkbox("Log game events", &Globals::Game::gameEvents.logEvents);
+			ImGui::Checkbox("Extrapolate entities (off: interpolate, a tick behind)", &Globals::Game::gameplaySystem.extrapolate);
 			ImGui::EndTabItem();
 		}
 
@@ -66,29 +88,61 @@ void DebugUI::draw(const Camera& rCamera_)
 		}
 
 		/*
-		The collision lines view: its switches, and the legend of the raw attribute values of the shown level collisions (Shadow attributes / SADX piece flags), most triangles
-		first, in the color their lines have; clicking a value highlights it (the arrow keys do the same), clicking it again shows all.
+		The collision lines view: its switches, then a sub tab for each kind of collision with the legend of its raw attribute values, in the color their lines have. Level: the shown level collisions
+		(Shadow attributes / SADX piece flags), most triangles first; clicking a value highlights it (the left and right arrow keys do the same), clicking it again shows all. Entities: the object shapes'
+		attributes, highlighted the same way (the arrow keys move the selection of the sub tab that is shown).
 		*/
 		if(ImGui::BeginTabItem("Collision"))
 		{
 			ImGui::Checkbox("Show collision lines (C)", &collisionView.enabled);
 			ImGui::Checkbox("Color by attribute, otherwise by slope (V)", &collisionView.colorByAttribute);
 			ImGui::SliderFloat("Draw distance", &collisionView.drawDistance, 100.0f, 20000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
-			if(collisionView.enabled && collisionView.colorByAttribute && !collisionView.attributes.empty())
+			if(ImGui::BeginTabBar("CollisionTabs"))
 			{
-				ImGui::Separator();
-				ImGui::Text("%u values", static_cast<uint32_t>(collisionView.attributes.size()));
-				ImGui::BeginChild("CollisionValues", ImVec2(0.0f, 0.0f), ImGuiChildFlags_None);
-				for(int i = 0; i < static_cast<int>(collisionView.attributes.size()); i++)
+				if(ImGui::BeginTabItem("Level"))
 				{
-					const CollisionView::AttributeCount& rEntry = collisionView.attributes[i];
-					char line[64];
-					std::snprintf(line, sizeof(line), "0x%08X  %u triangles", rEntry.attribute, rEntry.count);
-					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(rEntry.color.r, rEntry.color.g, rEntry.color.b, 1.0f));
-					if(ImGui::Selectable(line, i == collisionView.selectedAttribute)) collisionView.selectedAttribute = i == collisionView.selectedAttribute ? -1 : i;
-					ImGui::PopStyleColor();
+					if(collisionView.enabled && collisionView.colorByAttribute && !collisionView.attributes.empty())
+					{
+						ImGui::Text("%u values", static_cast<uint32_t>(collisionView.attributes.size()));
+						ImGui::BeginChild("CollisionValues", ImVec2(0.0f, 0.0f), ImGuiChildFlags_None);
+						for(int i = 0; i < static_cast<int>(collisionView.attributes.size()); i++)
+						{
+							const CollisionView::AttributeCount& rEntry = collisionView.attributes[i];
+							char line[96];
+							std::snprintf(line, sizeof(line), "0x%08X  %s  %u triangles", rEntry.attribute, rEntry.behavior.c_str(), rEntry.count);
+							ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(rEntry.color.r, rEntry.color.g, rEntry.color.b, 1.0f));
+							if(ImGui::Selectable(line, i == collisionView.selectedAttribute)) collisionView.selectedAttribute = i == collisionView.selectedAttribute ? -1 : i;
+							ImGui::PopStyleColor();
+						}
+						ImGui::EndChild();
+					}
+					ImGui::EndTabItem();
 				}
-				ImGui::EndChild();
+				if(ImGui::BeginTabItem("Entities"))
+				{
+					collisionView.entityTabActive = true;
+					if(collisionView.enabled && collisionView.colorByAttribute && !collisionView.entityAttributes.empty())
+					{
+						ImGui::Text("%u values", static_cast<uint32_t>(collisionView.entityAttributes.size()));
+						ImGui::BeginChild("EntityCollisionValues", ImVec2(0.0f, 0.0f), ImGuiChildFlags_None);
+						for(const CollisionView::AttributeCount& rEntry : collisionView.entityAttributes)
+						{
+							char line[96];
+							std::snprintf(line, sizeof(line), "0x%08X  %s  %u shapes", rEntry.attribute, rEntry.behavior.c_str(), rEntry.count);
+							bool selected = collisionView.hasSelectedEntityValue && collisionView.selectedEntityValue == rEntry.attribute;
+							ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(rEntry.color.r, rEntry.color.g, rEntry.color.b, 1.0f));
+							if(ImGui::Selectable(line, selected))
+							{
+								collisionView.hasSelectedEntityValue = !selected;
+								collisionView.selectedEntityValue = rEntry.attribute;
+							}
+							ImGui::PopStyleColor();
+						}
+						ImGui::EndChild();
+					}
+					ImGui::EndTabItem();
+				}
+				ImGui::EndTabBar();
 			}
 			ImGui::EndTabItem();
 		}
@@ -121,6 +175,8 @@ void DebugUI::draw(const Camera& rCamera_)
 		ImGui::EndTabBar();
 	}
 	ImGui::End();
+
+	text.draw(rCamera_);
 
 	ImGui::Render();
 	glDisable(GL_FRAMEBUFFER_SRGB);

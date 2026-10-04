@@ -1,5 +1,6 @@
 #include "ONEInstance.h"
 #include "GPU_Globals.h"
+#include "RenderStats.h"
 #include "GPU_API.h"
 #include "ResourceLoader.h"
 #include <algorithm>
@@ -76,7 +77,7 @@ void ONEInstance::playMotion(const STH2005::MotionKey& rKey_, bool loop_)
 }
 
 /*
-Advances every playing motion (looping over its last frame, or stopping on it if it does not loop) and fills framePose: every frame starts at its rest
+update advances every playing motion (looping over its last frame, or stopping on it if it does not loop); buildPose, called by draw, fills framePose: every frame starts at its rest
 localTransform, and the frames named like a motion's bones take translate(T) * rotation(R) * scale(S) from it.
 The bone names are matched with the active mesh's frame names (from the .BON the model was built with), once per mesh;
 a bone without a frame in the mesh is skipped. The first bone of an attachedPart motion is skipped too: it is a bone of
@@ -86,6 +87,22 @@ Hypothesis, unverified: the scale is the last three channels of a bone.
 void ONEInstance::update(float deltaTime_)
 {
 	if(this->motions.empty()) return;
+	STH2005::ONE& rArchive = oneArchives[this->archiveId];
+	for(ONEMotion& rActive : this->motions)
+	{
+		const STH2005::Motion& rMotion = rArchive.motions[rActive.motionIndex];
+		if(rMotion.lastFrame > 0)
+		{
+			float advanced = rActive.frame + deltaTime_ * ONEMotionFramesPerSecond;
+			rActive.frame = rActive.loop ? std::fmod(advanced, static_cast<float>(rMotion.lastFrame)) : std::min(advanced, static_cast<float>(rMotion.lastFrame));
+		}
+	}
+	this->poseDirty = true;
+}
+
+void ONEInstance::buildPose()
+{
+	this->poseDirty = false;
 	STH2005::ONE& rArchive = oneArchives[this->archiveId];
 	RenderWareMesh& rMesh = rArchive.meshes[this->meshIndex];
 
@@ -111,11 +128,6 @@ void ONEInstance::update(float deltaTime_)
 			rActive.boneFramesMesh = this->meshIndex;
 		}
 
-		if(rMotion.lastFrame > 0)
-		{
-			float advanced = rActive.frame + deltaTime_ * ONEMotionFramesPerSecond;
-			rActive.frame = rActive.loop ? std::fmod(advanced, static_cast<float>(rMotion.lastFrame)) : std::min(advanced, static_cast<float>(rMotion.lastFrame));
-		}
 		for(size_t b = rActive.attachedPart ? 1 : 0; b < rMotion.bones.size(); b++)
 		{
 			if(rActive.boneFrames[b] < 0) continue;
@@ -150,14 +162,17 @@ buffer (Renderer::boneBuffer, binding 1); its vertices are placed by those alone
 void ONEInstance::draw(const glm::mat4& rBase_)
 {
 	Shader& rShader = shaders[this->shaderId];
+	renderStats.program(rShader.id);
 	glUseProgram(rShader.id);
 	STH2005::ONE& rArchive = oneArchives[this->archiveId];
 	RenderWareMesh& rMesh = rArchive.meshes[this->meshIndex];
 	rMesh.use();
+	if(this->poseDirty) this->buildPose();
 	const TextureBinding* pBinding = this->bindingIndex == STH2005::NoIndex ? nullptr : &rArchive.bindings[this->bindingIndex];
 	glm::mat4 base = glm::rotate(rBase_, glm::radians(RenderWareYawDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
 
-	std::vector<glm::mat4> world(rMesh.frames.size());
+	static std::vector<glm::mat4> world;
+	world.resize(rMesh.frames.size());
 	for(size_t i = 0; i < rMesh.frames.size(); i++)
 	{
 		RenderWareFrame& rFrame = rMesh.frames[i];
@@ -170,6 +185,7 @@ void ONEInstance::draw(const glm::mat4& rBase_)
 		RenderWareAtomic& rAtomic = rMesh.atomics[a];
 		bool skinned = !rAtomic.skinBoneFrames.empty();
 		glUniform1i(SkinnedLocation, skinned);
+		renderStats.uniformUploads++;
 		glUniformMatrix4fv(rShader.modelLocation, 1, GL_FALSE, glm::value_ptr(world[rAtomic.frame]));
 		if(skinned)
 		{
@@ -177,11 +193,13 @@ void ONEInstance::draw(const glm::mat4& rBase_)
 			{
 				throw std::runtime_error(std::format("ONEInstance: atomic has {} skin bones, the bone buffer holds {}.", rAtomic.skinBoneFrames.size(), MaxSkinBones));
 			}
-			std::vector<glm::mat4> bones(rAtomic.skinBoneFrames.size());
+			static std::vector<glm::mat4> bones;
+			bones.resize(rAtomic.skinBoneFrames.size());
 			for(size_t b = 0; b < bones.size(); b++)
 			{
 				bones[b] = world[rAtomic.skinBoneFrames[b]] * rAtomic.inverseBindMatrices[b];
 			}
+			renderStats.boneUploads++;
 			glNamedBufferSubData(renderer.boneBuffer, 0, bones.size() * sizeof(glm::mat4), bones.data());
 			glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, renderer.boneBuffer);
 		}
@@ -192,6 +210,7 @@ void ONEInstance::draw(const glm::mat4& rBase_)
 			bool hasTexture = textureId != UninitializedPoolId;
 			if(hasTexture)
 			{
+				renderStats.texture(textures[textureId].textureId);
 				glBindTextureUnit(0, textures[textureId].textureId);
 			}
 			glUniform1i(HasTextureLocation, hasTexture);

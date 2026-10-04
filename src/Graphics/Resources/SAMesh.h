@@ -1,4 +1,5 @@
 #pragma once
+#include "BoundingSphere.h"
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -13,7 +14,7 @@ namespace Graphics
 /*
 textureIndex is the material's texture id from the file, an index into the file order of the TextureSet that
 the instance's TextureBinding resolves it against. The mesh itself holds no Texture pool ids, so different bindings can texture the same mesh differently.
-clampU / clampV come from the material: an axis that is not clamped repeats the texture (see readAttach).
+clampU / clampV come from the material: an axis that is not clamped repeats the texture, mirrored at every repeat with flipU / flipV (see readAttach).
 */
 constexpr uint32_t SANoTexture = 0xFFFFFFFF;
 
@@ -23,6 +24,8 @@ struct SASubmesh
 	uint32_t textureIndex = SANoTexture;
 	bool clampU = false;
 	bool clampV = false;
+	bool flipU = false;
+	bool flipV = false;
 };
 
 /* NJS_OBJECT eval flags that change the local transform (external, SA Tools Enums.cs ObjectFlags). */
@@ -109,7 +112,12 @@ struct SAMesh
 	uint32_t users = 0;
 	std::string rel;
 
+	BoundingSphere bounds;
+
 	void use();
 	void destroy();
+
+	/* Fills bounds from the vertices in the rest pose, once. */
+	void computeBounds();
 };
 }

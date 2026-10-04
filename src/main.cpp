@@ -1,3 +1,8 @@
+#include <format>
+#include <cstdio>
+#include <cstdlib>
+#include "RenderStats.h"
+#include "SADXGameplay.h"
 #include <cstdint>
 #include <glm/fwd.hpp>
 #include <glad/glad.h>
@@ -18,10 +23,28 @@ inline bool CPressed = false;
 inline bool VPressed = false;
 inline bool LeftPressed = false;
 inline bool RightPressed = false;
+inline bool UpPressed = false;
+inline bool DownPressed = false;
 inline bool TabPressed = false;
+inline bool EscPressed = false;
+
+/*
+Outside the debug mode (Globals::App::debugMode) the player is controlled and the camera sits behind it, where the mouse look points (placeholder distance and height).
+*/
+constexpr float FollowDistance = 45.0f;
+constexpr float FollowHeight = 12.0f;
+
+void updateFollowCamera(PoolId targetId_)
+{
+	Camera& cam = Globals::Game::cameras[0];
+	cam.set(getEntity(targetId_).renderPosition() + glm::vec3(0.0f, FollowHeight, 0.0f) - cam.front * FollowDistance);
+}
 
 void processInputs() {
 	Camera& cam = Globals::Game::cameras[0]; 
+	/* The keys that fly the camera (W A S D, Space, Ctrl) only do so in the debug mode (Tab): outside it they control the player, and the camera follows it (updateFollowCamera). */
+	if(Globals::App::debugMode)
+	{
 	// front / back
     float speed = cam.speed * Globals::App::deltaTime;
     if (glfwGetKey(Globals::App::window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
@@ -45,19 +68,32 @@ void processInputs() {
 		cam.move(glm::vec3({0.0, 1.0, 0.0f}) * speed);
 	if(glfwGetKey(Globals::App::window, GLFW_KEY_LEFT_CONTROL)) 
 		cam.move(-glm::vec3({0.0, 1.0, 0.0f}) * speed);
+	}
 
 	/*
-	Tab frees the cursor (visible, no camera look) so the debug UI can be used; a left click anywhere the UI does not cover captures it again (the next position becomes the mouse baseline, so the
-	camera does not jump).
+	Tab toggles the debug mode: the debug UI and the entity labels show (the camera keeps working, the cursor stays captured); leaving it captures the cursor again. While it is on, Esc frees the cursor
+	(visible, no camera look) so the UI can be used. The next mouse position becomes the baseline when the camera gets the cursor back, so it does not jump.
 	*/
 	bool tabDown = glfwGetKey(Globals::App::window, GLFW_KEY_TAB) == GLFW_PRESS;
 	if(tabDown && !TabPressed)
+	{
+		Globals::App::debugMode = !Globals::App::debugMode;
+		if(!Globals::App::debugMode && Globals::Mouse::cursorFree)
+		{
+			Globals::Mouse::cursorFree = false;
+			glfwSetInputMode(Globals::App::window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+			Globals::Mouse::firstMouse = true;
+		}
+	}
+	TabPressed = tabDown;
+	bool escDown = glfwGetKey(Globals::App::window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+	if(escDown && !EscPressed && Globals::App::debugMode)
 	{
 		Globals::Mouse::cursorFree = !Globals::Mouse::cursorFree;
 		glfwSetInputMode(Globals::App::window, GLFW_CURSOR, Globals::Mouse::cursorFree ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
 		Globals::Mouse::firstMouse = true;
 	}
-	TabPressed = tabDown;
+	EscPressed = escDown;
 	if(Globals::Mouse::cursorFree && !Graphics::debugUI.wantsMouse() && glfwGetMouseButton(Globals::App::window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
 	{
 		Globals::Mouse::cursorFree = false;
@@ -75,13 +111,21 @@ void processInputs() {
 	if(VDown && !VPressed) Graphics::collisionView.colorByAttribute = !Graphics::collisionView.colorByAttribute;
 	VPressed = VDown;
 
-	/* Left / Right (or Up / Down) move the highlighted attribute of the lines view along the legend, through "none". */
-	bool leftDown = glfwGetKey(Globals::App::window, GLFW_KEY_LEFT) == GLFW_PRESS || glfwGetKey(Globals::App::window, GLFW_KEY_UP) == GLFW_PRESS;
-	bool rightDown = glfwGetKey(Globals::App::window, GLFW_KEY_RIGHT) == GLFW_PRESS || glfwGetKey(Globals::App::window, GLFW_KEY_DOWN) == GLFW_PRESS;
-	if(leftDown && !LeftPressed) Graphics::collisionView.selectAttribute(-1);
-	if(rightDown && !RightPressed) Graphics::collisionView.selectAttribute(1);
+	/* Left / Right move the highlighted attribute of the lines view along the legend, through "none": the entities' legend while the debug UI shows its Entities sub tab, otherwise the level's. */
+	bool leftDown = glfwGetKey(Globals::App::window, GLFW_KEY_LEFT) == GLFW_PRESS;
+	bool rightDown = glfwGetKey(Globals::App::window, GLFW_KEY_RIGHT) == GLFW_PRESS;
+	if(leftDown && !LeftPressed) Graphics::collisionView.entityTabActive ? Graphics::collisionView.selectEntityAttribute(-1) : Graphics::collisionView.selectAttribute(-1);
+	if(rightDown && !RightPressed) Graphics::collisionView.entityTabActive ? Graphics::collisionView.selectEntityAttribute(1) : Graphics::collisionView.selectAttribute(1);
 	LeftPressed = leftDown;
 	RightPressed = rightDown;
+
+	/* Up / Down switch the labels over the entities (Graphics::Text) between entity, mesh and collision names. */
+	bool upDown = glfwGetKey(Globals::App::window, GLFW_KEY_UP) == GLFW_PRESS;
+	bool downDown = glfwGetKey(Globals::App::window, GLFW_KEY_DOWN) == GLFW_PRESS;
+	if(upDown && !UpPressed) Graphics::text.selectMode(-1);
+	if(downDown && !DownPressed) Graphics::text.selectMode(1);
+	UpPressed = upDown;
+	DownPressed = downDown;
 
 	// increas / decrease block height
 	// bool ODown = glfwGetKey(Globals::window, GLFW_KEY_O) == GLFW_PRESS; 
@@ -124,6 +168,8 @@ void processInputs() {
 int main() {
 	Globals::App::window = createWindow(Globals::App::windowWidth, Globals::App::windowHeight);
 	Graphics::renderer.init(); 
+	Globals::Game::baBehaviors.init();
+	SADXGameplay::registerAll();
 	Graphics::debugUI.init(Globals::App::window);
 	Globals::Game::cameras.emplace_back(Camera({0.0f, 0.0f, 0.0f}));
 	
@@ -152,44 +198,76 @@ int main() {
 	/*
 	Emerald Coast (SADX), with its collision. The Shadow stage below is off while it is shown; the two would overlap at similar coordinates.
 	*/
-	// PoolId emeraldCoastId = addLevel("EmeraldCoast", {0, 0, 0});
-	// getLevel(emeraldCoastId).setSAGPUInstance(saShaderId, EmeraldCoastLandTable, EmeraldCoastTextures);
-	// getLevel(emeraldCoastId).setSACollision(EmeraldCoastLandTable);
-	// getLevel(emeraldCoastId).setSAEntities(saShaderId, EmeraldCoastLandTable);
-	// setCameraPosition({-12.0f, 30.0f, 142.0f});
-	// getEntity(sonicId).setPosition({0, 4, 5}); 
-	// getEntity(shadowId).setPosition({0, 4, -5}); 
+	PoolId emeraldCoastId = addLevel("EmeraldCoast", {0, 0, 0});
+	getLevel(emeraldCoastId).setSAGPUInstance(saShaderId, EmeraldCoastLandTable, EmeraldCoastTextures);
+	getLevel(emeraldCoastId).setSACollision(EmeraldCoastLandTable);
+	getLevel(emeraldCoastId).setSAEntities(saShaderId, EmeraldCoastLandTable);
+	setCameraPosition({-12.0f, 30.0f, 142.0f});
+	getEntity(sonicId).setPosition({0, 4, 5}); 
+	getEntity(shadowId).setPosition({0, 4, -5});
 
 	/*
 	A Shadow stage (Stg0000Level is the one with a single section). The camera starts at the middle of the largest sector of
 	the first section of stg0100 (observed in its world, with the 90 degree yaw of ONEInstance.h applied); the real start
 	position of the stage is not known. The far plane is the render distance (Camera::farPlane).
 	*/
-	PoolId westopolisId = addLevel("Stg0100", {0, 0, 0});
-	getLevel(westopolisId).setONEGPUInstance(oneShaderId, Stg0100Level);
-	getLevel(westopolisId).setONECollision(Stg0100Level);
-	getEntity(sonicId).setPosition({-3430, -4542 + 5.3, 5}); 
-	getEntity(shadowId).setPosition({-3430, -4541.5, -5}); 
-	setCameraPosition({-3440, -4860, 0}); 
-	getLevel(westopolisId).setONEEntities(oneShaderId, Stg0100Level);
+	// PoolId westopolisId = addLevel("Stg0100", {0, 0, 0});
+	// getLevel(westopolisId).setONEGPUInstance(oneShaderId, Stg0100Level);
+	// getLevel(westopolisId).setONECollision(Stg0100Level);
+	// getEntity(sonicId).setPosition({-3430, -4542 + 5.3, 5}); 
+	// getEntity(shadowId).setPosition({-3430, -4541.5, -5}); 
+	// setCameraPosition({-3440, -4860, 0}); 
+	// getLevel(westopolisId).setONEEntities(oneShaderId, Stg0100Level);
 	
-	DebugSetup::registerBoundAreas();
 	DebugSetup::enablePhysics(sonicId, shadowId);
 	DebugSetup::addSonicShape(sonicId);
 	DebugSetup::addShadowShape(shadowId);
+	SADXGameplay::attachPlayer(sonicId);
+	Globals::Game::spatialIndex.rebuild();
 	/*
 	The first frame's deltaTime would otherwise be the time since glfwInit, i.e. the whole loading time (seconds): the physics
 	would move everything by that much at once, and the entities would land in a single frame.
 	*/
 	Globals::App::lastFrame = glfwGetTime();
+	int fpsFrames = 0;
+	float fpsTime = 0.0f;
+
+	// /*
+	// SF_STATS=1 prints the frame's costs to stderr once a second: the averages of the CPU time spent updating (gameplay and
+	// entities), submitting the render, the debug UI and swapping buffers, the GPU time of the render (GL_TIME_ELAPSED, read three
+	// frames late so it never stalls) and the GL calls counted in RenderStats.h. Printing is off otherwise.
+	// */
+	// bool statsOn = std::getenv("SF_STATS") != nullptr;
+	// GLuint gpuQueries[3] = {0, 0, 0};
+	// glGenQueries(3, gpuQueries);
+	// uint64_t frameNumber = 0;
+	// double gameplayMs = 0.0, updateMs = 0.0, renderMs = 0.0, uiMs = 0.0, swapMs = 0.0, gpuMs = 0.0;
+	// uint32_t gpuSamples = 0;
+	// uint32_t statFrames = 0;
+	// double statTime = 0.0;
+	// Graphics::RenderStats statSum;
 
 	while (!glfwWindowShouldClose(Globals::App::window)) {
 		float currentFrame = glfwGetTime();
 		Globals::App::deltaTime = currentFrame - Globals::App::lastFrame;
 		Globals::App::lastFrame = currentFrame;
 
+		/* The frame rate over half a second at a time, also written in the window's title. */
+		fpsFrames++;
+		fpsTime += Globals::App::deltaTime;
+		if(fpsTime >= 0.5f)
+		{
+			Globals::App::fps = static_cast<float>(fpsFrames) / fpsTime;
+			glfwSetWindowTitle(Globals::App::window, std::format("SonicFantasy - {:.0f} FPS", Globals::App::fps).c_str());
+			fpsFrames = 0;
+			fpsTime = 0.0f;
+		}
+
         glfwPollEvents();
+		// double updateStart = glfwGetTime();
 		processInputs();
+		Globals::Game::gameplaySystem.update(Globals::App::deltaTime);
+		// double gameplayEnd = glfwGetTime();
 		for(uint32_t i = 0; i < Globals::Game::levels.objects.size(); i++)
 		{
 			if(Globals::Game::levels.alive[i]) Globals::Game::levels.objects[i].update(Globals::App::deltaTime);
@@ -198,11 +276,65 @@ int main() {
 		{
 			if(Globals::Game::entities.alive[i]) Globals::Game::entities.objects[i].update(Globals::App::deltaTime);
 		}
-		Globals::Physics::physicsSystem.update(Globals::App::deltaTime);
-		Globals::Physics::collisionSystem.update();
-		Graphics::renderer.run(Globals::Game::cameras[0]);	
-		Graphics::debugUI.draw(Globals::Game::cameras[0]);
+		Globals::Game::gameEvents.drain();
+		if(!Globals::App::debugMode) updateFollowCamera(sonicId);
+		// double renderStart = glfwGetTime();
+		// Graphics::renderStats.resetFrame();
+		// if(statsOn) glBeginQuery(GL_TIME_ELAPSED, gpuQueries[frameNumber % 3]);
+		Graphics::renderer.run(Globals::Game::cameras[0]);
+		// if(statsOn) glEndQuery(GL_TIME_ELAPSED);
+		// double uiStart = glfwGetTime();
+		if(Globals::App::debugMode) Graphics::debugUI.draw(Globals::Game::cameras[0]);
+		// double swapStart = glfwGetTime();
 		glfwSwapBuffers(Globals::App::window);
+
+		// if(statsOn)
+		// {
+			// double frameEnd = glfwGetTime();
+			// gameplayMs += (gameplayEnd - updateStart) * 1000.0;
+			// updateMs += (renderStart - gameplayEnd) * 1000.0;
+			// renderMs += (uiStart - renderStart) * 1000.0;
+			// uiMs += (swapStart - uiStart) * 1000.0;
+			// swapMs += (frameEnd - swapStart) * 1000.0;
+			// if(frameNumber >= 3)
+			// {
+				// GLuint64 nanoseconds = 0;
+				// glGetQueryObjectui64v(gpuQueries[(frameNumber + 1) % 3], GL_QUERY_RESULT, &nanoseconds);
+				// gpuMs += static_cast<double>(nanoseconds) / 1.0e6;
+				// gpuSamples++;
+			// }
+			// const Graphics::RenderStats& rNow = Graphics::renderStats;
+			// statSum.draws += rNow.draws;
+			// statSum.indices += rNow.indices;
+			// statSum.programCalls += rNow.programCalls;
+			// statSum.programChanges += rNow.programChanges;
+			// statSum.vaoCalls += rNow.vaoCalls;
+			// statSum.vaoChanges += rNow.vaoChanges;
+			// statSum.textureCalls += rNow.textureCalls;
+			// statSum.textureChanges += rNow.textureChanges;
+			// statSum.uniformUploads += rNow.uniformUploads;
+			// statSum.boneUploads += rNow.boneUploads;
+			// statSum.entitiesDrawn += rNow.entitiesDrawn;
+			// statSum.levelPiecesDrawn += rNow.levelPiecesDrawn;
+			// statFrames++;
+			// statTime += Globals::App::deltaTime;
+			// if(statTime >= 1.0)
+			// {
+				// double n = statFrames;
+				// double g = gpuSamples ? gpuSamples : 1;
+				// fprintf(stderr, "[stats] fps %.0f | ms: gameplay %.2f update %.2f render(cpu) %.2f ui %.2f swap %.2f gpu %.2f | per frame: draws %.0f tris %.0f ents %.0f lvlsub %.0f | program %.0f/%.0f vao %.0f/%.0f tex %.0f/%.0f (calls/changes) uniforms %.0f bones %.0f\n",
+					// n / statTime, gameplayMs / n, updateMs / n, renderMs / n, uiMs / n, swapMs / n, gpuMs / g,
+					// statSum.draws / n, statSum.indices / 3.0 / n, statSum.entitiesDrawn / n, statSum.levelPiecesDrawn / n,
+					// statSum.programCalls / n, statSum.programChanges / n, statSum.vaoCalls / n, statSum.vaoChanges / n,
+					// statSum.textureCalls / n, statSum.textureChanges / n, statSum.uniformUploads / n, statSum.boneUploads / n);
+				// statSum = Graphics::RenderStats();
+				// statFrames = 0;
+				// statTime = 0.0;
+				// gameplayMs = updateMs = renderMs = uiMs = swapMs = gpuMs = 0.0;
+				// gpuSamples = 0;
+			// }
+		// }
+		// frameNumber++;
     }
 	
 	Graphics::debugUI.destroy();

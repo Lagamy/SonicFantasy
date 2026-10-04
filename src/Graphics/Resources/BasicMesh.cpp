@@ -1,4 +1,5 @@
 #include "BasicMesh.h"
+#include "RenderStats.h"
 #include <cstdint>
 #include <cstddef>
 
@@ -61,7 +62,9 @@ void BasicMesh::create()
 
 void BasicMesh::draw()
 {
+	renderStats.vao(this->VAO);
 	glBindVertexArray(this->VAO);
+	renderStats.draw(this->indicies.empty() ? this->verticies.size() : this->indicies.size());
 	if(!this->indicies.empty())
     	glDrawElements(GL_TRIANGLES, this->indicies.size(), GL_UNSIGNED_INT, 0);
 	else

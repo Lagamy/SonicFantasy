@@ -12,8 +12,8 @@ The instance holds one user of the mesh and of its TextureSet (both released by 
 textureSetId is the TextureSet, textureBindingId that set's
 TextureBinding for the mesh, giving each submesh's texture; both are UninitializedPoolId for an untextured instance.
 currentSAAnimation is the SAMotion it plays (UninitializedPoolId = none; set by Loading::playSAMotion, one user of it),
-animationFrame the current frame in it. update advances it and fills nodePose: one entry per SAMesh node, same order,
-overriding its localTransform.
+animationFrame the current frame in it. update advances it; draw then fills nodePose (buildPose, only for an instance that is
+drawn, since sampling every node is the costly part): one entry per SAMesh node, same order, overriding its localTransform.
 */
 struct SAInstance
 {
@@ -24,8 +24,10 @@ struct SAInstance
 	PoolId currentSAAnimation;
 	float animationFrame;
 	std::vector<glm::mat4> nodePose;
+	bool poseDirty = false;
 
 	void update(float deltaTime_);
+	void buildPose();
 	void draw(const glm::mat4& rBase_);
 	void destroy();
 };

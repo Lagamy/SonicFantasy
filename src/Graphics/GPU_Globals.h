@@ -9,6 +9,7 @@
 #include "Renderer.h"
 #include "DebugUI.h"
 #include "CollisionView.h"
+#include "Text.h"
 #include "Pool.h"
 #include "Shader.h"
 #include "BasicMesh.h"
@@ -24,6 +25,7 @@ namespace Graphics
 	inline Renderer renderer;
 	inline DebugUI debugUI;
 	inline CollisionView collisionView;
+	inline Text text;
 	inline PoolMap<BasicMesh> basicMeshes = ("Meshes"); 
 	inline PoolMap<Texture> textures = ("Textures");
 	inline PoolMap<TextureSet> textureSets = ("TextureSets");

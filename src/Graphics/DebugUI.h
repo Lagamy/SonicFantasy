@@ -13,7 +13,7 @@ is using the mouse (the cursor is over its window), so a click elsewhere can giv
 struct DebugUI
 {
 	void init(GLFWwindow* pWindow_);
-	void draw(const Camera& rCamera_);
+	void draw(Camera& rCamera_);
 	bool wantsMouse() const;
 	void destroy();
 };

@@ -13,7 +13,8 @@ constexpr float MaxDeltaTime = 0.05f;
 void PhysicsSystem::update(float deltaTime_)
 {
 	deltaTime_ = std::min(deltaTime_, MaxDeltaTime);
-	for(uint32_t i = 0; i < Globals::Game::entities.objects.size(); i++)
+	/* Only the active entities (within the draw distance of the camera, SpatialIndex::updateActive). */
+	for(uint32_t i : Globals::Game::spatialIndex.activeEntities)
 	{
 		if(!Globals::Game::entities.alive[i]) continue;
 		Entity& rEntity = Globals::Game::entities.objects[i];

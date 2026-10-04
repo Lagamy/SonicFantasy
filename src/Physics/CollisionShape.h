@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <glm/glm.hpp>
+#include "PoolId.h"
 
 namespace Physics
 {
@@ -11,6 +12,7 @@ Nothing is interpreted here beyond the layout; what the values mean is only what
 - form: the shape kind. 0 looks like a sphere (radius a), 1 and 2 like cylinders (a, b), 3 to 5 and 7 like boxes (a, b, c), 6 uses a + b.
   Higher values (8 to 10) appear in tables and are unknown. Values from 11 on are not SADX's: readCCL (Shadow's .CCL) uses 6 for a capsule and 11 for a cylinder, a = radius and b = half length, along the shape's z axis (hypothesis); 6 is also an SADX form of unknown meaning.
 - kind, push, damage, attr: raw flags (what collides with what, push, damage, attributes); meanings unknown.
+- behavior: the shape's behaviour (Globals::Game::behaviors), from attr by the remap of its source (BABehaviors::resolve); UninitializedPoolId until a loader sets it (a moving entity's shape then counts as a Body).
 - center is relative to the object; angle is the shape's rotation in BAMS (65536 = a full turn), the order of the axes unknown.
 */
 struct CollisionShape
@@ -26,5 +28,6 @@ struct CollisionShape
 	float c;
 	float d;
 	glm::ivec3 angle;
+	PoolId behavior;
 };
 }

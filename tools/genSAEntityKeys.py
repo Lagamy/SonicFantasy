@@ -17,10 +17,9 @@ Where each fact comes from (external: SA Tools' INIs and the module's own data; 
 - Textures: the INI's `texture` of the model (OBJ_BEACH, OBJ_REGULAR ...) is the name of a .gvm on the disc (the disc's own spelling is used: it is case sensitive).
 - Motions: a model's INI section lists its animation files (`animations=`); each is an `animation` section with its address and `numparts` (the node count SAMotionKey needs). They are the
   entity's motions, in the INI's order with the ones named like an idle (wait, stand, swim, fly, walk, mihari) first; Level plays the first.
-- Collisions: a collision table (the 0x30 byte entries of Physics::CollisionShape) is loaded into r4 by the object's code and its entry count into r5 by a `li r5, N` just after; so a table is
-  an address the function's relocations name that holds N plausible entries (form <= 10, sane floats) with an `li r5, N` within 0x30 bytes after the address is loaded (hypothesis: the call is
-  the collision init; the stage's functions are bounded as above). For the shared objects (code in _Main.rel, whose ranges are too wide) only tables that src/SAShapeKeys.h already has,
-  with its counts from the decompile, are taken.
+- Collisions: a collision table (the 0x30 byte entries of Physics::CollisionShape) is a literal address that the object's own function (its exec function, and what it names) passes to the game's collision init
+  with the entry count and a mode, as the Ghidra pseudocode of the module shows (sadxDecomp/decompiled*/pseudocode.c; the call and the table, with `count` plausible entries: form <= 10, sane floats).
+  The function and the functions it names (calls and the exec / display / destroy pointers it stores), one level down, are searched; a table the code computes is not found. For the shared objects (code in _Main.rel) only tables that src/SAShapeKeys.h already has, with its counts from the decompile, are taken.
 - A model with no `texture` in the INI is drawn with the stage's object textures (STAGE_TEXTURES); the first model in code order may be one the object only collides with or only spawns, which is why
   NO_MODEL lists the spawners. A model reached through an array of pointers counts (the first model of the array).
 - Rotation: the objects' display code turns by the task's angles with the Ninja rotate functions of main.dol (0x8004AFDC about z, 0x8004B3E0 about x, 0x8004AF5C about y; external, the decompile
@@ -56,19 +55,42 @@ NO_MODEL = {"O AO SUMMON", "O AO KILL", "O PO SUMMON", "O DOLSW"}
 # DOLSW: "dolphin switch" (hypothesis, from the name): its code names the Dolphin model because it starts the jumping dolphin; the switch itself shows nothing.
 # O MKUSA: the only model its code names is Parasol A, which cannot be a grass; no model.
 NO_MODEL.add("O MKUSA")
+# O BEWIND: observed (user): its first guessed model, "Floating Pier", showed up as a piece of a bridge where nothing is. That model belongs to the floating bridge the stage's own code creates
+# (SALandTableKey::stageEntities, docs/EMERALD_COAST_OBJECTS.md), whose code sits in the same source file as BEWIND's (_Stg01.rel 0x16F0C to 0x1883C), so a scan of the relocations of the file finds
+# it. BEWIND's own exec (0x16F0C, 104 bytes) checks the players, clamps its scale components and draws a debug volume only; its two records are high above the ground with scale (111, 0, 230)
+# (hypothesis: an invisible volume).
+NO_MODEL.add("O BEWIND")
 
 # Stage objects whose model is named by hand, by the INI's model name of the stage module (hypothesis, from the names). O PARASOL: external, the decompile of _Stg01.rel (FUN_8040e364): the byte of
 # the record's scale x modulo 5 picks one of 5 parasol kinds (its debug text is "KIND OF PARASOL").
 STAGE_MODEL_NAMES = {"O PARASOL": "Parasol A"}
+# O PIER: its guessed model, "Pier Collision", is a white collision plane and "Floating Pier" belongs to O BEWIND's chain (observed, user); the pier's own models are VARIANT_MODELS' (the straight pier is the first).
+STAGE_MODEL_NAMES["O PIER"] = "Pier (Straight)"
 # O PARASOL's kinds: observed, the display function (found by tools/sadxLiveTasks.py in a RAM dump of Emerald Coast act 1, whose display code is _Stg01.rel 0xE008) indexes a table of 5 pointers
 # (_Stg01.rel 0x249CC4) by the kind, and each entry is an array of the kind's model and its breakable pieces: kind 0 Parasol A, 1 Parasol B, 2 Breakable Lounge Chair, 3 Breakable Table Chair, 4
 # Breakable Table. That is why records of different kinds sit at the same spot (an umbrella, a chair and a table together).
 VARIANT_MODELS = {"O PARASOL": ["Parasol A", "Parasol B", "Breakable Lounge Chair", "Breakable Table Chair", "Breakable Table"]}
+# O PIER: observed in the pseudocode of _Stg01.rel (the init 0x12B84 and the display 0x12458): the kind is the record's scale y & 1; it picks an array of models at 0x249F6C (0x249E98 straight, 0x249F00
+# corner: element 0 the whole tile, the others its breakable pieces, see docs/EMERALD_COAST_OBJECTS.md) and a collision table at 0x24A034. VARIANT_FIELD is the scale component that picks the variant.
+VARIANT_MODELS["O PIER"] = ["Pier (Straight)", "Pier (Corner)"]
+VARIANT_FIELD = {"O PIER": 1}
+# Collision tables per variant: (offset of the array of table pointers in the stage module, number of variants, entries per table). O PARASOL: the pointer table at 0x249D98 (6 pointers; the kind is the
+# scale x byte modulo 5 as for its models, and the 5 pointers of kinds 0 to 4 are used; a RAM dump of Emerald Coast act 1 shows the kind 4 table at 0x249D38 and the kind 5 table (= kind 0) at 0x249CD8).
+VARIANT_COLLISIONS = {"O PARASOL": (0x249D98, 5, 2), "O PIER": (0x24A034, 2, 2)}
 
 # Display code seen in the same dump (the display functions were read from the machine code, see above): O BED draws "Beach Bed" (_Stg01.rel 0x41C4), O KASA draws "Straw Umbrella" turned
 # about y only (0xB0B8).
 STAGE_MODEL_NAMES.update({"O BED": "Beach Bed", "O KASA": "Straw Umbrella"})
 ROTATION_OVERRIDES = {"O KASA": ["{'Y', 1, 0, false}"]}
+# O JUMP (the launch board): its display (_Stg01.rel 0x9560, called by the display function 0x951c; machine code) pushes the matrix, translates, rotates about z, y, x by the task's angles and draws the
+# board's models; the recipe finder gives that to O IWA instead, whose code sits in the same merged function range (0x930c). A launch board is pitched (x) before it is turned (y).
+# O BGIRO: its code (_Stg01.rel 0x6B38 on, machine code) turns by the task's y angle only, in all 8 rotate calls (no z, x), like O KASA; the records' x and z angles (e.g. 65408 and 256) are not used.
+# E SARU (Kiki): observed (user): rotated wrongly everywhere. Its display (_Main.rel 0x3D748, the pseudocode FUN_8053d748) turns about y by the record's x angle plus its y angle (the init
+# 0x3D900 also reads the x angle as a heading, and keeps parameters in the z angle's low bytes), scales by 1.2 times the work scale (not applied by us), and turns about y by 0x8000 before drawing the model.
+# Turns about the same axis add up, so the steps are y by x, y by y and y by 0x8000 (field 3 = no angle).
+ROTATION_OVERRIDES["E SARU"] = ["{'Y', 0, 0, false}", "{'Y', 1, 0, false}", "{'Y', 3, 32768, false}"]
+ROTATION_OVERRIDES["O BGIRO"] = ["{'Y', 1, 0, false}"]
+ROTATION_OVERRIDES["O JUMP"] = ["{'Z', 2, 0, false}", "{'Y', 1, 0, false}", "{'X', 0, 0, false}"]
 
 # Shared objects' models by the INI's model name of _Main.rel (hypothesis from the names; the object list's names are the game's own).
 MODEL_NAMES = {
@@ -174,26 +196,6 @@ class Module:
             if not math.isfinite(v) or abs(v) > 100000:
                 return False
         return True
-
-    def tables(self, f):
-        """[(offset, count)] of the collision tables the function at f loads (see the header)."""
-        nxt = min([x for x in self.starts if x > f], default=f + 0x800)
-        found = []
-        i = bisect.bisect_left(self.offs, f)
-        while i < len(self.offs) and self.offs[i] < nxt:
-            off = self.offs[i]
-            for t in self.by[off]:
-                if t in self.models or not self.plausible(t) or not self.in_data(t):
-                    continue
-                for w in range(off & ~3, min((off & ~3) + 0x30, nxt), 4):
-                    x = be(self.b, w)
-                    if (x >> 16) == 0x38A0 and 1 <= (x & 0xFFFF) <= 16:
-                        n = x & 0xFFFF
-                        if all(self.plausible(t + 0x30 * k) for k in range(n)) and (t, n) not in found:
-                            found.append((t, n))
-                        break
-            i += 1
-        return found
 
     def motions(self, model_name):
         """[(address, node count)] of the animations the INI lists for the model's section, an idle first."""
@@ -335,6 +337,40 @@ def main():
         return modules[name]
 
     main_mod = module("_Main.rel", "_Main.ini")
+
+    # The tables a function gives the game's collision init as a literal, read from the function's own body in the Ghidra pseudocode (the modules are mapped at 0x80400000 + file offset): a call
+    # `init(task, 0x806xxxxx, count, mode)` whose table holds `count` plausible entries. The function ranges of the modules are too wide to tell from the relocations which tables a function loads
+    # (observed: SPRING got tables of other objects, SPRINGB none, O BED a second table of another object that a RAM dump shows it does not use; the palms' code adds 0x30 / 0x60 / 0x90 to the base address,
+    # which the pseudocode already shows as the sum). _Main.rel's pseudocode is sadxDecomp/decompiled/ (its collision init is 0x8041E728), _Stg01.rel's sadxDecomp/decompiled_stg01/ (its own wrapper).
+    pseudo = {}
+    for mod_name, path in (("_Main.rel", "decompiled/pseudocode.c"), ("_Stg01.rel", "decompiled_stg01/pseudocode.c")):
+        funcs = {}
+        for chunk in re.split(r"\n(?=// FUN )", open(ROOT + "sadxDecomp/" + path).read()):
+            head = re.match(r"// FUN (\w+) ", chunk)
+            if head:
+                funcs[int(head.group(1), 16)] = chunk
+        pseudo[mod_name] = funcs
+    init_call = re.compile(r"\w+\(\w+,(?:&DAT_|0x)(80[67][0-9a-fA-F]{5}),(\d+),(\d+)\)")
+
+    def init_tables(mod, func):
+        """[(offset, count)] of the tables the function and what it names (calls, or stores as its exec / display / destroy function), one level, give the collision init."""
+        funcs = pseudo[mod.name]
+        seen, level, found = set(), [0x80400000 + func], []
+        for _ in range(2):
+            following = []
+            for addr in level:
+                if addr in seen or addr not in funcs:
+                    continue
+                seen.add(addr)
+                body = funcs[addr]
+                for text, n, mode in init_call.findall(body):
+                    t, n = int(text, 16) - 0x80400000, int(n)
+                    if 1 <= n <= 16 and int(mode) <= 8 and mod.in_data(t) and all(mod.plausible(t + 0x30 * k) for k in range(n)) and (t, n) not in found:
+                        found.append((t, n))
+                following += [int(x, 16) for x in re.findall(r"FUN_(80[0-9a-f]{6})", body)]
+            level = following
+        return found
+
     # The collision tables of _Main.rel that tools/genSAShapeKeys.py found from the decompile, with their counts.
     shape_keys = {int(m.group(1), 16): int(m.group(2)) for m in re.finditer(r'"_Main\.rel", 0x([0-9A-Fa-f]+), (\d+)\}', open(ROOT + "src/SAShapeKeys.h").read())}
     out = [
@@ -418,11 +454,9 @@ def main():
             motions = [f'{{"{model[0]}", 0x{a:X}, {n}}}' for a, n in modules[model[0]].motions(model[2])]
             collisions = []
             if target is not None:
-                for t, n in target[0].tables(target[1]):
-                    if target[0] is main_mod:
-                        if shape_keys.get(t) != n:
-                            continue
-                    collisions.append(f'{{"{target[0].name}", 0x{t:X}, {n}}}')
+                for t, n in init_tables(target[0], target[1]):
+                    if target[0] is not main_mod or shape_keys.get(t) == n:
+                        collisions.append(f'{{"{target[0].name}", 0x{t:X}, {n}}}')
             rotation = []
             if target is not None:
                 found = rotcode[target[0].name].recipe(target[1])
@@ -441,8 +475,16 @@ def main():
             if name in VARIANT_MODELS:
                 for vname in VARIANT_MODELS[name]:
                     variants.append("{nullptr, 0}" if vname is None else f'{{"{mod.name}", 0x{mod.by_name[vname][0]:X}}}')
+            variant_collisions = []
+            if name in VARIANT_COLLISIONS:
+                array, kinds, entries = VARIANT_COLLISIONS[name]
+                for k in range(kinds):
+                    variant_collisions.append("{" + f'{{"{mod.name}", 0x{be(b, array + 4 * k):X}, {entries}}}' + "}")
+            tail = ""
+            if variant_collisions or name in VARIANT_FIELD:
+                tail = f", {{{', '.join(variant_collisions)}}}, {VARIANT_FIELD.get(name, 0)}"
             texts.append(f'/* {name}: {model[2]} */')
-            texts.append(f'inline const SAEntityKey {ident}{{"{name}", {{"{model[0]}", 0x{model[1]:X}}}, {{"{tex}"}}, {{{", ".join(motions)}}}, {{{", ".join(collisions)}}}, {{{", ".join(rotation)}}}, {{{", ".join(variants)}}}}};')
+            texts.append(f'inline const SAEntityKey {ident}{{"{name}", {{"{model[0]}", 0x{model[1]:X}}}, {{"{tex}"}}, {{{", ".join(motions)}}}, {{{", ".join(collisions)}}}, {{{", ".join(rotation)}}}, {{{", ".join(variants)}}}{tail}}};')
             table_rows.append((i, ident))
             stats[0] += bool(motions)
             stats[1] += bool(collisions)
