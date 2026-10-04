@@ -8,6 +8,8 @@
 #include "SAMesh.h"
 #include "ONE.h"
 #include "ONEInstance.h"
+#include "SALevelInstance.h"
+#include "ONELevelInstance.h"
 #include "PoolId.h"
 #include "SAMdl.h"
 #include "Constants.h"
@@ -27,6 +29,8 @@ namespace Graphics
     SAMesh& getSAMesh(PoolId id_);
     SAInstance& getSAInstance(PoolId id_); 
     ONEInstance& getONEInstance(PoolId id_);
+    SALevelInstance& getSALevelInstance(PoolId id_);
+    ONELevelInstance& getONELevelInstance(PoolId id_);
 
     PoolId getBasicMeshId(const char* name_);
     PoolId getTextureId(const char* name_);

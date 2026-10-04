@@ -15,6 +15,7 @@ struct Texture
 	GLuint textureId;
 	GLint filter = GL_NEAREST;
 	GLint wrap = GL_CLAMP_TO_EDGE;
+	bool mipmaps = true;
 	bool alive = false; 
 
 	Texture(uint32_t width_, uint32_t height_, uint32_t channels_); 

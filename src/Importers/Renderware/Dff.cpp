@@ -1,7 +1,9 @@
 #include "Dff.h"
 #include "RwChunk.h"
+#include "RwMaterial.h"
 #include "BinaryRead.h"
 #include "GPU_Globals.h"
+#include <algorithm>
 #include <cstring>
 #include <format>
 #include <stdexcept>
@@ -15,10 +17,6 @@ RenderWare binary stream (external, gtamods wiki; confirmed on Shadow's SHADOW_B
 Every chunk starts with u32 type, u32 size of its data, u32 library version stamp. Container chunks hold
 child chunks; their fixed fields live in a leading Struct child.
 */
-constexpr uint32_t ChunkString = 0x02;
-constexpr uint32_t ChunkTexture = 0x06;
-constexpr uint32_t ChunkMaterial = 0x07;
-constexpr uint32_t ChunkMaterialList = 0x08;
 constexpr uint32_t ChunkFrameList = 0x0E;
 constexpr uint32_t ChunkGeometry = 0x0F;
 constexpr uint32_t ChunkClump = 0x10;
@@ -30,6 +28,13 @@ constexpr uint32_t ChunkSkin = 0x116;
 /* Geometry format flags (external, gtamods). */
 constexpr uint32_t GeometryTextured = 0x04;
 constexpr uint32_t GeometryPrelit = 0x08;
+
+/*
+A prelit color whose red, green and blue are all below this (of 255) is not used: the vertex stays white. Hypothesis (a guess of the limit; not checked against the game): such a color is
+black because the object is meant to be lit by the game's lights, which this engine does not have yet (observed: DOOMSEYE.DFF's body is prelit (0, 0, 0) and its eye (255, 255, 255), and with
+the colors multiplied the body came out black; FRUIT's are (13, 0, 17) and (3, 0, 0)), while colors like HINTRING00's (0, 127, 127) are baked tints.
+*/
+constexpr uint8_t PrelitBlackLimit = 32;
 constexpr uint32_t GeometryTextured2 = 0x80;
 constexpr uint32_t GeometryNative = 0x01000000;
 
@@ -110,76 +115,6 @@ static void readFrameList(const std::vector<uint8_t>& rBytes_, const Chunk& rFra
 }
 
 /*
-Material (external, gtamods; fields confirmed on Shadow's DFFs): Struct (u32 flags, u32 color stored as bytes R, G, B, A,
-u32 unused, u32 textured, f32 ambient, specular, diffuse), then, if textured, a Texture chunk: Struct (u32 filter and
-addressing), String texture name, String mask name, Extension.
-Only the color and the base texture name are read. The material Extension (MatFX environment map or UV transform,
-UV animation) is skipped.
-*/
-struct DffMaterial
-{
-	glm::vec4 color;
-	std::string textureName;
-};
-
-static DffMaterial readMaterial(const std::vector<uint8_t>& rBytes_, const Chunk& rMaterial_)
-{
-	Chunk data = expectChunk(rBytes_, rMaterial_.data, ChunkStruct);
-	uint32_t color = readLE<uint32_t>(rBytes_, data.data + 4);
-	bool textured = readLE<uint32_t>(rBytes_, data.data + 12) != 0;
-
-	DffMaterial material;
-	material.color = glm::vec4(
-		(color & 0xFF) / 255.0f,
-		((color >> 8) & 0xFF) / 255.0f,
-		((color >> 16) & 0xFF) / 255.0f,
-		(color >> 24) / 255.0f
-	);
-
-	if(textured)
-	{
-		Chunk texture = expectChunk(rBytes_, data.end, ChunkTexture);
-		Chunk filter = expectChunk(rBytes_, texture.data, ChunkStruct);
-		Chunk name = expectChunk(rBytes_, filter.end, ChunkString);
-		const char* pName = reinterpret_cast<const char*>(rBytes_.data() + name.data);
-		material.textureName = std::string(pName, strnlen(pName, name.size));
-	}
-	return material;
-}
-
-/*
-MaterialList: Struct (u32 count, then count x i32), then one Material chunk for every entry of -1. An entry >= 0 is the
-index of an earlier material that this one reuses (external, gtamods; every entry is -1 in Shadow's DFFs).
-*/
-static std::vector<DffMaterial> readMaterialList(const std::vector<uint8_t>& rBytes_, const Chunk& rList_)
-{
-	Chunk data = expectChunk(rBytes_, rList_.data, ChunkStruct);
-	uint32_t count = readLE<uint32_t>(rBytes_, data.data);
-
-	std::vector<DffMaterial> materials;
-	uint32_t cursor = data.end;
-	for(uint32_t m = 0; m < count; m++)
-	{
-		int32_t index = readLE<int32_t>(rBytes_, data.data + 4 + m * 4);
-		if(index < 0)
-		{
-			Chunk material = expectChunk(rBytes_, cursor, ChunkMaterial);
-			materials.push_back(readMaterial(rBytes_, material));
-			cursor = material.end;
-		}
-		else if(static_cast<uint32_t>(index) < m)
-		{
-			materials.push_back(materials[index]);
-		}
-		else
-		{
-			throw std::runtime_error(std::format("Dff: material {} reuses material {}, not stored before it.", m, index));
-		}
-	}
-	return materials;
-}
-
-/*
 A geometry's submeshes and, when it has a Skin plugin, its inverse bind matrices (one per skin bone; empty if unskinned).
 */
 struct DffGeometry
@@ -252,8 +187,9 @@ triangles (count x 8: u16 vertex2, u16 vertex1, u16 material id, u16 vertex3),
 and per morph target: bounding sphere (16), u32 has positions, u32 has normals, positions (x 12), normals (x 12).
 Only morph target 0 is used. Returns one submesh per used material id, each with the full vertex array, and the
 skin's inverse bind matrices if the Extension has a Skin plugin (whose bone indices and weights go into the vertices).
-The material list (a child chunk after the Struct) gives each submesh its textureName, and its color is stored as the
-vertex color of every vertex, which the shader multiplies with the texture.
+The material list (a child chunk after the Struct) gives each submesh its textureName, and the vertex color of every vertex is its prelit color (white if the
+geometry has none or it is almost black, see PrelitBlackLimit; bytes r, g, b, a) times the material's color, which the shader multiplies with the texture. Hypothesis (RenderWare's unlit result, not checked against the game):
+observed that stage objects have prelit colors that tint gray textures (HINTRING00 (0, 127, 127, 255), HINTRING01 gray 178, FRUIT dark with alpha 127), and that without them they looked uncolored.
 */
 static DffGeometry readGeometry(const std::vector<uint8_t>& rBytes_, const Chunk& rGeometry_)
 {
@@ -279,6 +215,7 @@ static DffGeometry readGeometry(const std::vector<uint8_t>& rBytes_, const Chunk
 	}
 
 	uint32_t cursor = data.data + 16;
+	uint32_t prelitOffset = cursor;
 	if(format & GeometryPrelit)
 	{
 		cursor += vertexCount * 4;
@@ -317,9 +254,18 @@ static DffGeometry readGeometry(const std::vector<uint8_t>& rBytes_, const Chunk
 			readLE<float>(rBytes_, uvOffset + v * 8 + 4)
 		) : glm::vec2(0.0f);
 		rVertex.color = glm::vec4(1.0f);
+		if(format & GeometryPrelit)
+		{
+			uint8_t red = readLE<uint8_t>(rBytes_, prelitOffset + v * 4);
+			uint8_t green = readLE<uint8_t>(rBytes_, prelitOffset + v * 4 + 1);
+			uint8_t blue = readLE<uint8_t>(rBytes_, prelitOffset + v * 4 + 2);
+			uint8_t alpha = readLE<uint8_t>(rBytes_, prelitOffset + v * 4 + 3);
+			bool black = std::max({red, green, blue}) < PrelitBlackLimit;
+			rVertex.color = glm::vec4(black ? 1.0f : red / 255.0f, black ? 1.0f : green / 255.0f, black ? 1.0f : blue / 255.0f, alpha / 255.0f);
+		}
 	}
 
-	std::vector<DffMaterial> materials;
+	std::vector<RwMaterial> materials;
 	DffGeometry geometry;
 	uint32_t childCursor = data.end;
 	while(childCursor < rGeometry_.end)
@@ -382,7 +328,7 @@ static DffGeometry readGeometry(const std::vector<uint8_t>& rBytes_, const Chunk
 		rSubmesh.mesh.verticies = vertices;
 		for(Graphics::Vertex& rVertex : rSubmesh.mesh.verticies)
 		{
-			rVertex.color = materials[m].color;
+			rVertex.color *= materials[m].color;
 		}
 		rSubmesh.textureName = materials[m].textureName;
 		geometry.submeshes.push_back(rSubmesh);

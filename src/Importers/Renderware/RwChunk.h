@@ -9,6 +9,10 @@ namespace Renderware
 {
 constexpr uint32_t ChunkStruct = 0x01;
 constexpr uint32_t ChunkExtension = 0x03;
+constexpr uint32_t ChunkString = 0x02;
+constexpr uint32_t ChunkTexture = 0x06;
+constexpr uint32_t ChunkMaterial = 0x07;
+constexpr uint32_t ChunkMaterialList = 0x08;
 
 /*
 Header of a RenderWare stream chunk (external, gtamods wiki): u32 type, u32 size of the data, u32 library version stamp.

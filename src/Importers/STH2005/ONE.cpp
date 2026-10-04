@@ -6,9 +6,12 @@
 #include "Mtp.h"
 #include "Bon.h"
 #include <algorithm>
+#include <cctype>
+#include <cstdio>
 #include <cstring>
 #include <format>
 #include <stdexcept>
+#include <string_view>
 
 namespace STH2005
 {
@@ -153,8 +156,14 @@ uint32_t ONE::useTextureDictionary(const char* name_)
 	{
 		return found->second;
 	}
+	return this->addTextureDictionary(name_, this->readFile(name_));
+}
+
+/* Decodes a .TXD that is not an entry of this archive (see addONEInstance) and keeps it under name_, so the same one is not decoded again. */
+uint32_t ONE::addTextureDictionary(const std::string& name_, const std::vector<uint8_t>& rBytes_)
+{
 	uint32_t index = static_cast<uint32_t>(this->textureDictionaries.size());
-	this->textureDictionaries.push_back(Renderware::importTxd(this->readFile(name_)));
+	this->textureDictionaries.push_back(Renderware::importTxd(rBytes_));
 	this->textureDictionaryNames.push_back(name_);
 	this->textureDictionaryByName.emplace(name_, index);
 	return index;
@@ -162,8 +171,10 @@ uint32_t ONE::useTextureDictionary(const char* name_)
 
 /*
 Index of the binding of a mesh against a texture dictionary: every submesh's textureName is looked up in the
-dictionary's byName, once, so draw only indexes the result. A name missing from the dictionary throws;
-an untextured submesh gets UninitializedPoolId.
+dictionary's byName, once, so draw only indexes the result. A name missing from the dictionary is printed and the submesh is left
+untextured (UninitializedPoolId), like one without a texture name: stage objects can name textures their archive's .TXD does not have
+(observed: FRUIT, whose texture s0404_nn022 is in the .TXDs of stages 0301, 0404 and 0603 but not in the common or stg0100 ones; its key names stage 0404's .TXD, see
+EntityKey / genEntityKeys.py).
 */
 uint32_t ONE::useBinding(uint32_t meshIndex_, uint32_t textureDictionaryIndex_)
 {
@@ -189,7 +200,9 @@ uint32_t ONE::useBinding(uint32_t meshIndex_, uint32_t textureDictionaryIndex_)
 			auto texture = rDictionary.byName.find(rSubmesh.textureName);
 			if(texture == rDictionary.byName.end())
 			{
-				throw std::runtime_error(std::format("STH2005::ONE: texture {} is not in {}.", rSubmesh.textureName, this->textureDictionaryNames[textureDictionaryIndex_]));
+				std::printf("STH2005::ONE: texture %s of %s is not in %s, left untextured.\n", rSubmesh.textureName.c_str(), this->meshNames[meshIndex_].c_str(), this->textureDictionaryNames[textureDictionaryIndex_].c_str());
+				rIds.push_back(UninitializedPoolId);
+				continue;
 			}
 			rIds.push_back(texture->second);
 		}
@@ -213,7 +226,11 @@ uint32_t ONE::useMotion(const MotionKey& rKey_)
 		return found->second;
 	}
 	uint32_t index = static_cast<uint32_t>(this->motions.size());
-	this->motions.push_back(readMtpMotion(this->readFile(rKey_.mtp), rKey_.motion, readBon(this->readFile(rKey_.bon))));
+	std::string_view file = rKey_.mtp;
+	bool isMtn = file.size() >= 4 && std::equal(file.end() - 4, file.end(), ".MTN", [](char a_, char b_) { return std::toupper(static_cast<unsigned char>(a_)) == b_; });
+	std::vector<uint8_t> bytes = this->readFile(rKey_.mtp);
+	Bon bon = readBon(this->readFile(rKey_.bon));
+	this->motions.push_back(isMtn ? readMtnMotion(bytes, rKey_.motion, bon) : readMtpMotion(bytes, rKey_.motion, bon));
 	this->motionByName.emplace(name, index);
 	return index;
 }

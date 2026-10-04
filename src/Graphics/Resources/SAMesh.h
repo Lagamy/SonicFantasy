@@ -13,6 +13,7 @@ namespace Graphics
 /*
 textureIndex is the material's texture id from the file, an index into the file order of the TextureSet that
 the instance's TextureBinding resolves it against. The mesh itself holds no Texture pool ids, so different bindings can texture the same mesh differently.
+clampU / clampV come from the material: an axis that is not clamped repeats the texture (see readAttach).
 */
 constexpr uint32_t SANoTexture = 0xFFFFFFFF;
 
@@ -20,6 +21,8 @@ struct SASubmesh
 {
 	BasicMesh mesh;
 	uint32_t textureIndex = SANoTexture;
+	bool clampU = false;
+	bool clampV = false;
 };
 
 /* NJS_OBJECT eval flags that change the local transform (external, SA Tools Enums.cs ObjectFlags). */

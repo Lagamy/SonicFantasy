@@ -26,5 +26,7 @@ void main()
 	{
 		color *= texture(baseTexture, vertexUv);
 	}
+	/* A fully transparent texel is dropped, so it doesn't write depth and hide what is behind it. */
+	if(color.a < 0.01) discard;
 	FragColor = color;
 }

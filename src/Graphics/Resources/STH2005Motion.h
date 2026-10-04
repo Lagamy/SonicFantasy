@@ -5,10 +5,14 @@
 
 namespace STH2005
 {
-/* One key of a motion track: its frame, the slope of the curve there (value per frame) and its value. */
+/*
+One key of a motion track: its frame, the slope of the curve arriving at it and leaving it (value per frame; equal on
+keys that store one tangent) and its value.
+*/
 struct Keyframe
 {
 	uint32_t frame;
+	float inTangent;
 	float tangent;
 	float value;
 };

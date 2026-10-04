@@ -1,5 +1,6 @@
 #include "Rel.h"
 #include "BinaryRead.h"
+#include "SaComp.h"
 #include <bit>
 #include <cstring>
 #include <format>
@@ -31,12 +32,18 @@ static void writeBE32(std::vector<uint8_t>& rBytes_, uint32_t offset_, uint32_t 
 
 /*
 Only R_PPC_ADDR32 relocations into the module itself are applied: those are the data pointers.
+A SaCompGC compressed module is decompressed first (see SaComp.cpp).
 Others (code relocations, pointers into main.dol, module 0) are skipped and keep their file value.
 SECTION selects the section being patched and resets the running offset; NOP only advances it; END stops.
 On ModelsMiles.rel every relocation is a self-module ADDR32 (8178 of them).
 */
 std::vector<uint8_t> relocateRel(std::vector<uint8_t> bytes_)
 {
+	if(isSaComp(bytes_))
+	{
+		bytes_ = decompressSaComp(bytes_);
+	}
+
 	uint32_t moduleId = readBE<uint32_t>(bytes_, 0x00);
 	uint32_t sectionCount = readBE<uint32_t>(bytes_, 0x0C);
 	uint32_t sectionTable = readBE<uint32_t>(bytes_, 0x10);

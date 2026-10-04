@@ -27,6 +27,8 @@ add_executable(SonicFantasy
     src/Misc/Debug.h
 	src/Graphics/Renderer.cpp
 	src/Graphics/GPU_API.cpp
+	src/Graphics/DebugUI.cpp
+	src/Graphics/CollisionView.cpp
 	src/Graphics/Resources/Shader.cpp
 	src/Graphics/Resources/Texture.cpp
 	src/Graphics/Resources/TextureSet.cpp
@@ -35,27 +37,48 @@ add_executable(SonicFantasy
 	src/Graphics/Resources/RenderWareMesh.cpp
 	src/Graphics/InstanceData/SAInstance.cpp
 	src/Graphics/InstanceData/ONEInstance.cpp
+	src/Graphics/InstanceData/SALevelInstance.cpp
+	src/Graphics/InstanceData/ONELevelInstance.cpp
 	src/Importers/Ninja/SAMdl.cpp
 	src/Importers/GameCube/GCDisc.cpp
 	src/Importers/GameCube/Rel.cpp
+	src/Importers/GameCube/GXTexture.cpp
+	src/Importers/GameCube/SaComp.cpp
 	src/Importers/Ninja/Gvm.cpp
 	src/Importers/Ninja/SAMotion.cpp
+	src/Importers/Ninja/SALandTable.cpp
+	src/Importers/Ninja/SAShapes.cpp
+	src/Importers/Ninja/SASet.cpp
 	src/Importers/STH2005/Prs.cpp
 	src/Importers/STH2005/ONE.cpp
 	src/Importers/STH2005/Bon.cpp
+	src/Importers/STH2005/CCL.cpp
+	src/Importers/STH2005/Placement.cpp
+	src/Importers/STH2005/RingLine.cpp
 	src/Importers/STH2005/Model.cpp
 	src/Importers/STH2005/Mtp.cpp
 	src/Importers/Renderware/Dff.cpp
+	src/Importers/Renderware/RwMaterial.cpp
+	src/Importers/Renderware/World.cpp
+	src/Importers/Renderware/CollisionWorld.cpp
 	src/Importers/Renderware/Txd.cpp
 	src/Objects/Camera.cpp
 	src/Objects/Entity.cpp
+	src/Objects/Level.cpp
 	src/Loading/ResourceLoader.cpp
+	src/DebugSetup.cpp
+	src/Physics/Collision.cpp
+	src/Physics/QuadTree.cpp
+	src/Physics/PhysicsSystem.cpp
+	src/Physics/CollisionSystem.cpp
 
     ${GLAD_SRC}
     ${IMGUI_DIR}/imgui.cpp
     ${IMGUI_DIR}/imgui_draw.cpp
     ${IMGUI_DIR}/imgui_widgets.cpp
     ${IMGUI_DIR}/imgui_tables.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
+    ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
 	${STB_DIR}/stb_image.cpp
 	src/Misc/API.cpp
 )
@@ -72,6 +95,7 @@ target_include_directories(SonicFantasy PUBLIC
 	src/Importers/STH2005
 	src/Importers/Renderware
 	src/Loading
+	src/Physics
 	src/Keys
 	src/Misc
 

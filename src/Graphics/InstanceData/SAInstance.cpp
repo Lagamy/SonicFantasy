@@ -14,38 +14,48 @@ Alternate Stand (16 frames) looped too fast. The original may also scale the spe
 constexpr float SAMotionFramesPerSecond = 30.0f;
 
 /*
-The value of a channel at frame_. Hypothesis, unverified: linear interpolation between keys, BAMS included (no
-shortest-path wrap); before the first key the first value holds; after the last key the value moves back to the first
-key's over the frames left to frameCount_, so the loop closes.
+The value of a channel at frame_, as the game samples linear motions (external, decomp: SADX GC main.dol fn_800493E0
+for the key search, fn_800488D0 for positions and scales, fn_80048ABC for rotations).
+The pair is the last key whose frame is <= the whole frame and the key after it; past the last key both are the last
+key, so its value holds (the loop doesn't blend back to the first key). Before the first key, keys 0 and 1 extrapolate.
+Rotations go the short way: the difference between the two keys is cut to a signed 16-bit BAMS value, and the result
+is truncated to a whole BAMS value.
 */
-static glm::vec3 sampleKeys(const std::vector<SAKeyframe>& rKeys_, float frame_, uint32_t frameCount_)
+static glm::vec3 sampleKeys(const std::vector<SAKeyframe>& rKeys_, float frame_, bool rotation_)
 {
-	if(frame_ <= rKeys_.front().frame)
+	uint32_t wholeFrame = static_cast<uint32_t>(frame_);
+	size_t k = 0;
+	while(k + 1 < rKeys_.size() && rKeys_[k + 1].frame <= wholeFrame)
 	{
-		return rKeys_.front().value;
+		k++;
 	}
-	for(size_t k = 0; k + 1 < rKeys_.size(); k++)
+	const SAKeyframe& rA = rKeys_[k];
+	const SAKeyframe& rB = rKeys_[k + 1 < rKeys_.size() ? k + 1 : k];
+	float t = frame_ - static_cast<float>(rA.frame);
+	if(rB.frame > rA.frame)
 	{
-		const SAKeyframe& rA = rKeys_[k];
-		const SAKeyframe& rB = rKeys_[k + 1];
-		if(frame_ < rB.frame)
-		{
-			return glm::mix(rA.value, rB.value, (frame_ - rA.frame) / static_cast<float>(rB.frame - rA.frame));
-		}
+		t /= static_cast<float>(rB.frame - rA.frame);
 	}
-	const SAKeyframe& rLast = rKeys_.back();
-	float span = static_cast<float>(frameCount_) - rLast.frame;
-	if(span <= 0.0f)
+
+	if(!rotation_)
 	{
-		return rLast.value;
+		return rA.value + t * (rB.value - rA.value);
 	}
-	return glm::mix(rLast.value, rKeys_.front().value, (frame_ - rLast.frame) / span);
+	glm::vec3 value;
+	for(int c = 0; c < 3; c++)
+	{
+		int32_t a = static_cast<int32_t>(rA.value[c]);
+		int16_t difference = static_cast<int16_t>(static_cast<int32_t>(rB.value[c]) - a);
+		value[c] = static_cast<float>(static_cast<int32_t>(static_cast<float>(a) + t * static_cast<float>(difference)));
+	}
+	return value;
 }
 
 /*
 Advances the motion by deltaTime_ (looping over its frame count) and fills nodePose. Each node takes its channels from
-the motion and the rest value for the channels the motion doesn't key. Hypothesis, unverified: a keyed channel
-applies even when the node's flags skip that part at rest (the flag is cleared for the pose).
+the motion and the rest value for the channels the motion doesn't key. External (decomp: SADX GC main.dol fn_80049638):
+while a motion plays, the node's NoPosition / NoRotate / NoScale flags are ignored, so translate, rotate and scale
+always apply, keyed or not.
 */
 void SAInstance::update(float deltaTime_)
 {
@@ -63,22 +73,19 @@ void SAInstance::update(float deltaTime_)
 		glm::vec3 position = rNode.restPosition;
 		glm::vec3 rotation = glm::vec3(rNode.restRotation);
 		glm::vec3 scale = rNode.restScale;
-		uint32_t flags = rNode.flags;
 		if(!rTrack.positions.empty())
 		{
-			position = sampleKeys(rTrack.positions, this->animationFrame, rMotion.frameCount);
-			flags &= ~NinjaNoPosition;
+			position = sampleKeys(rTrack.positions, this->animationFrame, false);
 		}
 		if(!rTrack.rotations.empty())
 		{
-			rotation = sampleKeys(rTrack.rotations, this->animationFrame, rMotion.frameCount);
-			flags &= ~NinjaNoRotate;
+			rotation = sampleKeys(rTrack.rotations, this->animationFrame, true);
 		}
 		if(!rTrack.scales.empty())
 		{
-			scale = sampleKeys(rTrack.scales, this->animationFrame, rMotion.frameCount);
-			flags &= ~NinjaNoScale;
+			scale = sampleKeys(rTrack.scales, this->animationFrame, false);
 		}
+		uint32_t flags = rNode.flags & ~(NinjaNoPosition | NinjaNoRotate | NinjaNoScale);
 		this->nodePose[i] = composeNinjaTransform(position, rotation, scale, flags);
 	}
 }
@@ -88,7 +95,8 @@ Binds the instance's shader, uploads the mesh if needed and draws every submesh 
 Each node's world matrix is its parent's world matrix times its local matrix, rBase_ being the parent of roots.
 The local matrix is nodePose[i] when the instance has a pose, otherwise the rest localTransform.
 Relies on SAMesh storing parents before children.
-A submesh with a texture id in the instance's TextureBinding has it bound to unit 0 (the shader's baseTexture) and hasTexture set.
+A submesh with a texture id in the instance's TextureBinding has it bound to unit 0 (the shader's baseTexture) and hasTexture set,
+with the wrap of its material set on the texture before each draw (a texture used by materials that disagree is set again per submesh).
 */
 void SAInstance::draw(const glm::mat4& rBase_)
 {
@@ -114,7 +122,10 @@ void SAInstance::draw(const glm::mat4& rBase_)
 			bool hasTexture = textureId != UninitializedPoolId;
 			if(hasTexture)
 			{
-				glBindTextureUnit(0, textures[textureId].textureId);
+				GLuint glTexture = textures[textureId].textureId;
+				glBindTextureUnit(0, glTexture);
+				glTextureParameteri(glTexture, GL_TEXTURE_WRAP_S, rSubmesh.clampU ? GL_CLAMP_TO_EDGE : GL_REPEAT);
+				glTextureParameteri(glTexture, GL_TEXTURE_WRAP_T, rSubmesh.clampV ? GL_CLAMP_TO_EDGE : GL_REPEAT);
 			}
 			glUniform1i(HasTextureLocation, hasTexture);
 			rSubmesh.mesh.draw();

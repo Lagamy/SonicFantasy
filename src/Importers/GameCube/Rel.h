@@ -5,7 +5,8 @@
 namespace GameCube
 {
 /*
-Applies a GameCube .rel module's relocations against itself and returns the patched bytes.
+Applies a GameCube .rel module's relocations against itself and returns the patched bytes (a SaCompGC
+compressed module is decompressed first).
 Patched pointers hold file offsets (target section's file offset + addend), so data inside the module
 can then be walked with pointer = file offset, like a .sa1mdl.
 */

@@ -17,8 +17,8 @@ struct TxdTextures
 /*
 Reads a RenderWare texture dictionary (.txd) of GameCube native textures from memory and adds every texture to the
 Texture pool under its name, already uploaded to the GPU (needs the GL context).
-Only C4 textures (4 bit palette indices) with an RGB565 or RGB5A3 palette are supported, the only kind in Shadow's
-SHADOW.TXD; anything else throws.
+Supported formats (see Txd.cpp): C4 and C8 with an RGB565 or RGB5A3 palette, RGB565, RGB5A3 and CMPR, one mip level;
+anything else throws.
 The caller owns the returned ids (STH2005::ONE keeps them per dictionary and removes the textures with the archive).
 */
 TxdTextures importTxd(const std::vector<uint8_t>& rBytes_);

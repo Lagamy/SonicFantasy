@@ -62,9 +62,27 @@ void Camera::updateProjection(float aspect) {
     this->projection = glm::perspective(
         glm::radians(45.0f),
         aspect,
-        0.1f,
-        100.0f
+        this->nearPlane,
+        this->farPlane
     );
+}
+
+/*
+Planes from the rows of projection * view (Gribb and Hartmann): a point is inside when -w <= x, y, z <= w in clip space
+(OpenGL), so each plane is row 3 plus or minus one of rows 0 to 2.
+*/
+std::array<glm::vec4, 6> Camera::frustumPlanes() const {
+	glm::mat4 m = this->projection * this->view;
+	glm::vec4 row0(m[0][0], m[1][0], m[2][0], m[3][0]);
+	glm::vec4 row1(m[0][1], m[1][1], m[2][1], m[3][1]);
+	glm::vec4 row2(m[0][2], m[1][2], m[2][2], m[3][2]);
+	glm::vec4 row3(m[0][3], m[1][3], m[2][3], m[3][3]);
+	std::array<glm::vec4, 6> planes = {row3 + row0, row3 - row0, row3 + row1, row3 - row1, row3 + row2, row3 - row2};
+	for(glm::vec4& rPlane : planes)
+	{
+		rPlane /= glm::length(glm::vec3(rPlane));
+	}
+	return planes;
 }
 
 void Camera::move(glm::vec3 by_) { 

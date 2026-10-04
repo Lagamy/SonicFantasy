@@ -116,9 +116,17 @@ uint32_t importModel(const char* name_, ONE& rArchive_, const std::vector<ModelP
 		throw std::runtime_error(std::format("STH2005::Model: {} has no parts.", name_));
 	}
 
+	/*
+	A main part without a .BON is a static model (stage objects such as RING.DFF have none): its frames are kept as the DFF has them, unnamed, so no other
+	part can attach to it.
+	*/
 	if(rParts_[0].bon == nullptr)
 	{
-		throw std::runtime_error(std::format("STH2005::Model: main part {} of {} has no .BON.", rParts_[0].dff, name_));
+		if(rParts_.size() != 1)
+		{
+			throw std::runtime_error(std::format("STH2005::Model: main part {} of {} has no .BON, so other parts can't attach to it.", rParts_[0].dff, name_));
+		}
+		return rArchive_.addMesh(name_, Renderware::readDff(rArchive_.readFile(rParts_[0].dff)), rParts_);
 	}
 
 	std::string rootName;

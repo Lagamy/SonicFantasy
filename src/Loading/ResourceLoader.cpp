@@ -5,7 +5,14 @@
 #include "Gvm.h"
 #include "SAMdl.h"
 #include "SAMotion.h"
+#include "SALandTable.h"
+#include "SAShapes.h"
 #include "ONE.h"
+#include "World.h"
+#include "CollisionWorld.h"
+#include "CCL.h"
+#include "ONEInstance.h"
+#include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <format>
 #include <stdexcept>
@@ -63,6 +70,16 @@ namespace Loading
     {
         auto module = relModules.find(rRel_);
         if(module != relModules.end() && --module->second.users == 0)
+        {
+            relModules.erase(module);
+        }
+    }
+
+    /* Frees a .rel module no mesh or motion imported from it is using (users 0), e.g. one loaded only to read a land table. */
+    static void eraseRelModuleIfUnused(const char* rel_)
+    {
+        auto module = relModules.find(rel_);
+        if(module != relModules.end() && module->second.users == 0)
         {
             relModules.erase(module);
         }
@@ -198,10 +215,11 @@ namespace Loading
 
     /*
     The set's TextureBinding for a mesh: the existing one, or a new one that resolves every submesh's textureIndex
-    through the set's file order. An index past the end of the set throws; a submesh without a texture (SANoTexture)
-    gets UninitializedPoolId.
+    through rOrdered_ (the set's file order, or a land table's texlist resolved against the set). An index past the end
+    of rOrdered_ throws; a submesh without a texture (SANoTexture) gets UninitializedPoolId. A mesh is bound once per set,
+    whatever rOrdered_ was the first time.
     */
-    static PoolId findOrBindSATextures(PoolId textureSetId_, PoolId saMeshId_, const char* textureSetKey_)
+    static PoolId findOrBindSATextures(PoolId textureSetId_, PoolId saMeshId_, const char* textureSetKey_, const std::vector<PoolId>& rOrdered_)
     {
         TextureSet& rSet = textureSets[textureSetId_];
         for(const auto& rBinding : rSet.saBindings)
@@ -220,11 +238,11 @@ namespace Loading
                     rIds.push_back(UninitializedPoolId);
                     continue;
                 }
-                if(rSubmesh.textureIndex >= rSet.ordered.size())
+                if(rSubmesh.textureIndex >= rOrdered_.size())
                 {
-                    throw std::runtime_error(std::format("TextureBinding: submesh uses texture {} but set {} has {} textures.", rSubmesh.textureIndex, textureSetKey_, rSet.ordered.size()));
+                    throw std::runtime_error(std::format("TextureBinding: submesh uses texture {} but set {} has {} textures.", rSubmesh.textureIndex, textureSetKey_, rOrdered_.size()));
                 }
-                rIds.push_back(rSet.ordered[rSubmesh.textureIndex]);
+                rIds.push_back(rOrdered_[rSubmesh.textureIndex]);
             }
         }
         PoolId bindingId = textureBindings.add(std::move(binding));
@@ -259,8 +277,9 @@ namespace Loading
     /*
     Everything the instance needs is found or loaded from its keys, then it holds one user of the mesh and of the
     texture set (if pTextures_ is not nullptr) until destroyed. If a step fails, what this call loaded is removed again.
+    pOrder_ is the Texture pool id of each texture id of the mesh; nullptr means the set's file order.
     */
-    PoolId addSAInstance(PoolId shaderId_, const SAModelKey& rMesh_, const SATextureSetKey* pTextures_)
+    static PoolId createSAInstance(PoolId shaderId_, const SAModelKey& rMesh_, const SATextureSetKey* pTextures_, const std::vector<PoolId>* pOrder_)
     {
         bool meshCreated = false;
         bool setCreated = false;
@@ -272,7 +291,7 @@ namespace Loading
             if(pTextures_ != nullptr)
             {
                 setId = findOrLoadTextureSet(*pTextures_, setCreated);
-                bindingId = findOrBindSATextures(setId, meshId, pTextures_->path);
+                bindingId = findOrBindSATextures(setId, meshId, pTextures_->path, pOrder_ ? *pOrder_ : textureSets[setId].ordered);
             }
         }
         catch(...)
@@ -286,18 +305,285 @@ namespace Loading
         return saInstances.add(SAInstance{meshId, shaderId_, setId, bindingId, UninitializedPoolId, 0.0f});
     }
 
+    PoolId addSAInstance(PoolId shaderId_, const SAModelKey& rMesh_, const SATextureSetKey* pTextures_)
+    {
+        return createSAInstance(shaderId_, rMesh_, pTextures_, nullptr);
+    }
+
+    /*
+    Surface flag bit of a land table piece that marks it as drawn (hypothesis, unverified: recalled from SA Tools'
+    SurfaceFlags; observed: 316 of the 480 pieces of Emerald Coast's first land table have exactly this bit, the others
+    carry solid / water bits). Pieces without it are collision only and are not imported.
+    */
+    constexpr uint32_t LandTableVisible = 0x80000000;
+
+    /*
+    True if every submesh of the mesh uses a texture whose texlist name is in rSkipped_ (a mesh without submeshes is not
+    skipped). Checked after the import because the submeshes' texture ids are only known then; the instance of a skipped
+    piece is removed again, which removes the mesh too.
+    */
+    static bool isSkippedPiece(const SAMesh& rMesh_, const std::vector<std::string>& rTextureNames_, const std::vector<std::string>& rSkipped_)
+    {
+        bool any = false;
+        for(const SANode& rNode : rMesh_.nodes)
+        {
+            for(const SASubmesh& rSubmesh : rNode.submeshes)
+            {
+                any = true;
+                if(rSubmesh.textureIndex == SANoTexture || rSubmesh.textureIndex >= rTextureNames_.size()) return false;
+                if(std::find(rSkipped_.begin(), rSkipped_.end(), rTextureNames_[rSubmesh.textureIndex]) == rSkipped_.end()) return false;
+            }
+        }
+        return any;
+    }
+
+    /*
+    A level from a land table: every visible piece becomes an SAInstance (its model is an SAMesh imported from the same
+    .rel), textured through the land table's texlist: a texture id of a piece is a name of the texlist, looked up in the
+    TextureSet of rTextures_ (a name the set doesn't have throws). If a step fails, what this call loaded is removed again.
+    */
+    PoolId addSALevelInstance(PoolId shaderId_, const SALandTableKey& rLandTable_, const SATextureSetKey& rTextures_)
+    {
+        Ninja::SALandTable landTable;
+        bool setCreated = false;
+        PoolId setId = UninitializedPoolId;
+        try
+        {
+            landTable = Ninja::readSALandTable(findOrLoadRelModule(rLandTable_.rel)->second.bytes, rLandTable_.offset);
+            setId = findOrLoadTextureSet(rTextures_, setCreated);
+        }
+        catch(...)
+        {
+            eraseRelModuleIfUnused(rLandTable_.rel);
+            throw;
+        }
+        SALevelInstance level;
+        try
+        {
+            std::vector<PoolId> order;
+            const TextureSet& rSet = textureSets[setId];
+            for(const std::string& rName : landTable.textureNames)
+            {
+                auto found = std::find(rSet.names.begin(), rSet.names.end(), rName);
+                if(found == rSet.names.end())
+                {
+                    throw std::runtime_error(std::format("SALevelInstance: texlist texture {} of the land table at 0x{:X} is not in {}.", rName, rLandTable_.offset, rTextures_.path));
+                }
+                order.push_back(rSet.ordered[found - rSet.names.begin()]);
+            }
+
+            for(const Ninja::SALandTableCol& rCol : landTable.cols)
+            {
+                if(!(rCol.flags & LandTableVisible)) continue;
+                PoolId instanceId = createSAInstance(shaderId_, SAModelKey{rLandTable_.rel, rCol.modelOffset}, &rTextures_, &order);
+                if(isSkippedPiece(saMeshes[saInstances[instanceId].saMeshId], landTable.textureNames, rLandTable_.skippedTextures))
+                {
+                    saInstances.remove(instanceId);
+                    continue;
+                }
+                level.pieces.push_back(SALevelPiece{instanceId, rCol.center, rCol.radius});
+            }
+        }
+        catch(...)
+        {
+            level.destroy();
+            auto found = textureSets.nameToId.find(rTextures_.path);
+            if(setCreated && found != textureSets.nameToId.end() && textureSets[found->second].users == 0) textureSets.remove(found->second);
+            eraseRelModuleIfUnused(rLandTable_.rel);
+            throw;
+        }
+        eraseRelModuleIfUnused(rLandTable_.rel);
+        return saLevelInstances.add(std::move(level));
+    }
+
+    /*
+    A Shadow stage as a level: the texture archive and its .TXD entry are found or loaded, then every section archive is
+    read from the Shadow disc (not kept: only its .RG1 worlds are decoded) and each sector of each world becomes a piece,
+    its submeshes' texture names being looked up in the dictionary (a name it doesn't have throws). The instance holds one
+    user of the texture archive until destroyed. If a step fails, what this call loaded is removed again.
+    */
+    PoolId addONELevelInstance(PoolId shaderId_, const STH2005::LevelKey& rLevel_)
+    {
+        bool archiveCreated = false;
+        PoolId archiveId = findOrLoadONE(rLevel_.textures.archive, archiveCreated);
+        oneArchives[archiveId].users++;
+        ONELevelInstance level{shaderId_, archiveId, {}};
+        try
+        {
+            uint32_t dictionaryIndex = oneArchives[archiveId].useTextureDictionary(rLevel_.textures.entry);
+            for(const STH2005::ArchiveKey& rSection : rLevel_.sections)
+            {
+                STH2005::ONE section = STH2005::openONE(Globals::Discs::shadow.readFile(rSection.path));
+                for(const STH2005::ONEEntry& rEntry : section.entries)
+                {
+                    if(rEntry.name.size() < 4 || !std::string_view(rEntry.name).ends_with(".RG1")) continue;
+                    bool skipped = false;
+                    for(const std::string& rPart : rLevel_.skippedEntries)
+                    {
+                        if(rEntry.name.find(rPart) != std::string::npos) skipped = true;
+                    }
+                    if(skipped) continue;
+                    Graphics::RenderWareWorld world = Renderware::readWorld(section.readFile(rEntry.name));
+
+                    const Renderware::TxdTextures& rDictionary = oneArchives[archiveId].textureDictionaries[dictionaryIndex];
+                    for(Graphics::RenderWareWorldSector& rSector : world.sectors)
+                    {
+                        ONELevelPiece piece;
+                        piece.center = (rSector.boxMin + rSector.boxMax) * 0.5f;
+                        piece.radius = glm::distance(rSector.boxMin, rSector.boxMax) * 0.5f;
+                        for(Graphics::RenderWareSubmesh& rSubmesh : rSector.submeshes)
+                        {
+                            PoolId textureId = UninitializedPoolId;
+                            if(!rSubmesh.textureName.empty())
+                            {
+                                auto texture = rDictionary.byName.find(rSubmesh.textureName);
+                                if(texture == rDictionary.byName.end())
+                                {
+                                    throw std::runtime_error(std::format("ONELevelInstance: texture {} of {} in {} is not in {}.", rSubmesh.textureName, rEntry.name, rSection.path, rLevel_.textures.entry));
+                                }
+                                textureId = texture->second;
+                            }
+                            piece.submeshes.push_back(ONELevelSubmesh{std::move(rSubmesh.mesh), textureId});
+                        }
+                        level.pieces.push_back(std::move(piece));
+                    }
+                }
+            }
+        }
+        catch(...)
+        {
+            level.destroy();
+            throw;
+        }
+        return oneLevelInstances.add(std::move(level));
+    }
+
+    /*
+    The collision of an SADX land table: every COL's model is imported as geometry only (appendSACollision), including the
+    COLs without LandTableVisible (hypothesis: those are the collision-only pieces), each as a piece with its surface flags.
+    Nothing is uploaded to the GPU and no mesh or instance is created; the .rel module is freed again unless a mesh or motion is using it. The caller owns the id.
+    */
+    PoolId addSACollision(const SALandTableKey& rLandTable_)
+    {
+        const std::vector<uint8_t>& rBytes = findOrLoadRelModule(rLandTable_.rel)->second.bytes;
+        Physics::Collision collision;
+        try
+        {
+            Ninja::SALandTable landTable = Ninja::readSALandTable(rBytes, rLandTable_.offset);
+            for(const Ninja::SALandTableCol& rCol : landTable.cols)
+            {
+                Ninja::appendSACollision(collision.mesh, rBytes, rCol.modelOffset, rCol.flags, rCol.center, rCol.radius, true);
+            }
+        }
+        catch(...)
+        {
+            eraseRelModuleIfUnused(rLandTable_.rel);
+            throw;
+        }
+        eraseRelModuleIfUnused(rLandTable_.rel);
+        collision.computeBounds();
+        return Globals::Physics::collisions.add(std::move(collision));
+    }
+
+    /*
+    A Collision made of the shapes of an SADX collision table (readSACollisionShapes), with no mesh. The relocated .rel is freed again
+    unless a mesh or motion is using it. The caller owns the id.
+    */
+    /* Same for several tables (the collisions of one stage object): the shapes of all of them, in order, in one Collision. */
+    PoolId addSAShapes(const std::vector<SACollisionShapesKey>& rShapes_)
+    {
+        Physics::Collision collision;
+        for(const SACollisionShapesKey& rKey : rShapes_)
+        {
+            try
+            {
+                std::vector<Physics::CollisionShape> shapes = Ninja::readSACollisionShapes(findOrLoadRelModule(rKey.rel)->second.bytes, rKey.offset, rKey.count);
+                collision.shapes.insert(collision.shapes.end(), shapes.begin(), shapes.end());
+            }
+            catch(...)
+            {
+                eraseRelModuleIfUnused(rKey.rel);
+                throw;
+            }
+            eraseRelModuleIfUnused(rKey.rel);
+        }
+        return Globals::Physics::collisions.add(std::move(collision));
+    }
+
+    PoolId addSAShapes(const SACollisionShapesKey& rShapes_)
+    {
+        Physics::Collision collision;
+        try
+        {
+            collision.shapes = Ninja::readSACollisionShapes(findOrLoadRelModule(rShapes_.rel)->second.bytes, rShapes_.offset, rShapes_.count);
+        }
+        catch(...)
+        {
+            eraseRelModuleIfUnused(rShapes_.rel);
+            throw;
+        }
+        eraseRelModuleIfUnused(rShapes_.rel);
+        return Globals::Physics::collisions.add(std::move(collision));
+    }
+
+    /*
+    A Collision made of the shapes of a Shadow .CCL entry (readCCL), with no mesh. The archive is read from the disc and not pooled
+    (like addONECollision's section archives). The caller owns the id.
+    */
+    PoolId addONEShapes(const STH2005::CollisionKey& rShapes_)
+    {
+        STH2005::ONE archive = STH2005::openONE(Globals::Discs::shadow.readFile(rShapes_.archive.path));
+        Physics::Collision collision;
+        collision.shapes = STH2005::readCCL(archive.readFile(rShapes_.entry));
+        return Globals::Physics::collisions.add(std::move(collision));
+    }
+
+    /*
+    Same for several .CCL entries (the collisions of one stage object): the shapes of all of them, in order, in one Collision.
+    */
+    PoolId addONEShapes(const std::vector<STH2005::CollisionKey>& rShapes_)
+    {
+        Physics::Collision collision;
+        for(const STH2005::CollisionKey& rKey : rShapes_)
+        {
+            STH2005::ONE archive = STH2005::openONE(Globals::Discs::shadow.readFile(rKey.archive.path));
+            std::vector<Physics::CollisionShape> shapes = STH2005::readCCL(archive.readFile(rKey.entry));
+            collision.shapes.insert(collision.shapes.end(), shapes.begin(), shapes.end());
+        }
+        return Globals::Physics::collisions.add(std::move(collision));
+    }
+
+    /*
+    The collision of a Shadow stage: every .BSP entry whose name contains "COLI" (hypothesis: the collision worlds, see
+    readCollisionWorld) in each section archive of the key, appended into one mesh, rotated by the renderer's RenderWareYawDegrees. The key's textures are not used.
+    */
+    PoolId addONECollision(const STH2005::LevelKey& rLevel_)
+    {
+        /* Same yaw the renderer gives RenderWare data (RenderWareYawDegrees, a hypothesis), so the collision lines up with the drawn level and entities. */
+        glm::mat4 yaw = glm::rotate(glm::mat4(1.0f), glm::radians(RenderWareYawDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
+        Physics::Collision collision;
+        for(const STH2005::ArchiveKey& rSection : rLevel_.sections)
+        {
+            STH2005::ONE section = STH2005::openONE(Globals::Discs::shadow.readFile(rSection.path));
+            for(const STH2005::ONEEntry& rEntry : section.entries)
+            {
+                if(!std::string_view(rEntry.name).ends_with(".BSP") || rEntry.name.find("COLI") == std::string::npos) continue;
+                Physics::CollisionMesh world = Renderware::readCollisionWorld(section.readFile(rEntry.name));
+                for(glm::vec3& rVertex : world.vertices) rVertex = glm::vec3(yaw * glm::vec4(rVertex, 1.0f));
+                for(Physics::CollisionPiece& rPiece : world.pieces) rPiece.center = glm::vec3(yaw * glm::vec4(rPiece.center, 1.0f));
+                collision.mesh.append(world);
+            }
+        }
+        collision.computeBounds();
+        return Globals::Physics::collisions.add(std::move(collision));
+    }
+
     /*
     Same for a Shadow model: the archive, the mesh (built from the key's recipe) and the .TXD entry are found or
-    loaded, then the instance holds one user of the archive until destroyed. pTextures_ nullptr = untextured, and its
-    archive has to be the mesh's (whether the game can mix archives is unknown).
+    loaded, then the instance holds one user of the archive until destroyed. pTextures_ nullptr = untextured; its archive can be another than the mesh's (see below).
     */
     PoolId addONEInstance(PoolId shaderId_, const STH2005::ModelKey& rMesh_, const STH2005::TextureKey* pTextures_)
     {
-        if(pTextures_ != nullptr && std::string_view(pTextures_->archive.path) != rMesh_.archive.path)
-        {
-            throw std::runtime_error(std::format("ONEInstance: textures from {} can't be used on a mesh of {}.", pTextures_->archive.path, rMesh_.archive.path));
-        }
-
         bool created = false;
         PoolId archiveId = findOrLoadONE(rMesh_.archive, created);
         uint32_t meshIndex;
@@ -309,7 +595,28 @@ namespace Loading
             meshIndex = rArchive.useMesh(rMesh_);
             if(pTextures_ != nullptr)
             {
-                dictionaryIndex = rArchive.useTextureDictionary(pTextures_->entry);
+                /*
+                A .TXD of another archive than the mesh's is decoded into the mesh's archive, named "<archive>|<entry>" (stage objects can need a texture only another stage's archive has,
+                see EntityKey; whether the game lets a model use another archive's textures is unknown).
+                */
+                if(std::string_view(pTextures_->archive.path) == rMesh_.archive.path)
+                {
+                    dictionaryIndex = rArchive.useTextureDictionary(pTextures_->entry);
+                }
+                else
+                {
+                    std::string name = std::format("{}|{}", pTextures_->archive.path, pTextures_->entry);
+                    auto known = rArchive.textureDictionaryByName.find(name);
+                    if(known != rArchive.textureDictionaryByName.end())
+                    {
+                        dictionaryIndex = known->second;
+                    }
+                    else
+                    {
+                        STH2005::ONE source = STH2005::openONE(Globals::Discs::shadow.readFile(pTextures_->archive.path));
+                        dictionaryIndex = rArchive.addTextureDictionary(name, source.readFile(pTextures_->entry));
+                    }
+                }
                 bindingIndex = rArchive.useBinding(meshIndex, dictionaryIndex);
             }
         }

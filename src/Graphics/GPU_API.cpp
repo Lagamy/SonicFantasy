@@ -42,6 +42,16 @@ namespace Graphics
         return oneInstances[id_];
     }
 
+    SALevelInstance& getSALevelInstance(PoolId id_)
+    {
+        return saLevelInstances[id_];
+    }
+
+    ONELevelInstance& getONELevelInstance(PoolId id_)
+    {
+        return oneLevelInstances[id_];
+    }
+
     BasicMesh& getBasicMesh(PoolId id_)
     {
         return basicMeshes[id_]; 

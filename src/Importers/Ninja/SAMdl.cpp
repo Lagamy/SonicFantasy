@@ -2,6 +2,7 @@
 #include "GPU_API.h"
 #include "GPU_Globals.h"
 #include "BinaryRead.h"
+#include "CollisionMesh.h"
 #include <cstdint>
 #include <cstring>
 #include <format>
@@ -113,6 +114,9 @@ static glm::vec2 readCornerUv(const SAModelSource& rSrc_, uint32_t uvOffset_, ui
 NJS_MESHSET (0x18): u16 type (bits 14-15) + material id (bits 0-13), u16 poly count, u32 polys offset,
 u32 poly attributes, u32 normals, u32 vertex colors, u32 UVs offset (see readCornerUv).
 Polys: triangles 3 x u16, quads 4 x u16, strips u16 header (count = & 0x7FFF, reversed = & 0x8000) then count x u16.
+An NPoly meshset (type 2) has the same layout as a strip and is read the same way. Observed on Kiki (_Main.rel 0x333A90, the meshsets at 0x33161C and 0x330ED4): each has one poly
+of 6 indices, whose six points lie in one plane and go left, right, left, right ...: read as a strip they cover the convex hexagon they outline, read in order as a loop they
+cross themselves (the SA Tools reader handles the two types together, external).
 Hypothesis, unverified: quads are strip-ordered (0,1,2)(2,1,3); strips alternate winding every triangle
 and the reversed bit flips the starting winding.
 Only the UVs are read of the optional arrays (attributes, normals and vertex colors are null in Sonic's model).
@@ -153,7 +157,7 @@ static Graphics::SASubmesh readMeshset(const SAModelSource& rSrc_, uint32_t mesh
 			addTriangle(rMesh, c, b, d);
 			cursor += 8;
 		}
-		else if(polyType == PolyTypeStrips)
+		else if(polyType == PolyTypeStrips || polyType == PolyTypeNPoly)
 		{
 			uint16_t header = read<uint16_t>(rSrc_, cursor);
 			uint16_t count = header & 0x7FFF;
@@ -179,10 +183,6 @@ static Graphics::SASubmesh readMeshset(const SAModelSource& rSrc_, uint32_t mesh
 				}
 			}
 		}
-		else
-		{
-			throw std::runtime_error(std::format("SA1Mdl: meshset at 0x{:X} uses unsupported poly type {} (NPoly).", meshsetOffset_, polyType));
-		}
 	}
 
 	return submesh;
@@ -193,8 +193,11 @@ ATTACH (0x28): u32 vertices offset, u32 normals offset, i32 vertex count, u32 me
 u32 materials offset, u16 meshset count, u16 material count, bounding sphere.
 NJS_MATERIAL (0x14): diffuse and specular as 4 bytes B, G, R, A, f32 exponent, u32 whose low 16 bits are the texture id,
 u32 attributes. A meshset uses the material of its id (hypothesis, unverified: texture ids index the TextureSet's file order).
-Only the texture id is read: the diffuse color (0xB2B2B2 on all of Sonic's materials) and the attributes are ignored,
-since the lighting that uses them is not implemented.
+The attributes' bit 15 (0x8000) clamps V and bit 16 (0x10000) clamps U, a clamped axis stays on the edge texel and an
+unclamped one repeats the texture. Observed on the land tables of _Stg01 and _Stg04 (3635 textured meshsets): with the bit set
+the axis' UVs are within one texture (V 100%, U 99%), with it clear they are not (0%), so the unclamped ones tile. The meaning of
+the other bits (the flip bits 17 and 18 are a guess) is unknown and they are ignored, as is the diffuse color (0xB2B2B2 on all of
+Sonic's materials), since the lighting that uses them is not implemented.
 */
 static void readAttach(const SAModelSource& rSrc_, uint32_t attachOffset_, Graphics::SANode& rNode_)
 {
@@ -221,12 +224,26 @@ static void readAttach(const SAModelSource& rSrc_, uint32_t attachOffset_, Graph
 			continue;
 		}
 
+		/*
+		An attach with no materials at all (observed: "Pier Collision", _Stg01.rel 0x213AE0, whose attach has material count 0 and whose meshset names material 0) is a model made
+		for collision: its meshsets are kept untextured, so it can be seen as a shape. A meshset that names a material past a non-empty list still throws.
+		*/
 		uint16_t materialId = read<uint16_t>(rSrc_, meshsetOffset) & 0x3FFF;
-		if(materialId >= materialCount)
+		if(materialCount == 0)
 		{
-			throw std::runtime_error(std::format("SA1Mdl: meshset at 0x{:X} uses material {} but the attach has {}.", meshsetOffset, materialId, materialCount));
+			submesh.textureIndex = Graphics::SANoTexture;
 		}
-		submesh.textureIndex = read<uint32_t>(rSrc_, materialsOffset + materialId * 0x14 + 0x0C) & 0xFFFF;
+		else
+		{
+			if(materialId >= materialCount)
+			{
+				throw std::runtime_error(std::format("SA1Mdl: meshset at 0x{:X} uses material {} but the attach has {}.", meshsetOffset, materialId, materialCount));
+			}
+			submesh.textureIndex = read<uint32_t>(rSrc_, materialsOffset + materialId * 0x14 + 0x0C) & 0xFFFF;
+			uint32_t attributes = read<uint32_t>(rSrc_, materialsOffset + materialId * 0x14 + 0x10);
+			submesh.clampV = (attributes & 0x8000) != 0;
+			submesh.clampU = (attributes & 0x10000) != 0;
+		}
 
 		submesh.mesh.create();
 		rNode_.submeshes.push_back(submesh);
@@ -272,6 +289,79 @@ static void readObjects(const SAModelSource& rSrc_, uint32_t objectOffset_, int3
 
 		objectOffset_ = read<uint32_t>(rSrc_, objectOffset_ + 0x30);
 	}
+}
+
+/*
+Collision counterpart of readAttach: reads the attach's vertices and meshsets with readMeshset and appends the triangles to
+rMesh_, each vertex moved to level space by rWorld_. Nothing is uploaded to the GPU and materials are not read.
+*/
+static void appendAttachCollision(const SAModelSource& rSrc_, uint32_t attachOffset_, const glm::mat4& rWorld_, Physics::CollisionMesh& rMesh_)
+{
+	uint32_t verticesOffset = read<uint32_t>(rSrc_, attachOffset_);
+	int32_t vertexCount = read<int32_t>(rSrc_, attachOffset_ + 0x08);
+	uint32_t meshsetsOffset = read<uint32_t>(rSrc_, attachOffset_ + 0x0C);
+	uint16_t meshsetCount = read<uint16_t>(rSrc_, attachOffset_ + 0x14);
+
+	std::vector<glm::vec3> positions;
+	positions.reserve(vertexCount);
+	for(int32_t i = 0; i < vertexCount; i++)
+	{
+		positions.push_back(readVec3(rSrc_, verticesOffset + i * 12));
+	}
+
+	for(uint16_t m = 0; m < meshsetCount; m++)
+	{
+		Graphics::SASubmesh submesh = readMeshset(rSrc_, meshsetsOffset + m * 0x18, positions);
+		uint32_t first = static_cast<uint32_t>(rMesh_.vertices.size());
+		for(const Graphics::Vertex& rVertex : submesh.mesh.verticies)
+		{
+			rMesh_.vertices.push_back(glm::vec3(rWorld_ * glm::vec4(rVertex.position, 1.0f)));
+		}
+		for(uint32_t index : submesh.mesh.indicies)
+		{
+			rMesh_.indices.push_back(first + index);
+		}
+	}
+}
+
+/*
+Walks an NJS_OBJECT sibling list like readObjects, with each node's world transform (its parent's world * its local
+transform, composeNinjaTransform), and appends the triangles of every attach.
+Hypothesis, unverified: the NoDisplay flag is ignored here, since a collision-only model may set it.
+*/
+static void appendObjectsCollision(const SAModelSource& rSrc_, uint32_t objectOffset_, const glm::mat4& rParentWorld_, Physics::CollisionMesh& rMesh_)
+{
+	while(objectOffset_ != 0)
+	{
+		uint32_t flags = read<uint32_t>(rSrc_, objectOffset_);
+		uint32_t attachOffset = read<uint32_t>(rSrc_, objectOffset_ + 0x04);
+		glm::vec3 rotation(
+			read<int32_t>(rSrc_, objectOffset_ + 0x14),
+			read<int32_t>(rSrc_, objectOffset_ + 0x18),
+			read<int32_t>(rSrc_, objectOffset_ + 0x1C)
+		);
+		glm::mat4 world = rParentWorld_ * Graphics::composeNinjaTransform(readVec3(rSrc_, objectOffset_ + 0x08), rotation, readVec3(rSrc_, objectOffset_ + 0x20), flags);
+		if(attachOffset != 0)
+		{
+			appendAttachCollision(rSrc_, attachOffset, world, rMesh_);
+		}
+
+		uint32_t childOffset = read<uint32_t>(rSrc_, objectOffset_ + 0x2C);
+		if(childOffset != 0 && !(flags & ObjectNoChildren))
+		{
+			appendObjectsCollision(rSrc_, childOffset, world, rMesh_);
+		}
+
+		objectOffset_ = read<uint32_t>(rSrc_, objectOffset_ + 0x30);
+	}
+}
+
+void appendSACollision(Physics::CollisionMesh& rMesh_, const std::vector<uint8_t>& rBytes_, uint32_t rootOffset_, uint32_t flags_, const glm::vec3& rCenter_, float radius_, bool bigEndian_)
+{
+	uint32_t firstIndex = static_cast<uint32_t>(rMesh_.indices.size());
+	appendObjectsCollision(SAModelSource{rBytes_, bigEndian_}, rootOffset_, glm::mat4(1.0f), rMesh_);
+	uint32_t indexCount = static_cast<uint32_t>(rMesh_.indices.size()) - firstIndex;
+	rMesh_.pieces.push_back(Physics::CollisionPiece{flags_, rCenter_, radius_, firstIndex / 3, indexCount / 3});
 }
 
 PoolId importSAMdl(const char* name_, const char* path_)

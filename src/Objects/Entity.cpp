@@ -2,6 +2,7 @@
 #include "GPU_API.h"
 #include "GPU_Globals.h"
 #include "ResourceLoader.h"
+#include "Globals.h"
 #include <stdexcept>
 
 static void checkNoInstance(const Entity& rEntity_)
@@ -73,9 +74,22 @@ void Entity::playSAMotion(const SAMotionKey& rKey_)
 	Loading::playSAMotion(this->instanceId, rKey_);
 }
 
-void Entity::playONEMotion(const STH2005::MotionKey& rKey_)
+void Entity::playONEMotion(const STH2005::MotionKey& rKey_, bool loop_)
 {
-	getActiveONEInstance(*this).playMotion(rKey_);
+	getActiveONEInstance(*this).playMotion(rKey_, loop_);
+}
+
+void Entity::setPosition(const glm::vec3& rPosition_)
+{
+	this->position = rPosition_;
+	this->stagingPosition = rPosition_;
+	this->transformDirty = true;
+}
+
+void Entity::setRotation(const glm::mat4& rRotation_)
+{
+	this->rotation = rRotation_;
+	this->transformDirty = true;
 }
 
 void Entity::update(float deltaTime_)
@@ -95,22 +109,81 @@ void Entity::update(float deltaTime_)
 void Entity::draw()
 {
 	if(this->instanceId == UninitializedPoolId) return;
-	glm::mat4 base = glm::translate(glm::mat4(1.0f), this->position);
+	if(this->transformDirty)
+	{
+		this->transform = glm::translate(glm::mat4(1.0f), this->position) * this->rotation;
+		this->transformDirty = false;
+	}
 
 	switch(this->sourceEngine)
 	{
 	case SA_NINJA:
-		Graphics::getSAInstance(this->instanceId).draw(base);
+		Graphics::getSAInstance(this->instanceId).draw(this->transform);
 		break;
 	case STH2005_ONE:
-		Graphics::getONEInstance(this->instanceId).draw(base);
+		Graphics::getONEInstance(this->instanceId).draw(this->transform);
 		break;
 	}
 }
 
 /* Removes the entity's instance, which gives back its TextureSet or archive user. Called by PoolMap::remove. */
+void Entity::setSACollisionShapes(const SACollisionShapesKey& rShapes_)
+{
+	if(this->collisionId != UninitializedPoolId)
+	{
+		throw std::runtime_error("Entity: already has a collision.");
+	}
+	this->collisionId = Loading::addSAShapes(rShapes_);
+}
+
+void Entity::setSACollisionShapes(const std::vector<SACollisionShapesKey>& rShapes_)
+{
+	if(this->collisionId != UninitializedPoolId)
+	{
+		throw std::runtime_error("Entity: already has a collision.");
+	}
+	this->collisionId = Loading::addSAShapes(rShapes_);
+}
+
+void Entity::setONECollisionShapes(const STH2005::CollisionKey& rShapes_)
+{
+	if(this->collisionId != UninitializedPoolId)
+	{
+		throw std::runtime_error("Entity: already has a collision.");
+	}
+	this->collisionId = Loading::addONEShapes(rShapes_);
+}
+
+void Entity::setONECollisionShapes(const std::vector<STH2005::CollisionKey>& rShapes_)
+{
+	if(this->collisionId != UninitializedPoolId)
+	{
+		throw std::runtime_error("Entity: already has a collision.");
+	}
+	this->collisionId = Loading::addONEShapes(rShapes_);
+}
+
+void Entity::setPhysics(float weight_)
+{
+	if(this->physicsId != UninitializedPoolId)
+	{
+		throw std::runtime_error("Entity: already has a physics.");
+	}
+	this->physicsId = Globals::Physics::bodies.add(Physics::PhysicsBody{weight_});
+}
+
 void Entity::destroy()
 {
+	if(this->physicsId != UninitializedPoolId)
+	{
+		Globals::Physics::bodies.remove(this->physicsId);
+		this->physicsId = UninitializedPoolId;
+	}
+	if(this->collisionId != UninitializedPoolId)
+	{
+		Globals::Physics::collisions.remove(this->collisionId);
+		this->collisionId = UninitializedPoolId;
+	}
 	if(this->instanceId == UninitializedPoolId) return;
 	switch(this->sourceEngine)
 	{

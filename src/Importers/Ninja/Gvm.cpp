@@ -1,6 +1,6 @@
 #include "Gvm.h"
 #include "BinaryRead.h"
-#include "GXColor.h"
+#include "GXTexture.h"
 #include "GPU_API.h"
 #include <array>
 #include <cstring>
@@ -10,86 +10,11 @@
 
 namespace Ninja
 {
-/* GVR data format numbers (external, Puyo Tools; GX_TF_RGB5A3 and GX_TF_CMPR of the GameCube). */
-constexpr uint8_t GVRFormatRGB5A3 = 0x05;
-constexpr uint8_t GVRFormatCMPR = 0x0E;
+/* GVR data format numbers (external, Puyo Tools; the GX_TF_RGB5A3 and GX_TF_CMPR of the GameCube, GXTexture.h). */
+constexpr uint8_t GVRFormatRGB5A3 = GameCube::GXFormatRGB5A3;
+constexpr uint8_t GVRFormatCMPR = GameCube::GXFormatCMPR;
 
 constexpr uint32_t GVMEntrySize = 38;
-
-/*
-CMPR is 8x8 pixel tiles (left to right, then top to bottom), each made of four 4x4 blocks in the order top left, top right,
-bottom left, bottom right. A block is two big-endian RGB565 colors, then 4 bytes, one per row from the top, with 2 bit
-palette indices and the left pixel in the high bits (external, YAGCD / Dolphin). Like DXT1: if the first color is the
-larger value the other two palette entries are 1/3 and 2/3 blends, otherwise the average and transparent black.
-*/
-static void decodeCMPR(const std::vector<uint8_t>& rBytes_, uint32_t offset_, uint32_t width_, uint32_t height_, std::vector<unsigned char>& rPixels_)
-{
-	uint32_t cursor = offset_;
-	for(uint32_t tileY = 0; tileY < height_; tileY += 8)
-	{
-		for(uint32_t tileX = 0; tileX < width_; tileX += 8)
-		{
-			for(uint32_t block = 0; block < 4; block++)
-			{
-				uint32_t blockX = tileX + (block & 1) * 4;
-				uint32_t blockY = tileY + (block >> 1) * 4;
-
-				uint16_t value0 = readBE<uint16_t>(rBytes_, cursor);
-				uint16_t value1 = readBE<uint16_t>(rBytes_, cursor + 2);
-				std::array<std::array<uint8_t, 4>, 4> palette;
-				palette[0] = GameCube::colorRGB565(value0);
-				palette[1] = GameCube::colorRGB565(value1);
-				for(uint32_t c = 0; c < 3; c++)
-				{
-					if(value0 > value1)
-					{
-						palette[2][c] = (2 * palette[0][c] + palette[1][c]) / 3;
-						palette[3][c] = (palette[0][c] + 2 * palette[1][c]) / 3;
-					}
-					else
-					{
-						palette[2][c] = (palette[0][c] + palette[1][c]) / 2;
-						palette[3][c] = 0;
-					}
-				}
-				palette[2][3] = 255;
-				palette[3][3] = value0 > value1 ? 255 : 0;
-
-				for(uint32_t y = 0; y < 4; y++)
-				{
-					uint8_t row = readLE<uint8_t>(rBytes_, cursor + 4 + y);
-					for(uint32_t x = 0; x < 4; x++)
-					{
-						const std::array<uint8_t, 4>& rColor = palette[(row >> (6 - 2 * x)) & 3];
-						std::memcpy(rPixels_.data() + ((blockY + y) * width_ + blockX + x) * 4, rColor.data(), 4);
-					}
-				}
-				cursor += 8;
-			}
-		}
-	}
-}
-
-/* RGB5A3 is 4x4 pixel tiles (left to right, then top to bottom), each row by row with a big-endian u16 per pixel. */
-static void decodeRGB5A3(const std::vector<uint8_t>& rBytes_, uint32_t offset_, uint32_t width_, uint32_t height_, std::vector<unsigned char>& rPixels_)
-{
-	uint32_t cursor = offset_;
-	for(uint32_t tileY = 0; tileY < height_; tileY += 4)
-	{
-		for(uint32_t tileX = 0; tileX < width_; tileX += 4)
-		{
-			for(uint32_t y = 0; y < 4; y++)
-			{
-				for(uint32_t x = 0; x < 4; x++)
-				{
-					std::array<uint8_t, 4> color = GameCube::colorRGB5A3(readBE<uint16_t>(rBytes_, cursor));
-					std::memcpy(rPixels_.data() + ((tileY + y) * width_ + tileX + x) * 4, color.data(), 4);
-					cursor += 2;
-				}
-			}
-		}
-	}
-}
 
 /*
 GVR texture, starting at its "GVRT" magic: u32 little-endian size of what follows, then big-endian u16 (unknown, 0),
@@ -130,11 +55,11 @@ static uint32_t readGVR(const std::vector<uint8_t>& rBytes_, uint32_t offset_, c
 	rTexture.filter = GL_LINEAR;
 	if(format == GVRFormatCMPR)
 	{
-		decodeCMPR(rBytes_, pixels, width, height, rTexture.pixels);
+		GameCube::decodeCMPR(rBytes_, pixels, width, height, rTexture.pixels);
 	}
 	else
 	{
-		decodeRGB5A3(rBytes_, pixels, width, height, rTexture.pixels);
+		GameCube::decodeRGB5A3(rBytes_, pixels, width, height, rTexture.pixels);
 	}
 	rTexture.create();
 
@@ -176,6 +101,7 @@ void importGvm(const char* setName_, const std::vector<uint8_t>& rBytes_)
 
 		Graphics::TextureSet& rSet = Graphics::getTextureSet(setId);
 		rSet.ordered.push_back(textureId);
+		rSet.names.push_back(name);
 	}
 }
 }

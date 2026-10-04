@@ -1,6 +1,10 @@
 #pragma once
 #include "SAKeys.h"
 #include "STH2005Keys.h"
+#include "SAShapeKeys.h"
+#include "STH2005ShapeKeys.h"
+#include "STH2005EntityKeys.h"
+#include "SAEntityKeys.h"
 
 /*
 Where everything the game loads lives: disc paths, entry names and model recipes.
@@ -13,6 +17,24 @@ inline const SAModelKey SonicMesh{"ModelsMiles.rel", 0x16ED5C};
 inline const SATextureSetKey SonicTextures{"sonic.gvm"};
 /* "Sonic Alternate Stand", 73 nodes (external, SA Tools GameConfig/GC_SADX/ModelsMiles.ini; observed: 16 frames, position and rotation keys, linear). */
 inline const SAMotionKey SonicIdle{"ModelsMiles.rel", 0x2118B4, 73};
+
+/*
+SADX object collision tables (SACollisionShapesKey, one per table the game's collision init is given by a literal address, from the Ghidra
+pseudocode of sadxDecomp): generated into SAShapeKeys.h (included above) by tools/genSAShapeKeys.py, named after module and address since the objects are
+unnamed. Entities without a table are given hand-made shapes instead.
+*/
+
+/*
+Emerald Coast, first land table of _Stg01.rel (external, SA Tools GameConfig/GC_SADX/_Stg01.ini, landtable0100). The names
+of its texlist are all in BEACH01.GVM (observed: 103 of 103); the other two land tables of the module (0x1BA554, 0x1BC174) match
+beach02.GVM (90 of 90) and BEACH03.GVM (89 of 89).
+m8_shadows is a baked shadow decal (8x8, translucent in the file); its pieces hold nothing else (observed: 6 pieces here, 1 in each
+of the other two tables), and it is skipped since shadows are to be real time.
+Its SET file is Set0100S.bin (Sonic's, the stage's first act; the letter picks the character, hypothesis) and SAEntityTable_EmeraldCoast (generated, SAEntityKeys.h) makes
+Level::setSAEntities create the objects it places.
+*/
+inline const SALandTableKey EmeraldCoastLandTable{"_Stg01.rel", 0x1B8D68, {"m8_shadows"}, {"Set0100S.bin"}, SAEntityTable_EmeraldCoast, &SAObjectTypeNames_EmeraldCoast};
+inline const SATextureSetKey EmeraldCoastTextures{"BEACH01.GVM"};
 
 /*
 Shadow the Hedgehog. The parts are named so that ShadowMesh is built from them and Entity::switchMeshPart can swap one
@@ -34,3 +56,52 @@ inline const STH2005::MotionKey ShadowIdle{ShadowArchive, "SHADOW.MTP", "sh_idle
 /* The hands' fingers, for LTE.BON / RTE.BON (observed: 100 frames, the first node is the wrist sh_j_l1te / sh_j_r1te). */
 inline const STH2005::MotionKey ShadowIdleLeftHand{ShadowArchive, "SHADOW.MTP", "lte_idle", "LTE.BON", true};
 inline const STH2005::MotionKey ShadowIdleRightHand{ShadowArchive, "SHADOW.MTP", "rte_idle", "RTE.BON", true};
+
+/*
+Shadow stages as levels (observed on the disc): stgNNNN/stgNNNN_01.one ... _NN.one hold the stage's worlds (.RG1, visual) and
+collision (.BSP), and stgNNNN_texCM.one has one .TXD with every texture those worlds use. Which stage of the game each id is
+is not known (the ResourceMapByCategory.txt grouping assumes no names). stg0000 has one section, stg0100 has 23.
+stg0100 skips its "_D_" and "_G_" worlds (entry names like STG0100_D_23.RG1): in every section that has them they are 72 to 240
+triangles with bounding spheres of radius 6800 to 15700, against about 3700 for the largest of the other worlds, and look like
+sky domes (hypothesis; what the letters stand for is unknown).
+Its placement files (all four; whether the nrm, hrd and ds1 ones are alternatives of different missions, hypothesis from their flags, is not handled: every record is placed) and EntityTable_stg0100
+(generated, STH2005EntityKeys.h) make Level::setONEEntities create the objects the stage places.
+*/
+inline const STH2005::LevelKey Stg0000Level{
+	{
+	{"stg0000/stg0000_01.one"}
+	},
+	{{"stg0000/stg0000_texCM.one"}, "STG0000_TEXCM.TXD"}
+};
+inline const STH2005::LevelKey Stg0100Level{
+	{
+	{"stg0100/stg0100_01.one"},
+	{"stg0100/stg0100_02.one"},
+	{"stg0100/stg0100_03.one"},
+	{"stg0100/stg0100_04.one"},
+	{"stg0100/stg0100_05.one"},
+	{"stg0100/stg0100_06.one"},
+	{"stg0100/stg0100_07.one"},
+	{"stg0100/stg0100_08.one"},
+	{"stg0100/stg0100_09.one"},
+	{"stg0100/stg0100_10.one"},
+	{"stg0100/stg0100_11.one"},
+	{"stg0100/stg0100_12.one"},
+	{"stg0100/stg0100_13.one"},
+	{"stg0100/stg0100_14.one"},
+	{"stg0100/stg0100_15.one"},
+	{"stg0100/stg0100_16.one"},
+	{"stg0100/stg0100_17.one"},
+	{"stg0100/stg0100_18.one"},
+	{"stg0100/stg0100_19.one"},
+	{"stg0100/stg0100_20.one"},
+	{"stg0100/stg0100_21.one"},
+	{"stg0100/stg0100_22.one"},
+	{"stg0100/stg0100_23.one"}
+	},
+	{{"stg0100/stg0100_texCM.one"}, "STG0100_TEXCM.TXD"},
+	{"_D_", "_G_"},
+	{"stg0100/stg0100_cmn.dat", "stg0100/stg0100_nrm.dat", "stg0100/stg0100_hrd.dat", "stg0100/stg0100_ds1.dat"},
+	EntityTable_stg0100,
+	&ObjectTypeNames
+};

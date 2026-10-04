@@ -21,6 +21,13 @@ void Renderer::init()
 	glEnable(GL_CULL_FACE);
 	glCullFace(GL_BACK);
 	glFrontFace(GL_CCW);
+	/*
+	Standard alpha blending (source alpha over the framebuffer), computed in linear space since the framebuffer is sRGB.
+	Nothing is sorted: translucent surfaces blend correctly only over what was drawn before them (levels first, then
+	entities, in pool order).
+	*/
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glViewport(0, 0, Globals::App::windowWidth, Globals::App::windowHeight);
@@ -46,6 +53,8 @@ void Renderer::init()
 	};
 	rFloor.indicies = {0, 1, 2, 0, 2, 3};
 	rFloor.create();
+
+	collisionView.init();
 }
 
 void Renderer::run(Camera& rCamera_) 
@@ -55,22 +64,29 @@ void Renderer::run(Camera& rCamera_)
 	// bind cameras UBO to binding = 0 (matches shader); must happen before drawing
 	glBindBufferBase(GL_UNIFORM_BUFFER, 0, rCamera_.UBOId);
 
-	Shader& rDefaultShader = getShaderByName("Default");
-	glUseProgram(rDefaultShader.id);
-	glm::mat4 identity(1.0f);
-	glUniformMatrix4fv(rDefaultShader.modelLocation, 1, GL_FALSE, glm::value_ptr(identity));
-	getBasicMeshByName("Floor").draw();
+	/* The debug floor is not drawn while a level is shown. */
+	// Shader& rDefaultShader = getShaderByName("Default");
+	// glUseProgram(rDefaultShader.id);
+	// glm::mat4 identity(1.0f);
+	// glUniformMatrix4fv(rDefaultShader.modelLocation, 1, GL_FALSE, glm::value_ptr(identity));
+	// getBasicMeshByName("Floor").draw();
+
+	for(uint32_t i = 0; i < Globals::Game::levels.objects.size(); i++)
+	{
+		if(Globals::Game::levels.alive[i]) Globals::Game::levels.objects[i].draw(rCamera_);
+	}
 
 	for(uint32_t i = 0; i < Globals::Game::entities.objects.size(); i++)
 	{
 		if(Globals::Game::entities.alive[i]) Globals::Game::entities.objects[i].draw();
 	}
-	
-	glfwSwapBuffers(Globals::App::window);
+
+	collisionView.draw(rCamera_);
 }
   
 void Renderer::destroy() 
 {
+	collisionView.destroy();
 	glDeleteBuffers(1, &this->boneBuffer); 
 	oneArchives.clear();
 	basicMeshes.clear(); 

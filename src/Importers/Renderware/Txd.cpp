@@ -2,6 +2,7 @@
 #include "RwChunk.h"
 #include "BinaryRead.h"
 #include "GXColor.h"
+#include "GXTexture.h"
 #include "GPU_API.h"
 #include <array>
 #include <cstring>
@@ -17,8 +18,7 @@ constexpr uint32_t ChunkTextureDictionary = 0x16;
 
 constexpr uint32_t PlatformGameCube = 6;
 
-/* GX texture format and palette format numbers (external, libogc gx.h: GX_TF_C4, GX_TL_RGB565, GX_TL_RGB5A3). */
-constexpr uint8_t GXFormatC4 = 8;
+/* GX palette format numbers (external, libogc gx.h: GX_TL_RGB565, GX_TL_RGB5A3). */
 constexpr uint8_t PaletteRGB565 = 1;
 constexpr uint8_t PaletteRGB5A3 = 2;
 
@@ -29,26 +29,26 @@ constexpr uint32_t AddressWrap = 1;
 constexpr uint32_t AddressMirror = 2;
 constexpr uint32_t AddressClamp = 3;
 
-constexpr uint32_t TextureHeaderSize = 0x8C;
-
 /*
 Texture Native Struct for platform 6, big-endian inside (little-endian chunk headers around it). Decoded from the seven
-textures of SHADOW.TXD; no outside source for this layout. Offsets from the start of the Struct data:
+textures of SHADOW.TXD and the 3000+ textures of the stage dictionaries (stgNNNN_texCM.one, every stage); no outside source
+for this layout. Offsets from the start of the Struct data:
 0x00 u32 platform (6), 0x04 u32 filter and addressing (filter in the low byte, U addressing in bits 8-11,
 V addressing in bits 12-15; external, the same packing as the PC format), 0x08-0x17 four u32 (unknown: 0, 1, 1, 0 in all),
 0x18 name (32 bytes), 0x38 mask name (32 bytes, empty), 0x58 u32 raster format (unused here: 0x4204, 0x4304 for the
 texture with alpha), 0x5C u16 width, u16 height, 0x60 u8 (unknown: 4 in all), u8 mip level count (hypothesis: all
-seven have 1 and a data size of exactly one level), u8 GX texture format, u8 palette format, 0x64 u32 has alpha (unused:
-alpha comes from the palette format), 0x68 palette (16 x u16 for C4), 0x88 u32 pixel data size, 0x8C pixel data.
-C4 pixel data is stored in 8x8 pixel tiles, left to right then top to bottom, each tile row by row with 4 bytes per row,
-the left pixel in the high nibble. The decoded image has its first row at the top, like RenderWare's UVs expect, so
-it is uploaded as is.
+have 1 and a data size of exactly one level), u8 GX texture format, u8 palette format, 0x64 u32 has alpha (unused:
+alpha comes from the palette format or the format itself), then the palette if the format has one (C4: 16 x u16 at 0x68,
+C8: 256 x u16 at 0x68), then u32 pixel data size and the pixel data. So the data size is at 0x88 (C4), 0x268 (C8) or 0x68
+(formats without a palette: RGB565, RGB5A3, CMPR). Formats seen: C4 with an RGB565 or RGB5A3 palette, C8 with the same,
+RGB565, RGB5A3, CMPR. The width and height can be any value: the data is padded to whole tiles (seen 34x34, 4x4, 2x2).
+The decoded image has its first row at the top, like RenderWare's UVs expect, so it is uploaded as is.
 */
 static std::pair<std::string, PoolId> readTextureNative(const std::vector<uint8_t>& rBytes_, const Chunk& rNative_)
 {
 	Chunk data = expectChunk(rBytes_, rNative_.data, ChunkStruct);
 	uint32_t base = data.data;
-	if(data.size < TextureHeaderSize)
+	if(data.size < 0x6C)
 	{
 		throw std::runtime_error(std::format("Txd: texture at 0x{:X} has only {} bytes, less than its header.", rNative_.data, data.size));
 	}
@@ -65,15 +65,20 @@ static std::pair<std::string, PoolId> readTextureNative(const std::vector<uint8_
 	uint8_t mipCount = readLE<uint8_t>(rBytes_, base + 0x61);
 	uint8_t format = readLE<uint8_t>(rBytes_, base + 0x62);
 	uint8_t paletteFormat = readLE<uint8_t>(rBytes_, base + 0x63);
-	uint32_t dataSize = readBE<uint32_t>(rBytes_, base + 0x88);
 
-	if(format != GXFormatC4 || (paletteFormat != PaletteRGB565 && paletteFormat != PaletteRGB5A3))
+	uint32_t paletteSize = 0;
+	if(format == GameCube::GXFormatC4) paletteSize = 16;
+	if(format == GameCube::GXFormatC8) paletteSize = 256;
+	uint32_t expectedSize = GameCube::gxDataSize(format, width, height);
+	if(expectedSize == 0 || (paletteSize != 0 && paletteFormat != PaletteRGB565 && paletteFormat != PaletteRGB5A3))
 	{
-		throw std::runtime_error(std::format("Txd: texture {} has GX format {} with palette format {}, only C4 with an RGB565 or RGB5A3 palette is supported.", name, format, paletteFormat));
+		throw std::runtime_error(std::format("Txd: texture {} has GX format {} with palette format {}, only C4 and C8 with an RGB565 or RGB5A3 palette, RGB565, RGB5A3 and CMPR are supported.", name, format, paletteFormat));
 	}
-	if(mipCount != 1 || width % 8 != 0 || height % 8 != 0 || dataSize != width * height / 2 || data.size != TextureHeaderSize + dataSize)
+	uint32_t sizeOffset = 0x68 + paletteSize * 2;
+	uint32_t dataSize = readBE<uint32_t>(rBytes_, base + sizeOffset);
+	if(mipCount != 1 || width == 0 || height == 0 || dataSize != expectedSize || data.size != sizeOffset + 4 + dataSize)
 	{
-		throw std::runtime_error(std::format("Txd: texture {} ({}x{}, {} mip levels, {} data bytes in a {} byte struct) is not a single level C4 texture of whole 8x8 tiles.", name, width, height, mipCount, dataSize, data.size));
+		throw std::runtime_error(std::format("Txd: texture {} ({}x{}, format {}, {} mip levels, {} data bytes in a {} byte struct) is not a single level texture of the size its format needs ({} bytes).", name, width, height, format, mipCount, dataSize, data.size, expectedSize));
 	}
 
 	uint32_t filterAddressing = readBE<uint32_t>(rBytes_, base + 0x04);
@@ -102,31 +107,21 @@ static std::pair<std::string, PoolId> readTextureNative(const std::vector<uint8_
 	default: throw std::runtime_error(std::format("Txd: texture {} has unsupported addressing mode {}.", name, addressU));
 	}
 
-	std::array<std::array<uint8_t, 4>, 16> palette;
-	for(uint32_t i = 0; i < 16; i++)
+	std::vector<std::array<uint8_t, 4>> palette(paletteSize);
+	for(uint32_t i = 0; i < paletteSize; i++)
 	{
 		uint16_t value = readBE<uint16_t>(rBytes_, base + 0x68 + i * 2);
 		palette[i] = paletteFormat == PaletteRGB565 ? GameCube::colorRGB565(value) : GameCube::colorRGB5A3(value);
 	}
 
-	uint32_t cursor = base + TextureHeaderSize;
-	for(uint32_t tileY = 0; tileY < height; tileY += 8)
+	uint32_t pixels = base + sizeOffset + 4;
+	switch(format)
 	{
-		for(uint32_t tileX = 0; tileX < width; tileX += 8)
-		{
-			for(uint32_t y = 0; y < 8; y++)
-			{
-				for(uint32_t x = 0; x < 8; x += 2)
-				{
-					uint8_t pair = readLE<uint8_t>(rBytes_, cursor++);
-					for(uint32_t k = 0; k < 2; k++)
-					{
-						const std::array<uint8_t, 4>& rColor = palette[k == 0 ? pair >> 4 : pair & 0xF];
-						std::memcpy(rTexture.pixels.data() + ((tileY + y) * width + tileX + x + k) * 4, rColor.data(), 4);
-					}
-				}
-			}
-		}
+	case GameCube::GXFormatC4: GameCube::decodeC4(rBytes_, pixels, width, height, palette, rTexture.pixels); break;
+	case GameCube::GXFormatC8: GameCube::decodeC8(rBytes_, pixels, width, height, palette, rTexture.pixels); break;
+	case GameCube::GXFormatRGB565: GameCube::decodeRGB565(rBytes_, pixels, width, height, rTexture.pixels); break;
+	case GameCube::GXFormatRGB5A3: GameCube::decodeRGB5A3(rBytes_, pixels, width, height, rTexture.pixels); break;
+	case GameCube::GXFormatCMPR: GameCube::decodeCMPR(rBytes_, pixels, width, height, rTexture.pixels); break;
 	}
 
 	rTexture.create();

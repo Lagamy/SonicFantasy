@@ -59,6 +59,7 @@ struct ONE
 	uint32_t useMesh(const ModelKey& rKey_);
 	uint32_t switchPart(uint32_t meshIndex_, const ModelPart& rPrevious_, const ModelPart& rDesired_);
 	uint32_t useTextureDictionary(const char* name_);
+	uint32_t addTextureDictionary(const std::string& name_, const std::vector<uint8_t>& rBytes_);
 	uint32_t useBinding(uint32_t meshIndex_, uint32_t textureDictionaryIndex_);
 	uint32_t useMotion(const MotionKey& rKey_);
 	void destroy();

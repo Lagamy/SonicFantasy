@@ -2,6 +2,7 @@
 #include "GPU_Globals.h"
 #include "GPU_API.h"
 #include "ResourceLoader.h"
+#include <algorithm>
 #include <cmath>
 #include <format>
 #include <stdexcept>
@@ -10,15 +11,6 @@
 
 namespace Graphics
 {
-/*
-Rotation about +Y that turns a RenderWare model from its file's facing to the engine's forward axis (+Z).
-Observed: Shadow (SHADOW_BODY.DFF) renders turned 90 degrees; which side he faced is unknown.
-Hypothesis, unverified: he faces +X in the file, so 90 degrees brings him to -Z and he faces away from start camera(Like SASonic does).
-Applied by the instance, not the importer, so imported data stays as stored in the file.
-Derived from Shadow alone and applied to every RenderWare model.
-*/
-constexpr float RenderWareYawDegrees = 90.0f;
-
 /*
 Hypothesis, unverified: Shadow's motions play at 60 frames per second (its game logic rate), at speed 1.
 */
@@ -49,7 +41,7 @@ static float sampleTrack(const STH2005::MotionTrack& rTrack_, float frame_)
 	float t2 = t * t;
 	float t3 = t2 * t;
 	return (2.0f * t3 - 3.0f * t2 + 1.0f) * rA.value + (t3 - 2.0f * t2 + t) * span * rA.tangent
-		+ (-2.0f * t3 + 3.0f * t2) * rB.value + (t3 - t2) * span * rB.tangent;
+		+ (-2.0f * t3 + 3.0f * t2) * rB.value + (t3 - t2) * span * rB.inTangent;
 }
 
 static glm::vec3 sampleVec3(const STH2005::MotionTrack (&rTracks_)[3], float frame_)
@@ -61,7 +53,7 @@ static glm::vec3 sampleVec3(const STH2005::MotionTrack (&rTracks_)[3], float fra
 Plays a motion of the instance's archive (decoded on first use) from its first frame, looping. A motion of the same
 skeleton (same first bone name) that is already playing is replaced. The key's archive has to be the instance's.
 */
-void ONEInstance::playMotion(const STH2005::MotionKey& rKey_)
+void ONEInstance::playMotion(const STH2005::MotionKey& rKey_, bool loop_)
 {
 	if(oneArchives.getName(this->archiveId) != rKey_.archive.path)
 	{
@@ -71,7 +63,7 @@ void ONEInstance::playMotion(const STH2005::MotionKey& rKey_)
 	uint32_t motionIndex = rArchive.useMotion(rKey_);
 	const std::string& rSkeleton = rArchive.motions[motionIndex].bones.front().name;
 
-	ONEMotion motion{motionIndex, 0.0f, STH2005::NoIndex, {}, rKey_.attachedPart};
+	ONEMotion motion{motionIndex, 0.0f, STH2005::NoIndex, {}, rKey_.attachedPart, loop_};
 	for(ONEMotion& rActive : this->motions)
 	{
 		if(rArchive.motions[rActive.motionIndex].bones.front().name == rSkeleton)
@@ -84,7 +76,7 @@ void ONEInstance::playMotion(const STH2005::MotionKey& rKey_)
 }
 
 /*
-Advances every playing motion (looping over its last frame) and fills framePose: every frame starts at its rest
+Advances every playing motion (looping over its last frame, or stopping on it if it does not loop) and fills framePose: every frame starts at its rest
 localTransform, and the frames named like a motion's bones take translate(T) * rotation(R) * scale(S) from it.
 The bone names are matched with the active mesh's frame names (from the .BON the model was built with), once per mesh;
 a bone without a frame in the mesh is skipped. The first bone of an attachedPart motion is skipped too: it is a bone of
@@ -121,7 +113,8 @@ void ONEInstance::update(float deltaTime_)
 
 		if(rMotion.lastFrame > 0)
 		{
-			rActive.frame = std::fmod(rActive.frame + deltaTime_ * ONEMotionFramesPerSecond, static_cast<float>(rMotion.lastFrame));
+			float advanced = rActive.frame + deltaTime_ * ONEMotionFramesPerSecond;
+			rActive.frame = rActive.loop ? std::fmod(advanced, static_cast<float>(rMotion.lastFrame)) : std::min(advanced, static_cast<float>(rMotion.lastFrame));
 		}
 		for(size_t b = rActive.attachedPart ? 1 : 0; b < rMotion.bones.size(); b++)
 		{

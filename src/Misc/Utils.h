@@ -39,7 +39,17 @@ inline void framebufferSizeCallback(GLFWwindow*, int width, int height) // windo
 	
 }
 
+/*
+When the window gets focus again the cursor position can be far from the last one reported, which would turn the camera
+by the difference. The next position is taken as the new baseline instead (mouseCallback, firstMouse).
+*/
+inline void focusCallback(GLFWwindow*, int focused)
+{
+	if (focused) Globals::Mouse::firstMouse = true;
+}
+
 inline void mouseCallback(GLFWwindow* window, double xpos, double ypos) {
+	if (Globals::Mouse::cursorFree) return;
     if (Globals::Mouse::firstMouse) {
 		Globals::Mouse::lastX = xpos;
 		Globals::Mouse::lastY = ypos;
@@ -93,6 +103,7 @@ inline GLFWwindow* createWindow(const uint32_t width, const uint32_t height) {
 	glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
 
 	glfwSetCursorPosCallback(window, mouseCallback);
+	glfwSetWindowFocusCallback(window, focusCallback);
 	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);	
 
     return window;

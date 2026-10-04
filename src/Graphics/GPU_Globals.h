@@ -3,8 +3,12 @@
 #include <unordered_map>
 #include "SAInstance.h"
 #include "ONEInstance.h"
+#include "SALevelInstance.h"
+#include "ONELevelInstance.h"
 #include "ONE.h"
 #include "Renderer.h"
+#include "DebugUI.h"
+#include "CollisionView.h"
 #include "Pool.h"
 #include "Shader.h"
 #include "BasicMesh.h"
@@ -18,6 +22,8 @@
 namespace Graphics 
 {
 	inline Renderer renderer;
+	inline DebugUI debugUI;
+	inline CollisionView collisionView;
 	inline PoolMap<BasicMesh> basicMeshes = ("Meshes"); 
 	inline PoolMap<Texture> textures = ("Textures");
 	inline PoolMap<TextureSet> textureSets = ("TextureSets");
@@ -29,4 +35,6 @@ namespace Graphics
 	inline Pool<SAInstance> saInstances = ("SAInstances"); 
 	inline PoolMap<STH2005::ONE> oneArchives = ("ONEArchives");
 	inline Pool<ONEInstance> oneInstances = ("ONEInstances");
+	inline Pool<SALevelInstance> saLevelInstances = ("SALevelInstances");
+	inline Pool<ONELevelInstance> oneLevelInstances = ("ONELevelInstances");
 }
