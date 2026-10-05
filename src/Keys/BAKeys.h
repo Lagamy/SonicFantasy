@@ -65,10 +65,10 @@ acts on the tag yet). Any other value is ignored (None).
 inline const BARemap BARemapShadowLevel{{{0x2, &BABehaviorSolid}, {0x202, &BABehaviorSolid}, {0x20001, &BABehaviorSolid}, {0x8, &BABehaviorSolid}, {0x28001, &BABehaviorSolid}, {0x10, &BABehaviorPassable}, {0x20, &BABehaviorDeath}}, &BABehaviorNone};
 
 /*
-SADX's level triangle values are the surface flags of the land table COL: what the bits mean is unknown (only 0x80000000, drawn, is a hypothesis, see ResourceLoader.cpp), so nothing is listed and all of its
-collision stays solid. List a flags value here once you know it.
+SADX's level triangle values are the surface flags of the land table COL: what the bits mean is unknown (only 0x80000000, drawn, is a hypothesis, see ResourceLoader.cpp), so only what was observed is listed and
+the rest of its collision stays solid: 0x00200001 is not solid (observed, from you; Passable until it is known what it stands for). List a flags value here once you know it.
 */
-inline const BARemap BARemapSADXLevel{{}, &BABehaviorSolid};
+inline const BARemap BARemapSADXLevel{{{0x00200001, &BABehaviorPassable}}, &BABehaviorSolid};
 
 /* The attributes of object shapes (SADX's tables, Shadow's .CCL flags): their meaning is unknown, so every shape is an Object for now. */
 inline const BARemap BARemapSADXShape{{}, &BABehaviorObject};

@@ -10,6 +10,9 @@ behaviours and the entity's own behaviours: the system works on copies of its li
 struct EntityBehavior
 {
 	void (*pBehave)(PoolId entityId_) = nullptr;
+
+	/* A behaviour written in a script has no pBehave: scriptFunction is the Lua registry reference of its function (Scripting.h), called with the entity's handle. 0 = none. */
+	int scriptFunction = 0;
 };
 
 /*

@@ -2,7 +2,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include "RenderStats.h"
-#include "SADXGameplay.h"
+#include "Scripting.h"
 #include <cstdint>
 #include <glm/fwd.hpp>
 #include <glad/glad.h>
@@ -169,7 +169,9 @@ int main() {
 	Globals::App::window = createWindow(Globals::App::windowWidth, Globals::App::windowHeight);
 	Graphics::renderer.init(); 
 	Globals::Game::baBehaviors.init();
-	SADXGameplay::registerAll();
+	/* The gameplay is the Lua scripts of Assets/Scripts (main.lua loads sadx/main.lua for Sonic and shadow/main.lua for Shadow, J switches the player, see Scripting.h); a script that fails to load is reported on stderr and the game runs without it. */
+	Scripting::init();
+	Scripting::loadFile("main.lua");
 	Graphics::debugUI.init(Globals::App::window);
 	Globals::Game::cameras.emplace_back(Camera({0.0f, 0.0f, 0.0f}));
 	
@@ -196,15 +198,20 @@ int main() {
 
 
 	/*
-	Emerald Coast (SADX), with its collision. The Shadow stage below is off while it is shown; the two would overlap at similar coordinates.
+	Emerald Coast (SADX), with its collision (off while Shadow plays in Westopolis; the two would overlap at similar coordinates; its player script is sadx/main.lua).
 	*/
 	PoolId emeraldCoastId = addLevel("EmeraldCoast", {0, 0, 0});
 	getLevel(emeraldCoastId).setSAGPUInstance(saShaderId, EmeraldCoastLandTable, EmeraldCoastTextures);
 	getLevel(emeraldCoastId).setSACollision(EmeraldCoastLandTable);
 	getLevel(emeraldCoastId).setSAEntities(saShaderId, EmeraldCoastLandTable);
 	setCameraPosition({-12.0f, 30.0f, 142.0f});
-	getEntity(sonicId).setPosition({0, 4, 5}); 
+	getEntity(sonicId).setPosition({0, 10, 5});
 	getEntity(shadowId).setPosition({0, 4, -5});
+	DebugSetup::addSonicShape(sonicId);
+	DebugSetup::addShadowShape(shadowId);
+	DebugSetup::enablePhysics(sonicId, shadowId);
+	Scripting::attachPlayer(sonicId);
+	Scripting::attachPlayer(shadowId);
 
 	/*
 	A Shadow stage (Stg0000Level is the one with a single section). The camera starts at the middle of the largest sector of
@@ -214,15 +221,16 @@ int main() {
 	// PoolId westopolisId = addLevel("Stg0100", {0, 0, 0});
 	// getLevel(westopolisId).setONEGPUInstance(oneShaderId, Stg0100Level);
 	// getLevel(westopolisId).setONECollision(Stg0100Level);
-	// getEntity(sonicId).setPosition({-3430, -4542 + 5.3, 5}); 
+	// getEntity(sonicId).setPosition({-3430, -4542 + 5.3, 5});
 	// getEntity(shadowId).setPosition({-3430, -4541.5, -5}); 
 	// setCameraPosition({-3440, -4860, 0}); 
-	// getLevel(westopolisId).setONEEntities(oneShaderId, Stg0100Level);
+	// // getLevel(westopolisId).setONEEntities(oneShaderId, Stg0100Level);
 	
-	DebugSetup::enablePhysics(sonicId, shadowId);
-	DebugSetup::addSonicShape(sonicId);
-	DebugSetup::addShadowShape(shadowId);
-	SADXGameplay::attachPlayer(sonicId);
+	// DebugSetup::enablePhysics(sonicId, shadowId);
+	// DebugSetup::addSonicShape(sonicId);
+	// DebugSetup::addShadowShape(shadowId);
+	// Scripting::attachPlayer(sonicId);
+	// Scripting::attachPlayer(shadowId);
 	Globals::Game::spatialIndex.rebuild();
 	/*
 	The first frame's deltaTime would otherwise be the time since glfwInit, i.e. the whole loading time (seconds): the physics
@@ -277,7 +285,7 @@ int main() {
 			if(Globals::Game::entities.alive[i]) Globals::Game::entities.objects[i].update(Globals::App::deltaTime);
 		}
 		Globals::Game::gameEvents.drain();
-		if(!Globals::App::debugMode) updateFollowCamera(sonicId);
+		if(!Globals::App::debugMode && entityExists(Globals::Game::cameraTarget)) updateFollowCamera(Globals::Game::cameraTarget);
 		// double renderStart = glfwGetTime();
 		// Graphics::renderStats.resetFrame();
 		// if(statsOn) glBeginQuery(GL_TIME_ELAPSED, gpuQueries[frameNumber % 3]);
@@ -337,6 +345,7 @@ int main() {
 		// frameNumber++;
     }
 	
+	Scripting::destroy();
 	Graphics::debugUI.destroy();
 	Graphics::renderer.destroy();
     destroyWindow(Globals::App::window);

@@ -251,6 +251,44 @@ namespace Loading
     }
 
     /*
+    Makes an SA instance draw another mesh (e.g. Sonic's curled model), keeping its shader and TextureSet: the mesh is found or imported and bound to the instance's set (the set's file order), the instance
+    takes one user of it and gives back the old mesh's. The motion it plays animates the old mesh's nodes, so it is stopped (play another with playSAMotion); the pose is dropped. The same mesh is a no-op.
+    If the import or the binding fails, what this call imported is removed again and the instance is unchanged.
+    */
+    void changeSAMesh(PoolId saInstanceId_, const SAModelKey& rMesh_)
+    {
+        SAInstance& rInstance = saInstances[saInstanceId_];
+        bool meshCreated = false;
+        PoolId meshId = findOrImportSAMesh(rMesh_, meshCreated);
+        if(meshId == rInstance.saMeshId) return;
+
+        PoolId bindingId = UninitializedPoolId;
+        if(rInstance.textureSetId != UninitializedPoolId)
+        {
+            try
+            {
+                bindingId = findOrBindSATextures(rInstance.textureSetId, meshId, "(the instance's set)", textureSets[rInstance.textureSetId].ordered);
+            }
+            catch(...)
+            {
+                if(meshCreated) removeSAMesh(meshId);
+                throw;
+            }
+        }
+        saMeshes[meshId].users++;
+        PoolId previousMesh = rInstance.saMeshId;
+        PoolId previousMotion = rInstance.currentSAAnimation;
+        rInstance.saMeshId = meshId;
+        rInstance.textureBindingId = bindingId;
+        rInstance.currentSAAnimation = UninitializedPoolId;
+        rInstance.animationFrame = 0.0f;
+        rInstance.nodePose.clear();
+        rInstance.poseDirty = false;
+        if(previousMotion != UninitializedPoolId) releaseSAMotion(previousMotion);
+        releaseSAMesh(previousMesh);
+    }
+
+    /*
     The archive at the key's path on the Shadow disc: the one already in the pool, or read and parsed now.
     created tells the caller whether it has to undo the load if a later step fails. It is not counted as used here.
     */
@@ -426,6 +464,7 @@ namespace Loading
                     Graphics::RenderWareWorld world = Renderware::readWorld(section.readFile(rEntry.name));
 
                     const Renderware::TxdTextures& rDictionary = oneArchives[archiveId].textureDictionaries[dictionaryIndex];
+
                     for(Graphics::RenderWareWorldSector& rSector : world.sectors)
                     {
                         ONELevelPiece piece;
@@ -578,6 +617,7 @@ namespace Loading
             {
                 if(!std::string_view(rEntry.name).ends_with(".BSP") || rEntry.name.find("COLI") == std::string::npos) continue;
                 Physics::CollisionMesh world = Renderware::readCollisionWorld(section.readFile(rEntry.name));
+
                 for(glm::vec3& rVertex : world.vertices) rVertex = glm::vec3(yaw * glm::vec4(rVertex, 1.0f));
                 for(Physics::CollisionPiece& rPiece : world.pieces) rPiece.center = glm::vec3(yaw * glm::vec4(rPiece.center, 1.0f));
                 collision.mesh.append(world);

@@ -20,5 +20,6 @@ namespace Loading
     void releaseTextureSet(PoolId textureSetId_);
     void releaseONE(PoolId archiveId_);
     void playSAMotion(PoolId saInstanceId_, const SAMotionKey& rKey_);
+    void changeSAMesh(PoolId saInstanceId_, const SAModelKey& rMesh_);
     void releaseSAMotion(PoolId saMotionId_);
 }

@@ -21,6 +21,16 @@ set(GLFW_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/GLFW")
 # Stb_Image setup
 set(STB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/stb")
 
+# Lua 5.4.7 (vendored, MIT, https://www.lua.org/ftp/lua-5.4.7.tar.gz, the interpreter and compiler programs left out), built as a static C library. LUA_USE_POSIX only: no dlopen, so scripts can't load native libraries.
+set(LUA_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third-party/lua")
+file(GLOB LUA_SRC ${LUA_DIR}/*.c)
+# Compiled as C++ (it supports that) so that a Lua error is a C++ exception: it unwinds our C++ frames, where a longjmp over them would not run their destructors.
+set_source_files_properties(${LUA_SRC} PROPERTIES LANGUAGE CXX)
+add_library(lua STATIC ${LUA_SRC})
+target_compile_definitions(lua PRIVATE LUA_USE_POSIX)
+target_compile_options(lua PRIVATE -w)
+target_include_directories(lua PUBLIC ${LUA_DIR})
+
 add_executable(SonicFantasy
     src/main.cpp
     src/Misc/Utils.h
@@ -68,7 +78,8 @@ add_executable(SonicFantasy
 	src/Objects/BABehaviors.cpp
 	src/Gameplay/GameplaySystem.cpp
 	src/Gameplay/GameEvents.cpp
-	src/Gameplay/SADXGameplay.cpp
+	src/Scripting/Scripting.cpp
+	src/Scripting/ScriptAPI.cpp
 	src/Objects/Level.cpp
 	src/Objects/SpatialIndex.cpp
 	src/Loading/ResourceLoader.cpp
@@ -93,6 +104,7 @@ target_include_directories(SonicFantasy PUBLIC
     src
 	src/Objects
 	src/Gameplay
+	src/Scripting
 	src/Graphics
 	src/Graphics/Resources
 	src/Graphics/InstanceData
@@ -116,6 +128,9 @@ target_include_directories(SonicFantasy PUBLIC
 # GLFW (Linux version). The static lib loads X11 at runtime through dlopen, so it only needs dl, pthread and m.
 target_link_libraries(SonicFantasy PRIVATE ${GLFW_DIR}/lib/libglfw3.a pthread m)
 
+# Lua
+target_link_libraries(SonicFantasy PRIVATE lua)
+
 # Linux OpenGL
 target_link_libraries(SonicFantasy PRIVATE GL dl)
 
@@ -127,6 +142,14 @@ add_custom_target(CopyShaders ALL
 		$<TARGET_FILE_DIR:SonicFantasy>/Assets/Shaders
 )
 add_dependencies(CopyShaders SonicFantasy)
+
+# The Lua scripts (Scripts/) are copied to Assets/Scripts the same way.
+add_custom_target(CopyScripts ALL
+	COMMAND ${CMAKE_COMMAND} -E copy_directory
+		${CMAKE_CURRENT_SOURCE_DIR}/Scripts
+		$<TARGET_FILE_DIR:SonicFantasy>/Assets/Scripts
+)
+add_dependencies(CopyScripts SonicFantasy)
 
 # Enables the Pool / PoolMap validity checks
 target_compile_definitions(SonicFantasy PRIVATE $<$<CONFIG:Debug>:ENGINE_DEBUG>)

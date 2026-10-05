@@ -29,6 +29,8 @@ void CollisionView::init()
 {
 	glCreateBuffers(1, &this->levelVBO);
 	setupLineVAO(this->levelVAO, this->levelVBO);
+	glCreateBuffers(1, &this->fillVBO);
+	setupLineVAO(this->fillVAO, this->fillVBO);
 	glCreateBuffers(1, &this->dynamicVBO);
 	setupLineVAO(this->dynamicVAO, this->dynamicVBO);
 }
@@ -136,9 +138,11 @@ void CollisionView::rebuildLevelLines(const std::vector<PoolId>& rCollisionIds_)
 	corners, whose bounding sphere draw tests against the view.
 	*/
 	constexpr float CellSize = 256.0f;
+	constexpr float FillAlpha = 0.25f;
 	struct CellLines
 	{
 		std::vector<LineVertex> lines;
+		std::vector<LineVertex> fill;
 		glm::vec3 min = glm::vec3(1e30f);
 		glm::vec3 max = glm::vec3(-1e30f);
 	};
@@ -155,8 +159,11 @@ void CollisionView::rebuildLevelLines(const std::vector<PoolId>& rCollisionIds_)
 			glm::vec4 color = haveValues ? attributeColor(values[c][i / 3]) : slopeColor(corners[0], corners[1], corners[2]);
 			glm::ivec3 cellIndex = glm::ivec3(glm::floor((corners[0] + corners[1] + corners[2]) / (3.0f * CellSize)));
 			CellLines& rCell = cells[std::make_tuple(cellIndex.x, cellIndex.y, cellIndex.z)];
+			glm::vec4 fillColor = color;
+			fillColor.a = FillAlpha;
 			for(int e = 0; e < 3; e++)
 			{
+				rCell.fill.push_back(LineVertex{corners[e], fillColor});
 				rCell.lines.push_back(LineVertex{corners[e], color});
 				rCell.lines.push_back(LineVertex{corners[(e + 1) % 3], color});
 				rCell.min = glm::min(rCell.min, corners[e]);
@@ -165,12 +172,14 @@ void CollisionView::rebuildLevelLines(const std::vector<PoolId>& rCollisionIds_)
 		}
 	}
 	std::vector<LineVertex> lines;
+	std::vector<LineVertex> fill;
 	this->levelCells.clear();
 	for(const auto& rEntry : cells)
 	{
 		const CellLines& rCell = rEntry.second;
-		this->levelCells.push_back(LineCell{(rCell.min + rCell.max) * 0.5f, glm::length(rCell.max - rCell.min) * 0.5f, static_cast<GLint>(lines.size()), static_cast<GLsizei>(rCell.lines.size())});
+		this->levelCells.push_back(LineCell{(rCell.min + rCell.max) * 0.5f, glm::length(rCell.max - rCell.min) * 0.5f, static_cast<GLint>(lines.size()), static_cast<GLsizei>(rCell.lines.size()), static_cast<GLint>(fill.size()), static_cast<GLsizei>(rCell.fill.size())});
 		lines.insert(lines.end(), rCell.lines.begin(), rCell.lines.end());
+		fill.insert(fill.end(), rCell.fill.begin(), rCell.fill.end());
 	}
 	this->levelVertexCount = static_cast<GLsizei>(lines.size());
 
@@ -180,6 +189,11 @@ void CollisionView::rebuildLevelLines(const std::vector<PoolId>& rCollisionIds_)
 	glCreateBuffers(1, &this->levelVBO);
 	if(!lines.empty()) glNamedBufferStorage(this->levelVBO, lines.size() * sizeof(LineVertex), lines.data(), 0);
 	setupLineVAO(this->levelVAO, this->levelVBO);
+	glDeleteBuffers(1, &this->fillVBO);
+	glDeleteVertexArrays(1, &this->fillVAO);
+	glCreateBuffers(1, &this->fillVBO);
+	if(!fill.empty()) glNamedBufferStorage(this->fillVBO, fill.size() * sizeof(LineVertex), fill.data(), 0);
+	setupLineVAO(this->fillVAO, this->fillVBO);
 	this->shownLevelCollisions = rCollisionIds_;
 	this->shownByAttribute = this->colorByAttribute;
 	this->shownSelected = this->selectedAttribute;
@@ -404,13 +418,25 @@ void CollisionView::draw(const Camera& rCamera_)
 		std::array<glm::vec4, 6> planes = rCamera_.frustumPlanes();
 		std::vector<GLint> firsts;
 		std::vector<GLsizei> counts;
+		std::vector<GLint> fillFirsts;
+		std::vector<GLsizei> fillCounts;
 		for(const LineCell& rCell : this->levelCells)
 		{
 			if(glm::distance(rCell.center, rCamera_.position) - rCell.radius > distance) continue;
 			if(!sphereInFrustum(planes, rCell.center, rCell.radius)) continue;
 			firsts.push_back(rCell.first);
 			counts.push_back(rCell.count);
+			fillFirsts.push_back(rCell.fillFirst);
+			fillCounts.push_back(rCell.fillCount);
 		}
+
+		/* The semi transparent faces first, depth tested but not written and drawn from both sides, so the lines and the scene behind them stay visible. */
+		glBindVertexArray(this->fillVAO);
+		glDepthMask(GL_FALSE);
+		glDisable(GL_CULL_FACE);
+		if(!fillFirsts.empty()) glMultiDrawArrays(GL_TRIANGLES, fillFirsts.data(), fillCounts.data(), static_cast<GLsizei>(fillFirsts.size()));
+		glEnable(GL_CULL_FACE);
+		glDepthMask(GL_TRUE);
 		glBindVertexArray(this->levelVAO);
 		if(!firsts.empty()) glMultiDrawArrays(GL_LINES, firsts.data(), counts.data(), static_cast<GLsizei>(firsts.size()));
 	}
@@ -427,6 +453,8 @@ void CollisionView::destroy()
 {
 	glDeleteVertexArrays(1, &this->levelVAO);
 	glDeleteBuffers(1, &this->levelVBO);
+	glDeleteVertexArrays(1, &this->fillVAO);
+	glDeleteBuffers(1, &this->fillVBO);
 	glDeleteVertexArrays(1, &this->dynamicVAO);
 	glDeleteBuffers(1, &this->dynamicVBO);
 }

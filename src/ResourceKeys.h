@@ -17,6 +17,31 @@ inline const SAModelKey SonicMesh{"ModelsMiles.rel", 0x16ED5C};
 inline const SATextureSetKey SonicTextures{"sonic.gvm"};
 /* "Sonic Alternate Stand", 73 nodes (external, SA Tools GameConfig/GC_SADX/ModelsMiles.ini; observed: 16 frames, position and rotation keys, linear). */
 inline const SAMotionKey SonicIdle{"ModelsMiles.rel", 0x2118B4, 73};
+/*
+Sonic's other motions in ModelsMiles.rel, all 73 nodes like his model (external, SA Tools GameConfig/GC_SADX/ModelsMiles.ini, section names in quotes). Which one the game plays for which
+speed and move is the table at _Main.rel 0x3544E0 (16 bytes per animation id, a pointer to the motion first; external, Ghidra pseudocode of sadxDecomp): id 0 Stand, 9 Walk, 10 Speedwalk, 11 Jog, 12 Run,
+13 Sprint, 0x12 Fall, 0x13 Landing, 0x11 Begin Falling From Spring Launch, 0x14 Brake, 0x17 Damage, 0x1E Turn Around. "Spring Launch" (0xE, 74 nodes) is the jump, below, with its own model.
+*/
+/*
+Sonic's other models and the motions made for them (external, the table at _Main.rel 0x3544E0 pairs each animation id with a model and a motion; SA Tools ModelsMiles.ini): the jump (id 0xE, "Spring Launch",
+74 nodes) is drawn with the curled model, the spin ball (id 0x20, "Spin (Jumpball)", 1 node) with the jumpball model; all the others use SonicMesh.
+*/
+inline const SAModelKey SonicCurledMesh{"ModelsMiles.rel", 0x17671C};
+inline const SAModelKey SonicJumpballMesh{"ModelsMiles.rel", 0x17F900};
+inline const SAMotionKey SonicJumpMotion{"ModelsMiles.rel", 0x1DA47C, 74};
+inline const SAMotionKey SonicBallMotion{"ModelsMiles.rel", 0x1F8BB8, 1};
+inline const SAMotionKey SonicStand{"ModelsMiles.rel", 0x1C3F30, 73};
+inline const SAMotionKey SonicWalk{"ModelsMiles.rel", 0x1CCEE8, 73};
+inline const SAMotionKey SonicSpeedwalk{"ModelsMiles.rel", 0x1D07EC, 73};
+inline const SAMotionKey SonicJog{"ModelsMiles.rel", 0x1D4020, 73};
+inline const SAMotionKey SonicRun{"ModelsMiles.rel", 0x1D72B4, 73};
+inline const SAMotionKey SonicSprint{"ModelsMiles.rel", 0x1E8AD8, 73};
+inline const SAMotionKey SonicBrake{"ModelsMiles.rel", 0x1D9F58, 73};
+inline const SAMotionKey SonicTurnAround{"ModelsMiles.rel", 0x1F7190, 73};
+inline const SAMotionKey SonicSpringFall{"ModelsMiles.rel", 0x1DFCD4, 73};
+inline const SAMotionKey SonicFall{"ModelsMiles.rel", 0x1E3218, 73};
+inline const SAMotionKey SonicLanding{"ModelsMiles.rel", 0x1E5F24, 73};
+inline const SAMotionKey SonicDamage{"ModelsMiles.rel", 0x1FB99C, 73};
 
 /*
 SADX object collision tables (SACollisionShapesKey, one per table the game's collision init is given by a literal address, from the Ghidra
@@ -80,6 +105,26 @@ inline const STH2005::MotionKey ShadowIdle{ShadowArchive, "SHADOW.MTP", "sh_idle
 /* The hands' fingers, for LTE.BON / RTE.BON (observed: 100 frames, the first node is the wrist sh_j_l1te / sh_j_r1te). */
 inline const STH2005::MotionKey ShadowIdleLeftHand{ShadowArchive, "SHADOW.MTP", "lte_idle", "LTE.BON", true};
 inline const STH2005::MotionKey ShadowIdleRightHand{ShadowArchive, "SHADOW.MTP", "rte_idle", "RTE.BON", true};
+/*
+The motions the player script (Scripts/shadow/player.lua) picks, for SH.BON. Which motion the game plays in which state is not decoded: the names of SHADOW.MTP's table
+(158 entries) are the only evidence (hypothesis): sh_walk, sh_run, sh_jump_a, sh_jump_b, sh_jump_c (a jump: observed on the disc, each one's last pose is the next one's first, and sh_jump_c turns the root by -6.98 radians, a full somersault curled up; then sh_jump_idle, whose first pose is close to sh_jump_c's last), sh_break_a (a brake), sh_dam_m_a (damage).
+*/
+inline const STH2005::MotionKey ShadowWalk{ShadowArchive, "SHADOW.MTP", "sh_walk", "SH.BON"};
+inline const STH2005::MotionKey ShadowRun{ShadowArchive, "SHADOW.MTP", "sh_run", "SH.BON"};
+inline const STH2005::MotionKey ShadowJump{ShadowArchive, "SHADOW.MTP", "sh_jump_a", "SH.BON"};
+inline const STH2005::MotionKey ShadowJumpB{ShadowArchive, "SHADOW.MTP", "sh_jump_b", "SH.BON"};
+inline const STH2005::MotionKey ShadowJumpC{ShadowArchive, "SHADOW.MTP", "sh_jump_c", "SH.BON"};
+inline const STH2005::MotionKey ShadowJumpFA{ShadowArchive, "SHADOW.MTP", "sh_jump_fa", "SH.BON"};
+inline const STH2005::MotionKey ShadowJumpFB{ShadowArchive, "SHADOW.MTP", "sh_jump_fb", "SH.BON"};
+inline const STH2005::MotionKey ShadowJumpD{ShadowArchive, "SHADOW.MTP", "sh_jump_d", "SH.BON"};
+inline const STH2005::MotionKey ShadowJumpE{ShadowArchive, "SHADOW.MTP", "sh_jump_e", "SH.BON"};
+/* The jump dash's motion (observed in the live log: animation index 6, motion number 83 = sh_fw_jump, range 0 to 15, looping while the dash lasts). */
+inline const STH2005::MotionKey ShadowFwJump{ShadowArchive, "SHADOW.MTP", "sh_fw_jump", "SH.BON"};
+inline const STH2005::MotionKey ShadowFall{ShadowArchive, "SHADOW.MTP", "sh_jump_idle", "SH.BON"};
+inline const STH2005::MotionKey ShadowBrake{ShadowArchive, "SHADOW.MTP", "sh_break_a", "SH.BON"};
+inline const STH2005::MotionKey ShadowDamage{ShadowArchive, "SHADOW.MTP", "sh_dam_m_a", "SH.BON"};
+inline const STH2005::MotionKey ShadowSlowSkate{ShadowArchive, "SHADOW.MTP", "sh_slow_skate", "SH.BON"};
+inline const STH2005::MotionKey ShadowHighSkate{ShadowArchive, "SHADOW.MTP", "sh_high_skate", "SH.BON"};
 
 /*
 Shadow stages as levels (observed on the disc): stgNNNN/stgNNNN_01.one ... _NN.one hold the stage's worlds (.RG1, visual) and

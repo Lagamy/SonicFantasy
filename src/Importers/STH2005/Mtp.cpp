@@ -84,8 +84,7 @@ on 320 segments and to the next key's first half on 267, any other candidate on 
 difference seen in the values.
 The last track ends 3 bytes past the motion's data size, which is consistent on all 158.
 Channels per bone: the first node of the skeleton (the locator, 0x103BF in the .BON) has 9: translation x y z,
-rotation x y z, scale x y z. Every other node has 12: three channels whose meaning is unknown (1.0 in sh_idle, other
-values in some motions; ignored here), then the same 9. Observed: with 30 nodes (SH.BON) a motion has 9 + 29 x 12 = 357
+rotation x y z, scale x y z. Every other node has 12: three channels (1.0 in sh_idle, other values in some motions) that hold the parent's scale in sh_jump_a (MotionBone::compensation), then the same 9. Observed: with 30 nodes (SH.BON) a motion has 9 + 29 x 12 = 357
 tracks, with 7 (LTE.BON, RTE.BON) 9 + 6 x 12 = 81.
 Values are the .BON's: on sh_j_l1asi1 the translation tracks hold the .BON translation and the rotation tracks its
 rotation, Euler angles in radians.
@@ -117,13 +116,20 @@ static Motion decodeMotion(const std::vector<uint8_t>& rBytes_, const char* pNam
 	Motion motion;
 	motion.name = pName_;
 	motion.lastFrame = 0;
+	motion.start = readBE<uint16_t>(rBytes_, found.offset + 0x10);
+	motion.end = readBE<uint16_t>(rBytes_, found.offset + 0x12);
 	uint32_t trackIndex = 0;
 	for(uint32_t b = 0; b < nodeCount; b++)
 	{
 		MotionBone bone;
 		bone.name = rBon_.nodes[b].name;
-		trackIndex += b == 0 ? 0 : 3;
-		for(MotionTrack* pTrack : {&bone.translation[0], &bone.translation[1], &bone.translation[2], &bone.rotation[0], &bone.rotation[1], &bone.rotation[2], &bone.scale[0], &bone.scale[1], &bone.scale[2]})
+		std::vector<MotionTrack*> channels;
+		if(b != 0) channels = {&bone.compensation[0], &bone.compensation[1], &bone.compensation[2]};
+		for(MotionTrack* pChannel : {&bone.translation[0], &bone.translation[1], &bone.translation[2], &bone.rotation[0], &bone.rotation[1], &bone.rotation[2], &bone.scale[0], &bone.scale[1], &bone.scale[2]})
+		{
+			channels.push_back(pChannel);
+		}
+		for(MotionTrack* pTrack : channels)
 		{
 			uint32_t track = tracks[trackIndex].first;
 			uint32_t keyCount = readBE<uint8_t>(rBytes_, track + 2);

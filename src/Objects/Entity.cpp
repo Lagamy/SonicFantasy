@@ -1,4 +1,5 @@
 #include "RenderStats.h"
+#include "Scripting.h"
 #include <glm/gtc/quaternion.hpp>
 #include <cstdio>
 #include "Entity.h"
@@ -7,6 +8,7 @@
 #include "ResourceLoader.h"
 #include "Globals.h"
 #include <stdexcept>
+#include <cmath>
 
 static void checkNoInstance(const Entity& rEntity_)
 {
@@ -74,6 +76,17 @@ void Entity::changeActiveTexture(const STH2005::TextureKey& rKey_)
 	getActiveONEInstance(*this).changeActiveTexture(rKey_);
 }
 
+/* Makes an SA instance draw another mesh with its textures (Loading::changeSAMesh); its motion stops, so play one after. */
+void Entity::changeSAMesh(const SAModelKey& rKey_)
+{
+	if(this->instanceId == UninitializedPoolId || this->sourceEngine != SA_NINJA)
+	{
+		throw std::runtime_error("Entity: has no SA instance.");
+	}
+	Loading::changeSAMesh(this->instanceId, rKey_);
+	this->refreshBounds();
+}
+
 void Entity::playSAMotion(const SAMotionKey& rKey_)
 {
 	if(this->instanceId == UninitializedPoolId || this->sourceEngine != SA_NINJA)
@@ -86,6 +99,11 @@ void Entity::playSAMotion(const SAMotionKey& rKey_)
 void Entity::playONEMotion(const STH2005::MotionKey& rKey_, bool loop_)
 {
 	getActiveONEInstance(*this).playMotion(rKey_, loop_);
+}
+
+void Entity::setONEPose(const std::vector<Graphics::PoseRequest>& rLayers_)
+{
+	getActiveONEInstance(*this).setPose(rLayers_);
 }
 
 void Entity::setPosition(const glm::vec3& rPosition_)
@@ -108,7 +126,12 @@ glm::vec3 Entity::renderPosition() const
 	const GameplaySystem& rSystem = Globals::Game::gameplaySystem;
 	if(rSystem.extrapolate)
 	{
-		glm::vec3 velocity = this->physicsId != UninitializedPoolId ? Globals::Physics::bodies[this->physicsId].velocity : (this->position - this->previousPosition) * rSystem.tickRate;
+		/*
+		A body on the floor is carried on by the move it actually made last tick, not by its velocity: a script that presses it into the floor (Shadow's ground gravity, about 0.2 units a tick) or keeps its velocity in the slope's plane
+		sets a velocity the collision then cancels in part, and extrapolating by it sank the model into the floor and back every tick (observed in a log: velocity y of -48 against a move of -36 a second, and -11 at rest).
+		*/
+		glm::vec3 velocity = (this->position - this->previousPosition) * rSystem.tickRate;
+		if(this->physicsId != UninitializedPoolId && !Globals::Physics::bodies[this->physicsId].grounded) velocity = Globals::Physics::bodies[this->physicsId].velocity;
 		return this->position + velocity * (rSystem.interpolationAlpha() * rSystem.tickTime());
 	}
 	if(this->previousPosition == this->position) return this->position;
@@ -143,13 +166,27 @@ void Entity::update(float deltaTime_)
 	if(this->instanceId == UninitializedPoolId) return;
 
 	/* Gameplay only says what it wants; the instance changes here, once a frame, and only if the wish changed. A motion that can't be played is reported once (it counts as applied). */
-	if(this->animationIntent != this->appliedAnimation)
+	bool baseChanged = this->animationIntent != this->appliedBase;
+	if(baseChanged)
 	{
-		this->appliedAnimation = this->animationIntent;
+		this->appliedBase = this->animationIntent;
+		this->baseFrame = 0.0f;
+		this->baseFrameCount = 0;
+	}
+	const bool blinking = this->blinkIntent.pSAMotion != nullptr && this->sourceEngine == SA_NINJA;
+	const AnimationIntent& rWanted = blinking ? this->blinkIntent : this->animationIntent;
+	if(rWanted != this->appliedAnimation)
+	{
+		this->appliedAnimation = rWanted;
 		try
 		{
-			if(this->animationIntent.pSAMotion != nullptr && this->sourceEngine == SA_NINJA) this->playSAMotion(*this->animationIntent.pSAMotion);
-			else if(this->animationIntent.pONEMotion != nullptr && this->sourceEngine == STH2005_ONE) this->playONEMotion(*this->animationIntent.pONEMotion, this->animationIntent.loop);
+			if(rWanted.pSAMotion != nullptr && this->sourceEngine == SA_NINJA)
+			{
+				if(rWanted.pSAMesh != nullptr) this->changeSAMesh(*rWanted.pSAMesh);
+				this->playSAMotion(*rWanted.pSAMotion);
+				if(!blinking) Graphics::getSAInstance(this->instanceId).animationFrame = this->baseFrame;
+			}
+			else if(rWanted.pONEMotion != nullptr && this->sourceEngine == STH2005_ONE) this->playONEMotion(*rWanted.pONEMotion, rWanted.loop);
 		}
 		catch(const std::runtime_error& rError)
 		{
@@ -159,9 +196,20 @@ void Entity::update(float deltaTime_)
 	switch(this->sourceEngine)
 	{
 	case SA_NINJA:
-		Graphics::getSAInstance(this->instanceId).update(deltaTime_);
+	{
+		Graphics::SAInstance& rInstance = Graphics::getSAInstance(this->instanceId);
+		rInstance.framesPerSecond = this->animationRate;
+		rInstance.update(deltaTime_);
+		if(!blinking)
+		{
+			this->baseFrame = rInstance.animationFrame;
+			if(rInstance.currentSAAnimation != UninitializedPoolId) this->baseFrameCount = Graphics::saMotions[rInstance.currentSAAnimation].frameCount;
+		}
+		else if(this->baseFrameCount != 0) this->baseFrame = std::fmod(this->baseFrame + deltaTime_ * rInstance.playbackRate(), static_cast<float>(this->baseFrameCount));
 		break;
+	}
 	case STH2005_ONE:
+		Graphics::getONEInstance(this->instanceId).speed = this->animationRate > 0.0f ? this->animationRate : 1.0f;
 		Graphics::getONEInstance(this->instanceId).update(deltaTime_);
 		break;
 	}
@@ -323,6 +371,11 @@ void Entity::markForDestroy()
 
 void Entity::destroy()
 {
+	if(this->scriptStateRef != 0)
+	{
+		Scripting::releaseState(this->scriptStateRef);
+		this->scriptStateRef = 0;
+	}
 	if(this->stateId != UninitializedPoolId)
 	{
 		Globals::Game::entityStates.remove(this->stateId);

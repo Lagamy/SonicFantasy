@@ -200,7 +200,7 @@ One interaction to call: the function of a behaviour's availableInteractions wit
 */
 struct Interaction
 {
-	BAInteraction pFunction;
+	BAInteraction function;
 	PoolId parent;
 	PoolId contact;
 };
@@ -208,16 +208,58 @@ struct Interaction
 /* The interactions of an overlap of a collision of rA_ owned by aEntity_ and one of rB_ owned by bEntity_: each side's functions for the other's tags, each once. */
 static void collectInteractions(const BABehavior& rA_, PoolId aEntity_, const BABehavior& rB_, PoolId bEntity_, std::vector<Interaction>& rOut_)
 {
-	auto add = [&](BAInteraction pFunction_, PoolId parent_, PoolId contact_)
+	auto add = [&](const BAInteraction& rFunction_, PoolId parent_, PoolId contact_)
 	{
 		for(const Interaction& rInteraction : rOut_)
 		{
-			if(rInteraction.pFunction == pFunction_ && rInteraction.parent == parent_ && rInteraction.contact == contact_) return;
+			if(rInteraction.function == rFunction_ && rInteraction.parent == parent_ && rInteraction.contact == contact_) return;
 		}
-		rOut_.push_back(Interaction{pFunction_, parent_, contact_});
+		rOut_.push_back(Interaction{rFunction_, parent_, contact_});
 	};
-	rA_.forEachInteraction(rB_, [&](BAInteraction pFunction_) { add(pFunction_, aEntity_, bEntity_); });
-	rB_.forEachInteraction(rA_, [&](BAInteraction pFunction_) { add(pFunction_, bEntity_, aEntity_); });
+	rA_.forEachInteraction(rB_, [&](const BAInteraction& rFunction_) { add(rFunction_, aEntity_, bEntity_); });
+	rB_.forEachInteraction(rA_, [&](const BAInteraction& rFunction_) { add(rFunction_, bEntity_, aEntity_); });
+}
+
+/*
+A ray (a start, a unit direction, a length) against the triangles the mover's behaviour is stopped by, two sided (the winding is unknown, hypothesis, like the rest of the system): the nearest hit. rDistance_ is how far along the ray it
+is, rNormal_ the triangle's normal turned to face the ray's start, rArea_ its collision behaviour. This is the game's FUN_800979e8 (external: returns the distance of the nearest hit, -1 on a miss, and the hit's position and normal on request).
+*/
+static bool castRay(const glm::vec3& rStart_, const glm::vec3& rDirection_, float rLength_, PoolId moverBehavior_, float& rDistance_, glm::vec3& rNormal_, PoolId& rArea_)
+{
+	glm::vec3 end = rStart_ + rDirection_ * rLength_;
+	glm::vec3 low = glm::min(rStart_, end) - glm::vec3(0.01f);
+	glm::vec3 high = glm::max(rStart_, end) + glm::vec3(0.01f);
+	std::vector<QuadTreeEntry> candidates;
+	Globals::Physics::quadTree.query(low, high, candidates);
+
+	bool found = false;
+	float nearest = rLength_;
+	for(const QuadTreeEntry& rEntry : candidates)
+	{
+		const Collision& rCollision = Globals::Physics::collisions[rEntry.collisionId];
+		const CollisionMesh& rMesh = rCollision.mesh;
+		PoolId areaId = rCollision.behaviorOf(rEntry.triangle);
+		if(areaId == UninitializedPoolId) continue;
+		if(!Globals::Game::behaviors[moverBehavior_].collidesWith(Globals::Game::behaviors[areaId])) continue;
+
+		glm::vec3 a = rMesh.vertices[rMesh.indices[rEntry.triangle * 3]];
+		glm::vec3 b = rMesh.vertices[rMesh.indices[rEntry.triangle * 3 + 1]];
+		glm::vec3 c = rMesh.vertices[rMesh.indices[rEntry.triangle * 3 + 2]];
+		glm::vec3 normal = glm::cross(b - a, c - a);
+		if(glm::dot(normal, normal) < 1e-12f) continue;
+		normal = glm::normalize(normal);
+
+		float t;
+		if(!segmentTriangle(rStart_ - rCollision.position, end - rCollision.position, a, b, c, t)) continue;
+		float distance = t * rLength_;
+		if(distance > nearest) continue;
+		nearest = distance;
+		rDistance_ = distance;
+		rNormal_ = glm::dot(normal, rDirection_) > 0.0f ? -normal : normal;
+		rArea_ = areaId;
+		found = true;
+	}
+	return found;
 }
 
 /*
@@ -243,14 +285,50 @@ static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCap
 
 	std::vector<QuadTreeEntry> candidates;
 	std::vector<Interaction> interactions;
-	for(int s = 0; s < steps; s++)
+
+	/* What this move touches is recorded in the body (PhysicsBody::grounded and the others); it starts empty. */
+	bool wasGrounded;
+	glm::vec3 previousNormal;
 	{
+		Physics::PhysicsBody& rBody = Globals::Physics::bodies[bodyId];
+		wasGrounded = rBody.grounded;
+		previousNormal = rBody.grounded ? rBody.groundNormal : glm::vec3(0.0f, 1.0f, 0.0f);
+		rBody.grounded = false;
+		rBody.groundNormal = glm::vec3(0.0f, 1.0f, 0.0f);
+		rBody.groundSurface = UninitializedPoolId;
+		rBody.touchingWall = false;
+		rBody.wallNormal = glm::vec3(0.0f);
+	}
+	/*
+	The snap (PhysicsBody::snapDistance) is more steps, straight down and no longer than the smallest shape radius each like the move's, after the move: they go on only while the body is not on a walkable floor and not rising, and stop at the
+	first step that touches one (the shape then rests on it, pushed out like any step). If none does, the position and the body's state of the move are restored.
+	*/
+	glm::vec3 positionBeforeSnap(0.0f);
+	Physics::PhysicsBody bodyBeforeSnap;
+	bool snapped = false;
+	float snapDistance = Globals::Physics::bodies[bodyId].snapDistance;
+	int snapSteps = snapDistance > 0.0f && !Globals::Physics::bodies[bodyId].snapByRay && smallest > 0.0f ? std::clamp(static_cast<int>(std::ceil(snapDistance / smallest)), 1, MaxMoveSteps) : 0;
+	for(int s = 0; s < steps + snapSteps; s++)
+	{
+		bool snapping = s >= steps;
+		if(snapping)
+		{
+			const Physics::PhysicsBody& rBody = Globals::Physics::bodies[bodyId];
+			if(rBody.grounded || rBody.velocity.y > 0.0f) break;
+			if(!snapped)
+			{
+				positionBeforeSnap = position;
+				bodyBeforeSnap = rBody;
+				snapped = true;
+			}
+		}
 		glm::vec3 before = position;
-		position += step;
+		position += snapping ? glm::vec3(0.0f, -snapDistance / static_cast<float>(snapSteps), 0.0f) : step;
 		for(int iteration = 0; iteration < MaxPushIterations; iteration++)
 		{
 			float deepest = 0.0f;
 			glm::vec3 pushDirection(0.0f);
+			PoolId deepestArea;
 			for(const Capsule& rCapsule : rCapsules_)
 			{
 				glm::vec3 axis = rCapsule.axis * rCapsule.halfLength;
@@ -292,6 +370,7 @@ static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCap
 					float depth = rCapsule.radius - distance;
 					if(depth <= deepest) continue;
 					deepest = depth;
+					deepestArea = areaId;
 					if(distance > 1e-5f)
 					{
 						pushDirection = away / distance;
@@ -310,16 +389,78 @@ static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCap
 			cancels the vertical velocity: pushing along a slope's normal would shift a resting body sideways a little every frame (it
 			sinks by gravity, then is pushed out along the tilted normal), and the slope's part of gravity would make it slide.
 			*/
+			Physics::PhysicsBody& rTouched = Globals::Physics::bodies[bodyId];
 			if(pushDirection.y >= MinFloorNormalY)
 			{
+				rTouched.grounded = true;
+				rTouched.groundNormal = pushDirection;
+				rTouched.groundSurface = deepestArea;
 				deepest /= pushDirection.y;
 				pushDirection = glm::vec3(0.0f, 1.0f, 0.0f);
+			}
+			else
+			{
+				rTouched.touchingWall = true;
+				rTouched.wallNormal = pushDirection;
 			}
 
 			position += pushDirection * deepest;
 			glm::vec3& rVelocity = Globals::Physics::bodies[bodyId].velocity;
 			float into = glm::dot(rVelocity, pushDirection);
 			if(into < 0.0f) rVelocity -= pushDirection * into;
+		}
+	}
+	if(snapped && !Globals::Physics::bodies[bodyId].grounded)
+	{
+		position = positionBeforeSnap;
+		Globals::Physics::bodies[bodyId] = bodyBeforeSnap;
+	}
+
+	/*
+	The game's ground probe (PhysicsBody::snapByRay), external, FUN_8009728c, the part after its first sweep (this system's move stands for that sweep): it runs only if the body was on the floor the tick before (the game's flag 2) and
+	the move did not end on one. N is the previous floor's normal (the game's +0x1c8; up if there was none). A ray from the body's center along -N, GroundRayRangeFactor x radius plus the length of the intended move long, finds the
+	nearest triangle at distance d (none: no ground). d up to GroundRayNearFactor x radius is accepted; a farther one needs a second ray from the point HalfFactor x (d + radius) down along -N, backwards along the move (the game's
+	last sweep displacement, the intended move here; at least a radius long), whose nearest hit has a normal within minNormalY of N. If accepted, the body moves along -N towards the hit but stops Backoff before it, or where its sphere
+	touches the surface (a sphere of the radius meets a plane when it is radius / cos(angle) from it, my computation: the game sweeps the sphere along that vector with its own collision), and is on the floor if the surface it touches has
+	a normal within minNormalY of N, which becomes the floor's normal. Hypotheses: the move's last sweep displacement is the whole intended move; contact is the ray's triangle.
+	*/
+	{
+		Physics::PhysicsBody& rBody = Globals::Physics::bodies[bodyId];
+		if(rBody.snapByRay && rBody.snapDistance > 0.0f && wasGrounded && !rBody.grounded)
+		{
+			float radius = rBody.snapRadius > 0.0f ? rBody.snapRadius : rCapsules_[0].radius;
+			glm::vec3 center = position + rCapsules_[0].center;
+			glm::vec3 down = -previousNormal;
+			float distance;
+			glm::vec3 normal;
+			PoolId areaId;
+			float move = glm::length(delta);
+			if(castRay(center, down, GroundRayRangeFactor * radius + move, rCapsules_[0].behavior, distance, normal, areaId))
+			{
+				bool accepted = distance <= GroundRayNearFactor * radius;
+				if(!accepted && move > 1e-6f)
+				{
+					glm::vec3 back = -delta / move * std::max(move, radius);
+					glm::vec3 secondStart = center + down * (GroundRayHalfFactor * (distance + radius));
+					float secondDistance;
+					glm::vec3 secondNormal;
+					PoolId secondArea;
+					float backLength = glm::length(back);
+					if(castRay(secondStart, back / backLength, backLength, rCapsules_[0].behavior, secondDistance, secondNormal, secondArea) && secondDistance > 0.0f)
+					{
+						accepted = glm::dot(secondNormal, previousNormal) > rBody.snapMinNormalY;
+					}
+				}
+				float facing = glm::dot(normal, -down);
+				if(accepted && facing > 1e-4f && glm::dot(normal, previousNormal) >= rBody.snapMinNormalY)
+				{
+					float travel = std::max(0.0f, std::min(distance - GroundRayBackoff, distance - rCapsules_[0].radius / facing));
+					position += down * travel;
+					rBody.grounded = true;
+					rBody.groundNormal = normal;
+					rBody.groundSurface = areaId;
+				}
+			}
 		}
 	}
 
@@ -329,7 +470,7 @@ static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCap
 	/* The callbacks run last: they may add or remove entities or behaviours, which invalidates rEntity (the areas are kept by PoolId). */
 	for(const Interaction& rInteraction : interactions)
 	{
-		rInteraction.pFunction(rInteraction.parent, rInteraction.contact);
+		rInteraction.function.call(rInteraction.parent, rInteraction.contact);
 	}
 }
 
@@ -712,7 +853,7 @@ static void updateEntityContacts()
 	}
 	for(const Interaction& rInteraction : interactions)
 	{
-		rInteraction.pFunction(rInteraction.parent, rInteraction.contact);
+		rInteraction.function.call(rInteraction.parent, rInteraction.contact);
 	}
 }
 
@@ -796,7 +937,7 @@ void CollisionSystem::update()
 		}
 		for(const Interaction& rInteraction : interactions)
 		{
-			rInteraction.pFunction(rInteraction.parent, rInteraction.contact);
+			rInteraction.function.call(rInteraction.parent, rInteraction.contact);
 		}
 	}
 

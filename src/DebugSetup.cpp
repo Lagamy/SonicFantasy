@@ -11,7 +11,6 @@ namespace DebugSetup
 {
 void enablePhysics(PoolId sonicId_, PoolId shadowId_)
 {
-	Globals::Physics::gravity = {0.0f, -98.0f, 0.0f};
 	getEntity(sonicId_).setPhysics(1.0f);
 	getEntity(shadowId_).setPhysics(1.0f);
 }

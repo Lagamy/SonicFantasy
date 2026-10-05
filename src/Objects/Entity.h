@@ -6,6 +6,11 @@
 #include <array>
 #include <vector>
 #include "Constants.h"
+
+namespace Graphics
+{
+struct PoseRequest;
+}
 #include "BoundingSphere.h"
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -25,6 +30,8 @@ struct AnimationIntent
 	const SAMotionKey* pSAMotion = nullptr;
 	const STH2005::MotionKey* pONEMotion = nullptr;
 	bool loop = true;
+	/* An SA entity: the mesh to draw with the motion (switched first, since a motion animates the nodes of one model), nullptr = keep the current one. */
+	const SAModelKey* pSAMesh = nullptr;
 
 	bool operator==(const AnimationIntent&) const = default;
 };
@@ -77,8 +84,20 @@ struct Entity
 	PoolId behaviorSetId = UninitializedPoolId;
 	PoolId selfId = UninitializedPoolId;
 	PoolId stateId = UninitializedPoolId;
+	/* The entity's table for what its script behaviours remember (sf.state, Scripting.h): a Lua registry reference, 0 = none yet; released by destroy. */
+	int scriptStateRef = 0;
 	AnimationIntent animationIntent;
 	AnimationIntent appliedAnimation;
+	/*
+	A motion drawn in place of animationIntent while it is set (sf.blink; its mesh is switched with it), like the game's ball blink: the intent's motion keeps its own clock meanwhile
+	(baseFrame, in frames of baseFrameCount) and goes on from there when the blink ends, instead of restarting. appliedBase is the intent last seen, so a new one starts at frame 0.
+	*/
+	AnimationIntent blinkIntent;
+	AnimationIntent appliedBase;
+	float baseFrame = 0.0f;
+	uint32_t baseFrameCount = 0;
+	/* Frames a second the entity's SA motion plays at, set by gameplay (sf.animate); 0 = the default. Not part of the intent: it can change every tick without restarting the motion. */
+	float animationRate = 0.0f;
 
 	void setSAGPUInstance(PoolId shaderId_, const SAModelKey& rMesh_, const SATextureSetKey& rTextures_);
 	void setSAGPUInstance(PoolId shaderId_, const SAModelKey& rMesh_);
@@ -87,8 +106,11 @@ struct Entity
 	void changeActiveMesh(const STH2005::ModelKey& rKey_);
 	void switchMeshPart(const STH2005::ModelPart& rPrevious_, const STH2005::ModelPart& rDesired_);
 	void changeActiveTexture(const STH2005::TextureKey& rKey_);
+	void changeSAMesh(const SAModelKey& rKey_);
 	void playSAMotion(const SAMotionKey& rKey_);
 	void playONEMotion(const STH2005::MotionKey& rKey_, bool loop_ = true);
+	/* A pose of motions mixed by weight at given frames, in place of the main skeleton's playing motions (ONEInstance::setPose); an empty list ends it. ONE instances only. */
+	void setONEPose(const std::vector<Graphics::PoseRequest>& rLayers_);
 	void setPhysics(float weight_);
 	void setSACollisionShapes(const SACollisionShapesKey& rShapes_);
 	void setSACollisionShapes(const std::vector<SACollisionShapesKey>& rShapes_);

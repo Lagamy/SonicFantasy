@@ -55,7 +55,7 @@ void DebugUI::draw(Camera& rCamera_)
 			ImGui::EndTabItem();
 		}
 
-		/* The game being played: the ring count (the player's state is a placeholder, see SADXGameplay.cpp). */
+		/* The game being played: the ring count (the player's movement is a placeholder script, Scripts/sadx/player.lua). */
 		if(ImGui::BeginTabItem("Game"))
 		{
 			ImGui::Text("Rings: %d", Globals::Game::rings);

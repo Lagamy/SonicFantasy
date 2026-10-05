@@ -13,8 +13,42 @@ struct BATag
 {
 };
 
-/* What one behaviour does when its collision touches a collision with a tag: called with the PoolId of the entity that owns the behaviour's collision (parent) and the one it touched (contact). */
-using BAInteraction = void (*)(PoolId parentEntity_, PoolId contactEntity_);
+namespace Scripting
+{
+void callInteraction(int scriptFunction_, PoolId parentEntity_, PoolId contactEntity_);
+}
+
+/*
+What one behaviour does when its collision touches a collision with a tag: called with the PoolId of the entity that owns the behaviour's collision (parent) and the one it touched (contact). It is either a C++
+function (pFunction) or a script function (scriptFunction: a Lua registry reference, see Scripting.h); a function pointer converts to one, so a behaviour lists `{tag, &function}`. Two are equal if they are the
+same function, which is how the collision system calls each once.
+*/
+struct BAInteraction
+{
+	void (*pFunction)(PoolId parentEntity_, PoolId contactEntity_) = nullptr;
+	int scriptFunction = 0;
+
+	BAInteraction() = default;
+	BAInteraction(void (*pFunction_)(PoolId parentEntity_, PoolId contactEntity_)) : pFunction(pFunction_) {}
+
+	static BAInteraction script(int scriptFunction_)
+	{
+		BAInteraction interaction;
+		interaction.scriptFunction = scriptFunction_;
+		return interaction;
+	}
+
+	bool operator==(const BAInteraction& rOther_) const
+	{
+		return this->pFunction == rOther_.pFunction && this->scriptFunction == rOther_.scriptFunction;
+	}
+
+	void call(PoolId parentEntity_, PoolId contactEntity_) const
+	{
+		if(this->pFunction != nullptr) this->pFunction(parentEntity_, contactEntity_);
+		else if(this->scriptFunction != 0) Scripting::callInteraction(this->scriptFunction, parentEntity_, contactEntity_);
+	}
+};
 
 /*
 What a collision is and does, stored in Globals::Game::behaviors (a PoolMap named by the behaviour's BABehaviorKey) and found by its PoolId. A level triangle gets one when the collision is loaded

@@ -90,6 +90,10 @@ private:
 	GLuint levelVBO = 0;
 	GLsizei levelVertexCount = 0;
 
+	/* The level's triangles as faces (three vertices each, same cells as the lines, see LineCell), drawn semi transparent under the lines. */
+	GLuint fillVAO = 0;
+	GLuint fillVBO = 0;
+
 	/* The level lines are grouped in cells of a grid (a cell's lines are one range of the buffer) so that draw can skip the cells outside the view: its bounding sphere and the lines' range. */
 	struct LineCell
 	{
@@ -97,6 +101,8 @@ private:
 		float radius;
 		GLint first;
 		GLsizei count;
+		GLint fillFirst;
+		GLsizei fillCount;
 	};
 	std::vector<LineCell> levelCells;
 	int shownSelected = -1;

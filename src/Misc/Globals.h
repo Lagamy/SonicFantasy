@@ -62,6 +62,9 @@ namespace Globals {
 		inline Pool<EntityState> entityStates = ("EntityStates");
 		inline int rings = 0;
 
+		/* The entity the follow camera (main.cpp, outside the debug mode) sits behind: the player a script chose with sf.followCamera. */
+		inline PoolId cameraTarget = UninitializedPoolId;
+
 		/* The one-shot presentation events the gameplay posts and the frame drains (GameEvents.h). */
 		inline GameEvents gameEvents;
 
@@ -81,10 +84,10 @@ namespace Globals {
 		inline ::Physics::CollisionSystem collisionSystem;
 
 		/*
-		Acceleration applied to every body, scaled by its weight, in units per second squared. Zero until set (nothing falls);
-		-Y is down (the renderer is +Y up).
+		Acceleration applied to every body, scaled by its weight, in units per second squared; -Y is down (the renderer is +Y up).
+		External (the per-character record of _Main.rel, Sonic's +0x78 = 0.08 per frame squared): 0.08 * 60 * 60, assuming 1 frame = 1/60 s (hypothesis).
 		*/
-		inline glm::vec3 gravity = glm::vec3(0.0f);
+		inline glm::vec3 gravity = glm::vec3(0.0f, -288.0f, 0.0f);
 	}
 
 	/* The opened disc images, kept open so resources can be loaded on demand from resource keys. */

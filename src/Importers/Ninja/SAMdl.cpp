@@ -247,6 +247,7 @@ static void readAttach(const SAModelSource& rSrc_, uint32_t attachOffset_, Graph
 			submesh.clampU = (attributes & 0x10000) != 0;
 			submesh.flipV = (attributes & 0x20000) != 0;
 			submesh.flipU = (attributes & 0x40000) != 0;
+			submesh.doubleSided = (attributes & 0x800000) != 0;
 		}
 
 		submesh.mesh.create();

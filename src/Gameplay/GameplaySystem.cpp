@@ -2,6 +2,7 @@
 #include "Globals.h"
 #include "API.h"
 #include "GPU_Globals.h"
+#include "Scripting.h"
 #include <algorithm>
 #include <chrono>
 #include <utility>
@@ -85,8 +86,9 @@ void GameplaySystem::tick()
 		{
 			if(!entityExists(rSet.first)) break;
 			if(!behaviorTypeExists(behaviorId)) continue;
-			void (*pBehave)(PoolId) = Globals::Game::entityBehaviorTypes[behaviorId].pBehave;
-			if(pBehave != nullptr) pBehave(rSet.first);
+			const EntityBehavior& rBehavior = Globals::Game::entityBehaviorTypes[behaviorId];
+			if(rBehavior.pBehave != nullptr) rBehavior.pBehave(rSet.first);
+			else if(rBehavior.scriptFunction != 0) Scripting::callBehavior(rBehavior.scriptFunction, rSet.first);
 		}
 	}
 

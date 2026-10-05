@@ -23,10 +23,13 @@ struct SAInstance
 	PoolId textureBindingId;
 	PoolId currentSAAnimation;
 	float animationFrame;
+	/* Frames a second the motion plays at; 0 = the default (SAMotionFramesPerSecond in SAInstance.cpp). Set by Entity::update from Entity::animationRate. */
+	float framesPerSecond = 0.0f;
 	std::vector<glm::mat4> nodePose;
 	bool poseDirty = false;
 
 	void update(float deltaTime_);
+	float playbackRate() const;
 	void buildPose();
 	void draw(const glm::mat4& rBase_);
 	void destroy();

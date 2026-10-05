@@ -58,13 +58,19 @@ buildPose fills nodePose: each node takes its channels from the motion and the r
 while a motion plays, the node's NoPosition / NoRotate / NoScale flags are ignored, so translate, rotate and scale
 always apply, keyed or not.
 */
+/* Frames a second the motion advances at now. */
+float SAInstance::playbackRate() const
+{
+	return this->framesPerSecond > 0.0f ? this->framesPerSecond : SAMotionFramesPerSecond;
+}
+
 void SAInstance::update(float deltaTime_)
 {
 	if(this->currentSAAnimation == UninitializedPoolId) return;
 	SAMotion& rMotion = saMotions[this->currentSAAnimation];
 	if(rMotion.frameCount == 0) return;
 
-	this->animationFrame = std::fmod(this->animationFrame + deltaTime_ * SAMotionFramesPerSecond, static_cast<float>(rMotion.frameCount));
+	this->animationFrame = std::fmod(this->animationFrame + deltaTime_ * this->playbackRate(), static_cast<float>(rMotion.frameCount));
 	this->poseDirty = true;
 }
 
@@ -119,6 +125,9 @@ void SAInstance::draw(const glm::mat4& rBase_)
 	static std::vector<glm::mat4> world;
 	world.resize(rSAMesh.nodes.size());
 
+	/* Back-face culling is on for the whole renderer; a double sided submesh (SASubmesh::doubleSided) turns it off for its draw only. */
+	bool cullDisabled = false;
+
 	for(size_t i = 0; i < rSAMesh.nodes.size(); i++)
 	{
 		SANode& rNode = rSAMesh.nodes[i];
@@ -153,9 +162,16 @@ void SAInstance::draw(const glm::mat4& rBase_)
 				}
 			}
 			glUniform1i(HasTextureLocation, hasTexture);
+			if(rSubmesh.doubleSided != cullDisabled)
+			{
+				if(rSubmesh.doubleSided) glDisable(GL_CULL_FACE);
+				else glEnable(GL_CULL_FACE);
+				cullDisabled = rSubmesh.doubleSided;
+			}
 			rSubmesh.mesh.draw();
 		}
 	}
+	if(cullDisabled) glEnable(GL_CULL_FACE);
 }
 
 /* Gives back the instance's users of its TextureSet, motion and mesh; each is removed when no instance uses it. */

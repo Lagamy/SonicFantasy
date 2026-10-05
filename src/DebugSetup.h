@@ -8,7 +8,7 @@ the physics of the two test entities. Nothing here is needed by the systems them
 */
 namespace DebugSetup
 {
-/* Sets the global gravity and gives both test entities a physics of weight 1. */
+/* Gives both test entities a physics of weight 1 (the gravity is Globals::Physics::gravity). */
 void enablePhysics(PoolId sonicId_, PoolId shadowId_);
 
 /* Gives Shadow a hand-made collision shape (the body capsule seen in a RAM dump, see DebugSetup.cpp). */

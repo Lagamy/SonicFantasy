@@ -1,6 +1,8 @@
 #include "API.h"
 #include "Entity.h"
 #include "Level.h"
+#include "Scripting.h"
+#include <cstdio>
 #include <format>
 #include <stdexcept>
 #include <utility>
@@ -65,6 +67,20 @@ void changeAnimation(PoolId entityId_, const SAMotionKey& rKey_)
 {
     Entity& rEntity = Globals::Game::entities[entityId_];
     rEntity.animationIntent = AnimationIntent{&rKey_, nullptr, true};
+}
+
+/* The same with the mesh the motion is for: the entity draws that mesh from then on (the motion's node count has to match it). */
+void changeAnimation(PoolId entityId_, const SAMotionKey& rKey_, const SAModelKey& rMesh_)
+{
+    Entity& rEntity = Globals::Game::entities[entityId_];
+    rEntity.animationIntent = AnimationIntent{&rKey_, nullptr, true, &rMesh_};
+}
+
+/* An SA entity draws this motion and mesh in place of the wanted animation while it is set (nullptr clears it); the wanted one keeps its own clock meanwhile (Entity::blinkIntent). */
+void blinkAnimation(PoolId entityId_, const SAMotionKey* pKey_, const SAModelKey* pMesh_)
+{
+    Entity& rEntity = Globals::Game::entities[entityId_];
+    rEntity.blinkIntent = AnimationIntent{pKey_, nullptr, true, pMesh_};
 }
 
 void changeAnimation(PoolId entityId_, const STH2005::MotionKey& rKey_, bool loop_)
@@ -137,4 +153,81 @@ Level& getLevelByName(const char* name_)
         throw std::runtime_error(std::format("getLevelByName: no level named {}.", name_));
     }
     return Globals::Game::levels[found->second];
+}
+
+
+/*
+Makes one SADX object entity from its key at any time (the level's SET records, a behaviour that creates something): an entity named name_ at the position and rotation given, with the model, the key's textures
+(untextured if it has none), the collision shapes if there are any, the behaviours the script function setupObject gives its type (pPlacement_ is its SET record, null for an object that has none), and the first motion
+the key lists, looping (without behaviour nothing chooses a motion; the generator puts one that looks like an idle first). Returns its id, or UninitializedPoolId if it could not be made: the entity is removed
+again and the reason, with what_ naming where it came from, is printed on stderr, as for an object of a level. A motion that can't be read is only reported. The entity is not owned by anything: whoever asks for it keeps its id.
+*/
+PoolId spawnSAObject(PoolId shaderId_, const SAEntityKey& rKey_, const SAModelKey& rModel_, const std::vector<SACollisionShapesKey>& rCollisions_, const glm::vec3& rPosition_, const glm::mat4& rRotation_, const std::string& name_, const std::string& what_, const Ninja::SAPlacement* pPlacement_)
+{
+    PoolId id = addEntity(name_.c_str(), rPosition_);
+    try
+    {
+        Entity& rEntity = getEntity(id);
+        rEntity.setRotation(rRotation_);
+        if(rKey_.textures.path != nullptr) rEntity.setSAGPUInstance(shaderId_, rModel_, rKey_.textures);
+        else rEntity.setSAGPUInstance(shaderId_, rModel_);
+        if(!rCollisions_.empty()) rEntity.setSACollisionShapes(rCollisions_);
+        Scripting::setupObject(id, rKey_.name, pPlacement_);
+
+        if(!rKey_.motions.empty())
+        {
+            try
+            {
+                rEntity.playSAMotion(rKey_.motions[0]);
+            }
+            catch(const std::runtime_error& rError)
+            {
+                std::fprintf(stderr, "Spawn: %s %s has no motion: %s\n", rKey_.name, what_.c_str(), rError.what());
+            }
+        }
+    }
+    catch(const std::runtime_error& rError)
+    {
+        std::fprintf(stderr, "Spawn: skipped %s %s: %s\n", rKey_.name, what_.c_str(), rError.what());
+        Globals::Game::entities.remove(id);
+        return UninitializedPoolId;
+    }
+    return id;
+}
+
+/*
+The same for a Shadow object: one model of the key (modelIndex_, an index into EntityKey::models) with the key's textures and the collision shapes given. The first motion the key lists is played on the first model
+(index 0) only, looping for living things (EntityKey::loopMotion) and otherwise once, holding its last frame (placeholder: for TANK and TURNOVER it is the "_on" one, a state change). A motion that can't be read is
+reported and the entity stays posed at rest: the .MTP layout was decoded from SHADOW.MTP only. Failures as in spawnSAObject.
+*/
+PoolId spawnONEObject(PoolId shaderId_, const STH2005::EntityKey& rKey_, uint32_t modelIndex_, const std::vector<STH2005::CollisionKey>& rCollisions_, const glm::vec3& rPosition_, const glm::mat4& rRotation_, const std::string& name_, const std::string& what_)
+{
+    PoolId id = addEntity(name_.c_str(), rPosition_);
+    try
+    {
+        Entity& rEntity = getEntity(id);
+        rEntity.setRotation(rRotation_);
+        if(rKey_.textures.entry != nullptr) rEntity.setONEGPUInstance(shaderId_, rKey_.models.at(modelIndex_), rKey_.textures);
+        else rEntity.setONEGPUInstance(shaderId_, rKey_.models.at(modelIndex_));
+        if(!rCollisions_.empty()) rEntity.setONECollisionShapes(rCollisions_);
+
+        if(modelIndex_ == 0 && !rKey_.motions.empty())
+        {
+            try
+            {
+                rEntity.playONEMotion(rKey_.motions[0], rKey_.loopMotion);
+            }
+            catch(const std::runtime_error& rError)
+            {
+                std::fprintf(stderr, "Spawn: %s %s has no motion: %s\n", rKey_.name, what_.c_str(), rError.what());
+            }
+        }
+    }
+    catch(const std::runtime_error& rError)
+    {
+        std::fprintf(stderr, "Spawn: skipped %s %s: %s\n", rKey_.name, what_.c_str(), rError.what());
+        Globals::Game::entities.remove(id);
+        return UninitializedPoolId;
+    }
+    return id;
 }
