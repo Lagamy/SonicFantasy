@@ -33,6 +33,14 @@ sf.behavior("PlayerSwitch", function(entity)
 			sf.setPosition(player, start[1], start[2], start[3])
 			sf.setVelocity(player, 0, 0, 0)
 		end
+		if ShadowReplay.enabled then
+			for i, player in ipairs(players) do
+				if sf.name(player) == "Shadow" then
+					activate(i)
+					ShadowReplay.start(player)
+				end
+			end
+		end
 	end
 end)
 

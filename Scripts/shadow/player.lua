@@ -25,6 +25,7 @@ local FAST_SPEED = 30                     -- external (DAT_805f2668): below this
 local COSINE_START = 0.766                 -- external: the cosine between the stick and where he faces below which the top speed target is the minimum, from there it grows to the maximum at 1
 local ACCEL_SHARE = 0.25                   -- external (DAT_805f26ac): the share of (max - min) a second the speed grows by at full alignment, times the cosine to the 8th
 local NO_STICK_FULL_SPEED = 537.5          -- observed (live log of the original, tools/shadowLiveLog.py): with no stick the stored speed is 1000 + 14000 x min(1, speed / 537.5) (a straight line, slope 26.05 per unit of speed), only from a speed of 30
+local STICK_FULL = 0.9                  -- observed (tools/live_half.csv), external: the stick length below which the current speed decays instead of growing
 local STICK_DECAY = 0.9                    -- external: the speed is multiplied by this each update when the stick is pushed less than 0.9 (not reachable with the keyboard)
 local TURN_SLOW = 15                       -- external (FUN_800831d8): the turn rate, per second, as a share of the way to the stick's direction, up to a speed of 150
 local TURN_FAST = 2                        -- external: the turn rate above a speed of 300; it falls linearly from 15 at 150 to 2 at 300
@@ -74,17 +75,24 @@ sf.behavior("ShadowPlayer", function(entity)
 	local fx, _, fz = sf.cameraForward()
 	local length = math.sqrt(fx * fx + fz * fz)
 	if length > 1e-4 then fx, fz = fx / length, fz / length else fx, fz = 0, -1 end
-	local rx, rz = -fz, fx
 	if state.heading == nil then state.heading = math.atan(fz, fx) end
 
+	-- A replay of a recorded run (replay.lua) takes the place of the keyboard and of the camera's heading while it runs.
+	local replay = ShadowReplay.step()
 	local controlled = state.active and not sf.debugMode()
 	local wx, wz = 0, 0
-	if controlled and sf.key("W") then wx, wz = wx + fx, wz + fz end
-	if controlled and sf.key("S") then wx, wz = wx - fx, wz - fz end
-	if controlled and sf.key("D") then wx, wz = wx + rx, wz + rz end
-	if controlled and sf.key("A") then wx, wz = wx - rx, wz - rz end
+	if replay ~= nil then
+		wx, wz = replay.wx, replay.wz
+	else
+		local rx, rz = -fz, fx
+		if controlled and sf.key("W") then wx, wz = wx + fx, wz + fz end
+		if controlled and sf.key("S") then wx, wz = wx - fx, wz - fz end
+		if controlled and sf.key("D") then wx, wz = wx + rx, wz + rz end
+		if controlled and sf.key("A") then wx, wz = wx - rx, wz - rz end
+	end
 	local wishLength = math.sqrt(wx * wx + wz * wz)
 	local hasStick = wishLength > 1e-4
+	local mag = math.min(wishLength, 1)
 	local sx, sz = 0, 0
 	if hasStick then sx, sz = wx / wishLength, wz / wishLength end
 
@@ -103,6 +111,7 @@ sf.behavior("ShadowPlayer", function(entity)
 	sf.setGroundSnap(entity, snapping and GROUND_SNAP or 0)
 
 	local pressed = controlled and sf.key("SPACE")
+	if replay ~= nil then pressed = replay.a end
 	local justPressed = pressed and not state.spaceHeld
 	state.spaceHeld = pressed
 
@@ -150,14 +159,21 @@ sf.behavior("ShadowPlayer", function(entity)
 		-- off). With no stick the speed falls by the drag as before.
 		if state.wasAir then
 			state.speed = planarBefore >= FAST_SPEED and math.min(planarBefore / NO_STICK_FULL_SPEED, 1) * range + MIN_SPEED or MIN_SPEED
+			-- Landing with no stick. Observed (tools/live_run.csv, one landing after a jump dash at planar 146): on the frame he reaches the ground height the whole velocity becomes exactly (0, 0, 0) and stays so until Idle. Hypothesis: any landing
+			-- with no stick does that (one recording); with the stick held the speed carries on as above.
+			if not hasStick then vx, vz = 0, 0 end
 		end
 		if hasStick then
 			local share = 0
 			if speed >= FAST_SPEED and cosine >= COSINE_START then share = (cosine - COSINE_START) / (1 - COSINE_START) end
 			local target = share * range + MIN_SPEED
 			local grown = cosine ^ 8 * dt * range * ACCEL_SHARE + state.speed
-			state.speed = math.min(grown, target)
-			acceleration = math.min(state.speed, MAX_SPEED)
+			-- The stick's length. Observed (tools/live_half.csv, stick held at 0.17 to 0.95 of its range; a simulation of this rule on the recorded stick matched the original's planar speed within 1 to 3 at 1.2 to 4.4 s): the pad's float stick is
+			-- (|raw| - 15) / 42 per axis, i.e. a dead zone of 15 and full at 57; the acceleration is the current speed times the stick's length (speeds settled at 50 x length: 33.33 at 0.667, 28.57 at 0.571), and while the length is below
+			-- STICK_FULL (0.9, the external STICK_DECAY condition) the current speed is multiplied by STICK_DECAY each update down to MIN_SPEED instead of growing (the speed took off at 0.929 and not at 0.881).
+			if mag < STICK_FULL then state.speed = math.max(state.speed * STICK_DECAY, MIN_SPEED)
+			else state.speed = math.min(grown, target) end
+			acceleration = math.min(state.speed, MAX_SPEED) * mag
 		else
 			if speed >= FAST_SPEED then state.speed = math.max(math.min(speed / NO_STICK_FULL_SPEED, 1), 0) * range + MIN_SPEED
 			else state.speed = MIN_SPEED end
@@ -266,6 +282,7 @@ sf.behavior("ShadowPlayer", function(entity)
 	sf.orient(entity, FACE_YAW_OFFSET - state.faceHeading, sx0, sy0, sz0)
 	state.wasAir = not grounded
 	sf.setVelocity(entity, vx, vy, vz)
+	ShadowReplay.log(entity, motion)
 end)
 
 -- Called by main.lua's attachPlayer for the Shadow entity.

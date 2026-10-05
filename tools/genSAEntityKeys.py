@@ -3,7 +3,7 @@ Generates src/SAEntityKeys.h: the SAEntityKey of every object type of an SADX st
 for the stage's SALandTableKey, and the object list's names (type -> name).
 
 Run from anywhere:  python3 tools/genSAEntityKeys.py
-Inputs: build/Disks/SADX.iso (the disc table through tools/dumpCCL.py; the .rel modules through sadxDecomp/scripts/relTool.py, which reads and decompresses them), and the SA Tools INIs
+Inputs: build/Disks/SADX.iso (the disc table through tools/dumpCCL.py; the .rel modules through tools/decomp/sadx/relTool.py, which reads and decompresses them), and the SA Tools INIs
 of tools/.cache/gc_sadx/ (_Stg01.ini, _Main.ini: names, addresses and textures of the modules' models). Writes only src/SAEntityKeys.h.
 
 Where each fact comes from (external: SA Tools' INIs and the module's own data; the object list and relocations decoded from _Stg01.rel):
@@ -33,7 +33,7 @@ import bisect, collections, math, os, re, struct, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + "/"
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT + "sadxDecomp/scripts")
+sys.path.insert(0, ROOT + "tools/decomp/sadx")
 import dumpCCL
 import relTool
 

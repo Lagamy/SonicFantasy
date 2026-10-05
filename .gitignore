@@ -1,5 +1,8 @@
 build/
 .*/
+!.claude/
+.claude/*
+!.claude/skills/
 sadreamcasttools/
 sadxdecompilation/
 sadxDecomp/

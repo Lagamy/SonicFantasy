@@ -3,8 +3,8 @@ Generates src/SAShapeKeys.h: one SACollisionShapesKey for every SADX object coll
 called with by a literal table address (the 0x30-byte entries, see Physics::CollisionShape), in _Main.rel.
 
 Run from anywhere:  python3 tools/genSAShapeKeys.py
-Inputs: sadxDecomp/decompiled/pseudocode.c (Ghidra pseudocode of main.dol and _Main.rel, see sadxDecomp/scripts/run.sh) and
-sadxDecomp/rel/_Main.img + _Main.layout (the relocated module and its sections, see sadxDecomp/scripts/buildRelImage.py).
+Inputs: sadxDecomp/decompiled/pseudocode.c (Ghidra pseudocode of main.dol and _Main.rel, see tools/decomp/sadx/run.sh) and
+sadxDecomp/rel/_Main.img + _Main.layout (the relocated module and its sections, see tools/decomp/sadx/buildRelImage.py).
 Nothing is written but src/SAShapeKeys.h. Only _Main.rel is imported there; the other modules have no keys until they are.
 
 Everything here is external/hypothesis: the pseudocode has no names, so a table is named after its module and RAM address (the module is
