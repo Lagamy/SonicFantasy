@@ -18,7 +18,10 @@ void enablePhysics(PoolId sonicId_, PoolId shadowId_)
 /*
 Shadow has no .CCL; his body collision is not stored in a file we have found. Observed (a RAM dump of the running game, from you): one
 capsule of radius 5.5 and no length (the game's f3 = 0, f4 = 5.5) with flags 0x302, owned by a CharaColliBody that sits at the player's position.
-Made here as Physics::CollisionShape form 6 (a capsule: a = radius, b = half length, see readCCL). Hypothesis: the entity's position is at the
+Made here as Physics::CollisionShape form 6 (a capsule: a = radius, b = half length, see readCCL), but with radius 5.0 (2026-10-07, approved): the
+same shape pushes him out of the level, and the game's world sweep uses radius 5.0 (+0x274, observed live) while 5.5 is the body collider for objects;
+at 5.5 the port touched the end edge of a wall quad the original clears (live_slopes 6.967 s, REF "dx drift origin, contact identified"), which was
+the start of the x drift. Hypothesis: split the two radii when Shadow gets object contacts. Hypothesis: the entity's position is at the
 feet (the usual model origin) and the game's body position at the middle (rings sit at that height), so the center is one radius above the position and the
 capsule rests on the ground with the feet; if the model floats or sinks, this offset is what to move.
 */
@@ -27,7 +30,7 @@ void addShadowShape(PoolId shadowId_)
 	Physics::CollisionShape shape{};
 	shape.form = 6;
 	shape.attr = 0x302;
-	shape.a = 5.5f;
+	shape.a = 5.0f;
 	shape.b = 0.0f;
 	shape.center = glm::vec3(0.0f, shape.a, 0.0f);
 	shape.behavior = Globals::Game::baBehaviors.body;

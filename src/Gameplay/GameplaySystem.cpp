@@ -58,7 +58,7 @@ void GameplaySystem::tick()
 
 	/*
 	Which entities are active this tick (SpatialIndex::updateActive): those within the draw distance of the camera, and those with behaviorNotCulled. Only they have their
-	previous position kept and are run by the behaviours, the physics and the collision system. There is no camera before the first one is made, then all are active.
+	previous position (and a body's tickStartVelocity, PhysicsBody::moveByMeanVelocity) kept and are run by the behaviours, the physics and the collision system. There is no camera before the first one is made, then all are active.
 	*/
 	bool cull = this->cullFarEntities && !Globals::Game::cameras.empty();
 	glm::vec3 cameraPosition = cull ? Globals::Game::cameras[0].position : glm::vec3(0.0f);
@@ -69,6 +69,12 @@ void GameplaySystem::tick()
 		Entity& rEntity = Globals::Game::entities.objects[i];
 		rEntity.previousPosition = rEntity.position;
 		rEntity.previousRotation = rEntity.rotation;
+		if(rEntity.physicsId != UninitializedPoolId)
+		{
+			Physics::PhysicsBody& rBody = Globals::Physics::bodies[rEntity.physicsId];
+			rBody.tickStartVelocity = rBody.velocity + rBody.floorCancelledVelocity;
+			rBody.floorCancelledVelocity = glm::vec3(0.0f);
+		}
 	}
 
 	std::vector<std::pair<PoolId, std::vector<PoolId>>> sets;

@@ -298,32 +298,12 @@ static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCap
 		rBody.groundSurface = UninitializedPoolId;
 		rBody.touchingWall = false;
 		rBody.wallNormal = glm::vec3(0.0f);
+		rBody.floorCancelledVelocity = glm::vec3(0.0f);
 	}
-	/*
-	The snap (PhysicsBody::snapDistance) is more steps, straight down and no longer than the smallest shape radius each like the move's, after the move: they go on only while the body is not on a walkable floor and not rising, and stop at the
-	first step that touches one (the shape then rests on it, pushed out like any step). If none does, the position and the body's state of the move are restored.
-	*/
-	glm::vec3 positionBeforeSnap(0.0f);
-	Physics::PhysicsBody bodyBeforeSnap;
-	bool snapped = false;
-	float snapDistance = Globals::Physics::bodies[bodyId].snapDistance;
-	int snapSteps = snapDistance > 0.0f && !Globals::Physics::bodies[bodyId].snapByRay && smallest > 0.0f ? std::clamp(static_cast<int>(std::ceil(snapDistance / smallest)), 1, MaxMoveSteps) : 0;
-	for(int s = 0; s < steps + snapSteps; s++)
+	/* One step of the move: pushes the shapes out of the solid triangles at position (the part of the move after position += step), see the comment of moveCapsules. before is the position the step started from. */
+	glm::vec3 before(0.0f);
+	auto pushOut = [&]()
 	{
-		bool snapping = s >= steps;
-		if(snapping)
-		{
-			const Physics::PhysicsBody& rBody = Globals::Physics::bodies[bodyId];
-			if(rBody.grounded || rBody.velocity.y > 0.0f) break;
-			if(!snapped)
-			{
-				positionBeforeSnap = position;
-				bodyBeforeSnap = rBody;
-				snapped = true;
-			}
-		}
-		glm::vec3 before = position;
-		position += snapping ? glm::vec3(0.0f, -snapDistance / static_cast<float>(snapSteps), 0.0f) : step;
 		for(int iteration = 0; iteration < MaxPushIterations; iteration++)
 		{
 			float deepest = 0.0f;
@@ -390,8 +370,10 @@ static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCap
 			sinks by gravity, then is pushed out along the tilted normal), and the slope's part of gravity would make it slide.
 			*/
 			Physics::PhysicsBody& rTouched = Globals::Physics::bodies[bodyId];
+			bool floorPush = false;
 			if(pushDirection.y >= MinFloorNormalY)
 			{
+				floorPush = true;
 				rTouched.grounded = true;
 				rTouched.groundNormal = pushDirection;
 				rTouched.groundSurface = deepestArea;
@@ -407,8 +389,39 @@ static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCap
 			position += pushDirection * deepest;
 			glm::vec3& rVelocity = Globals::Physics::bodies[bodyId].velocity;
 			float into = glm::dot(rVelocity, pushDirection);
-			if(into < 0.0f) rVelocity -= pushDirection * into;
+			if(into < 0.0f)
+			{
+				rVelocity -= pushDirection * into;
+				if(floorPush) rTouched.floorCancelledVelocity += pushDirection * into;
+			}
 		}
+	};
+	/*
+	The snap (PhysicsBody::snapDistance) is more steps, straight down and no longer than the smallest shape radius each like the move's, after the move: they go on only while the body is not on a walkable floor and not rising, and stop at the
+	first step that touches one (the shape then rests on it, pushed out like any step). If none does, the position and the body's state of the move are restored.
+	*/
+	glm::vec3 positionBeforeSnap(0.0f);
+	Physics::PhysicsBody bodyBeforeSnap;
+	bool snapped = false;
+	float snapDistance = Globals::Physics::bodies[bodyId].snapDistance;
+	int snapSteps = snapDistance > 0.0f && !Globals::Physics::bodies[bodyId].snapByRay && smallest > 0.0f ? std::clamp(static_cast<int>(std::ceil(snapDistance / smallest)), 1, MaxMoveSteps) : 0;
+	for(int s = 0; s < steps + snapSteps; s++)
+	{
+		bool snapping = s >= steps;
+		if(snapping)
+		{
+			const Physics::PhysicsBody& rBody = Globals::Physics::bodies[bodyId];
+			if(rBody.grounded || rBody.velocity.y > 0.0f) break;
+			if(!snapped)
+			{
+				positionBeforeSnap = position;
+				bodyBeforeSnap = rBody;
+				snapped = true;
+			}
+		}
+		before = position;
+		position += snapping ? glm::vec3(0.0f, -snapDistance / static_cast<float>(snapSteps), 0.0f) : step;
+		pushOut();
 	}
 	if(snapped && !Globals::Physics::bodies[bodyId].grounded)
 	{
@@ -455,10 +468,41 @@ static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCap
 				if(accepted && facing > 1e-4f && glm::dot(normal, previousNormal) >= rBody.snapMinNormalY)
 				{
 					float travel = std::max(0.0f, std::min(distance - GroundRayBackoff, distance - rCapsules_[0].radius / facing));
-					position += down * travel;
-					rBody.grounded = true;
-					rBody.groundNormal = normal;
-					rBody.groundSurface = areaId;
+
+					/*
+					PhysicsBody::snapBlockedByWall, hypothesis (the game's snap sweep, decode in STH2005_COLLISION.md, not verified): the move of travel along down is tried in steps no longer than the smallest radius with the move's push-out, only to find out
+					whether a wall or ceiling (a push that is not a walkable floor) stops it before a floor does. The trial leaves nothing behind: position, the body and the interactions are restored, and the snap below is done as without the flag. If a wall
+					stopped it, the body is not on the floor after the move (grounded stays false, the position is the move's end).
+					*/
+					bool blocked = false;
+					if(rBody.snapBlockedByWall && travel > 1e-6f && smallest > 0.0f)
+					{
+						glm::vec3 positionBeforeTrial = position;
+						Physics::PhysicsBody bodyBeforeTrial = rBody;
+						size_t interactionsBeforeTrial = interactions.size();
+						int trialSteps = std::clamp(static_cast<int>(std::ceil(travel / smallest)), 1, MaxMoveSteps);
+						for(int s = 0; s < trialSteps && !blocked; s++)
+						{
+							Physics::PhysicsBody& rTrial = Globals::Physics::bodies[bodyId];
+							rTrial.grounded = false;
+							rTrial.touchingWall = false;
+							before = position;
+							position += down * (travel / static_cast<float>(trialSteps));
+							pushOut();
+							blocked = rTrial.touchingWall;
+							if(!blocked && rTrial.grounded) break;
+						}
+						position = positionBeforeTrial;
+						rBody = bodyBeforeTrial;
+						interactions.resize(interactionsBeforeTrial);
+					}
+					if(!blocked)
+					{
+						position += down * travel;
+						rBody.grounded = true;
+						rBody.groundNormal = normal;
+						rBody.groundSurface = areaId;
+					}
 				}
 			}
 		}
@@ -867,6 +911,22 @@ void CollisionSystem::rebuildQuadTree()
 		if(id != UninitializedPoolId) ids.push_back(id);
 	}
 	Globals::Physics::quadTree.build(ids);
+}
+
+bool CollisionSystem::groundGap(PoolId entityId_, float maxGap_, float& rGap_) const
+{
+	const Entity& rEntity = Globals::Game::entities[entityId_];
+	if(rEntity.collisionId == UninitializedPoolId) return false;
+	std::vector<Capsule> capsules = capsulesOf(Globals::Physics::collisions[rEntity.collisionId]);
+	if(capsules.empty()) return false;
+	const Capsule& rCapsule = capsules[0];
+	glm::vec3 lowest = rCapsule.center - rCapsule.axis * (rCapsule.halfLength * (rCapsule.axis.y >= 0.0f ? 1.0f : -1.0f));
+	float distance;
+	glm::vec3 normal;
+	PoolId areaId;
+	if(!castRay(rEntity.position + lowest, glm::vec3(0.0f, -1.0f, 0.0f), rCapsule.radius + maxGap_, rCapsule.behavior, distance, normal, areaId)) return false;
+	rGap_ = distance - rCapsule.radius;
+	return true;
 }
 
 void CollisionSystem::update()

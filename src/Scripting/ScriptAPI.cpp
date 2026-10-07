@@ -24,7 +24,7 @@ error if the handle is of an entity that is gone. Vectors are three numbers (x, 
 - time and game: tickRate(), tickTime(), rings(), setRings(n), debugMode(), key(name), cameraForward(), followCamera(e)
 - animation: animate(e, name [, framesPerGameFrame]) (Sonic's motions by name: stand, walk, speedwalk, jog, run, sprint, brake, turnAround, springFall, fall, landing, damage, jump (curled model), ball (jumpball model); for a Shadow entity: stand, walk, run, jump, jumpB (play once), jumpC, fall, brake, damage, skate, highSkate; it loops), pose(e, {{name, frame, weight}, ...}), setAnimationScaleMode(n), setAnimationEulerOrder(n), motionRange(e, name) and bone(e, name) (a Shadow entity's mixed pose, see below), lowestPoint(e) (the lowest y of a Shadow entity's vertices, posed and at rest), blink(e, name | false) (draws that animation in place of the animate one while it is on; the animate one keeps its own clock)
 - entities: exists(e), name(e), position(e), setPosition(e, x, y, z), moveTo(e, x, y, z), turnY(e, radians), orient(e, yaw, nx, ny, nz), destroy(e), state(e), axis(e, x, y, z), setUncullable(e, bool), postEvent(name, e [, x, y, z])
-- bodies (an entity with a physics): hasBody(e), velocity(e), setVelocity(e, x, y, z), setGroundSnap(e, distance), setGroundSnapMode(e, {ray, radius, minNormalY}), setWeight(e, w), grounded(e), groundNormal(e), groundSurface(e), touchingWall(e), wallNormal(e)
+- bodies (an entity with a physics): hasBody(e), velocity(e), setVelocity(e, x, y, z), setGroundSnap(e, distance), setGroundSnapMode(e, {ray, radius, minNormalY, blockedByWall}), setMeanVelocityMove(e, on), setWeight(e, w), grounded(e), groundNormal(e), groundSurface(e), groundGap(e, maxGap), touchingWall(e), wallNormal(e)
 - behaviours: behavior(name, fn), give(e, name)
 - collision: tag(name), collisionBehavior(name, {tags, collidesWith, interactions}), setShapeBehavior(e, behavior)
 - scripts: include(path), rotateBamsZXY(x, y, z, az, ax, ay), none
@@ -423,7 +423,7 @@ static int grounded(lua_State* pLua_)
 	return 1;
 }
 
-/* setGroundSnapMode(e, {ray = bool, radius = number, minNormalY = number}): how the snap finds the ground (PhysicsBody::snapByRay, snapRadius, snapMinNormalY); a field left out keeps its value. */
+/* setGroundSnapMode(e, {ray = bool, radius = number, minNormalY = number, blockedByWall = bool}): how the snap finds the ground (PhysicsBody::snapByRay, snapRadius, snapMinNormalY, snapBlockedByWall); a field left out keeps its value. */
 static int setGroundSnapMode(lua_State* pLua_)
 {
 	Physics::PhysicsBody& rBody = checkBody(pLua_, 1);
@@ -434,6 +434,8 @@ static int setGroundSnapMode(lua_State* pLua_)
 	lua_pop(pLua_, 1);
 	if(lua_getfield(pLua_, 2, "minNormalY") != LUA_TNIL) rBody.snapMinNormalY = static_cast<float>(luaL_checknumber(pLua_, -1));
 	lua_pop(pLua_, 1);
+	if(lua_getfield(pLua_, 2, "blockedByWall") != LUA_TNIL) rBody.snapBlockedByWall = lua_toboolean(pLua_, -1) != 0;
+	lua_pop(pLua_, 1);
 	return 0;
 }
 
@@ -441,6 +443,13 @@ static int setGroundSnapMode(lua_State* pLua_)
 static int setWeight(lua_State* pLua_)
 {
 	checkBody(pLua_, 1).weight = static_cast<float>(luaL_checknumber(pLua_, 2));
+	return 0;
+}
+
+/* setMeanVelocityMove(e, on): whether the body's move takes the mean of the tick's start and end velocities (PhysicsBody::moveByMeanVelocity). */
+static int setMeanVelocityMove(lua_State* pLua_)
+{
+	checkBody(pLua_, 1).moveByMeanVelocity = lua_toboolean(pLua_, 2) != 0;
 	return 0;
 }
 
@@ -462,6 +471,16 @@ static int groundSurface(lua_State* pLua_)
 	const Physics::PhysicsBody& rBody = checkBody(pLua_, 1);
 	if(!rBody.grounded || rBody.groundSurface == UninitializedPoolId) lua_pushnil(pLua_);
 	else lua_pushstring(pLua_, Globals::Game::behaviors.getName(rBody.groundSurface).c_str());
+	return 1;
+}
+
+/* groundGap(e, maxGap): how far the bottom of the entity's first sphere or capsule is above the level straight below it (CollisionSystem::groundGap), nil if nothing is within maxGap. */
+static int groundGap(lua_State* pLua_)
+{
+	PoolId id = checkEntity(pLua_, 1);
+	float gap;
+	if(Globals::Physics::collisionSystem.groundGap(id, static_cast<float>(luaL_checknumber(pLua_, 2)), gap)) lua_pushnumber(pLua_, gap);
+	else lua_pushnil(pLua_);
 	return 1;
 }
 
@@ -616,8 +635,8 @@ void registerAPI(lua_State* pLua_)
 		{"exists", guarded<exists>}, {"name", guarded<name>}, {"position", guarded<position>}, {"setPosition", guarded<setPosition>},
 		{"moveTo", guarded<moveTo>}, {"turnY", guarded<turnY>}, {"orient", guarded<orient>}, {"destroy", guarded<destroy>}, {"state", guarded<state>}, {"axis", guarded<axis>},
 		{"setUncullable", guarded<setUncullable>}, {"postEvent", guarded<postEvent>},
-		{"hasBody", guarded<hasBody>}, {"velocity", guarded<velocity>}, {"setVelocity", guarded<setVelocity>}, {"grounded", guarded<grounded>}, {"setGroundSnap", guarded<setGroundSnap>}, {"setWeight", guarded<setWeight>}, {"setGroundSnapMode", guarded<setGroundSnapMode>},
-		{"groundNormal", guarded<groundNormal>}, {"groundSurface", guarded<groundSurface>}, {"touchingWall", guarded<touchingWall>}, {"wallNormal", guarded<wallNormal>},
+		{"hasBody", guarded<hasBody>}, {"velocity", guarded<velocity>}, {"setVelocity", guarded<setVelocity>}, {"grounded", guarded<grounded>}, {"setGroundSnap", guarded<setGroundSnap>}, {"setWeight", guarded<setWeight>}, {"setGroundSnapMode", guarded<setGroundSnapMode>}, {"setMeanVelocityMove", guarded<setMeanVelocityMove>},
+		{"groundNormal", guarded<groundNormal>}, {"groundSurface", guarded<groundSurface>}, {"groundGap", guarded<groundGap>}, {"touchingWall", guarded<touchingWall>}, {"wallNormal", guarded<wallNormal>},
 		{"behavior", guarded<behavior>}, {"give", guarded<give>},
 		{"tag", guarded<tag>}, {"collisionBehavior", guarded<collisionBehavior>}, {"setShapeBehavior", guarded<setShapeBehavior>},
 		{"include", guarded<include>}, {"rotateBamsZXY", guarded<rotateBamsZXY>},

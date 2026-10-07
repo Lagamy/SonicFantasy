@@ -36,5 +36,23 @@ struct PhysicsBody
 	bool snapByRay = false;
 	float snapRadius = 0.0f;
 	float snapMinNormalY = 0.1736f;
+	/*
+	Only with snapByRay. Hypothesis (the game's snap move, see docs/ai/STH2005_COLLISION.md; not verified): if the move of the ray snap is stopped by a wall or ceiling before it reaches a floor, the body is not on the floor after the move
+	(grounded stays false), so the gameplay's air branch runs. Set by the gameplay (Shadow's player); the other bodies snap as before.
+	*/
+	bool snapBlockedByWall = false;
+	/*
+	How a tick's move uses the velocity, per character (set by the gameplay). false: by the velocity at the end of the tick (after the behaviours and the gravity). true: by the mean of tickStartVelocity and that one, as Shadow the Hedgehog
+	moves (observed, tools/live_jumpdash_stick.csv 0.727 to 0.943 s: every height step of the jump equals (old vy + new vy) / 120 within 0.0005, the new vy alone is 0.02 to 0.05 short). Whether SADX does the same is unknown, so Sonic keeps false.
+	tickStartVelocity is the velocity at the start of the tick, before the behaviours (GameplaySystem::tick keeps it); a teleport (Entity::setPosition) sets it to zero, so the first move after one starts from rest.
+	*/
+	bool moveByMeanVelocity = false;
+	/* With moveByMeanVelocity, the part of the move into a floor the body stands on is made straight down (PhysicsSystem::update). */
+	glm::vec3 tickStartVelocity = glm::vec3(0.0f);
+	/*
+	The velocity the last move's walkable-floor pushes cancelled (a resting or sliding body has its fall zeroed every tick). tickStartVelocity includes it (GameplaySystem::tick), so the mean of a body that moves by the mean velocity starts from the velocity it
+	had before the floor stopped it, not from the cancelled one. Observed (live_slopes 1.40 to 1.52 s): a start vy of 0 every other tick on a 30 degree slope made the port's move 11 % short horizontally on those ticks (the ray snap pulled it back up the slope): the path drift.
+	*/
+	glm::vec3 floorCancelledVelocity = glm::vec3(0.0f);
 };
 }

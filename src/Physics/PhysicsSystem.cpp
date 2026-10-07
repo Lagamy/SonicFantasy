@@ -20,9 +20,25 @@ void PhysicsSystem::update(float deltaTime_)
 		Entity& rEntity = Globals::Game::entities.objects[i];
 		if(rEntity.physicsId == UninitializedPoolId) continue;
 
+		/* The move takes the end velocity or the mean of the tick's start and end velocities (PhysicsBody::moveByMeanVelocity). */
 		PhysicsBody& rBody = Globals::Physics::bodies[rEntity.physicsId];
 		rBody.velocity += Globals::Physics::gravity * rBody.weight * deltaTime_;
-		rEntity.stagingPosition = rEntity.position + rBody.velocity * deltaTime_;
+		glm::vec3 moveVelocity = rBody.moveByMeanVelocity ? (rBody.tickStartVelocity + rBody.velocity) * 0.5f : rBody.velocity;
+		/*
+		A body on a walkable floor that moves by the mean velocity: the part of the move into the floor is made straight down, of the same depth into the floor, because the floor's push (CollisionSystem) is straight up. A press along the normal
+		(Shadow's player presses along it from GROUND_GRAVITY_FAST) would otherwise be undone straight up and leave the body 11.34 * sqrt(1 - ny^2) a second uphill along the surface, which the original does not do. Observed
+		(live_slopes, scratchpad pressdrift.py): the sum of those press displacements, 4.3 at 2.0 s and 8.1 at 3.5 s, points the way the remaining path drift does. Hypothesis: that is the drift's cause; not run.
+		*/
+		if(rBody.moveByMeanVelocity && rBody.grounded && rBody.groundNormal.y > 1e-3f)
+		{
+			float into = glm::dot(moveVelocity, rBody.groundNormal);
+			if(into < 0.0f)
+			{
+				moveVelocity -= rBody.groundNormal * into;
+				moveVelocity.y += into / rBody.groundNormal.y;
+			}
+		}
+		rEntity.stagingPosition = rEntity.position + moveVelocity * deltaTime_;
 	}
 }
 }

@@ -1,7 +1,8 @@
 # SonicFantasy
 
 C++ reimplementation of the behavior of Sonic Adventure and Shadow the Hedgehog (2005).
-Layout, architecture, tools, conventions: @docs/ARCHITECTURE.md
+Compact docs for Claude, loaded on demand: docs/ai/README.md is the index (which twin to read for which task; read only those).
+Human source of truth: docs/ARCHITECTURE.md (grep it for detail). How to run tools/: skill project-tools.
 
 ## How we work
 I'm the architect and review every diff. You get small-to-medium tasks; implementation details within a task are yours. If a task
@@ -25,6 +26,18 @@ looks larger, say so and suggest a split. I must be able to maintain everything 
   reference per subsystem (docs/STH2005_PLAYER_REFERENCE.md is the model) next to the working notes, and update it in the same task.
   Label each fact with its evidence (decompile, live measurement, disc file, hypothesis) and where it was read or measured. Record
   corrections where they supersede an earlier claim. Everything a recording or decompile reveals goes in, even if unrelated to the task.
+- Before working on the original game or the port's behaviour, read docs/ai/README.md and only the twins it names for the task; open the
+  full human docs only for a specific section. Update a twin in the same task as its human doc; the human doc wins on conflict.
+
+## Docs, logs and tool output
+- Anything generated for reading (a doc, a log, a tool's report or comparison) comes in two forms: a human-readable one and a
+  compact AI-efficient one (a docs/ai/ twin, a `--ai` flag or a digest tool). Raw evidence files (CSV, REPLAY lines) stay complete.
+- Changing ARCHITECTURE.md updates the matching docs/ai/ARCH*.md file in the same task. Adding a tool or changing its flags or output updates
+  the project-tools skill (and any skill or doc that shows its usage) in the same task.
+- Output printed for Claude (scripts, tools) is the answer only: filter in the script, never print whole lists or dumps.
+- Anything a python script can do instead of reading by eye (picking or matching rows, comparing runs, arithmetic beyond one
+  multiplication, counting, searching large files or dumps) is done by a short script in the scratchpad, run once, with its
+  result quoted. Reasoning decides what to compute; the script computes it.
 
 ## Comments
 - One /* ... */ block before each logical block with non-obvious behavior: what it does and, when relevant, why (formats,

@@ -112,6 +112,8 @@ void Entity::setPosition(const glm::vec3& rPosition_)
 	this->previousPosition = rPosition_;
 	this->stagingPosition = rPosition_;
 	this->transformDirty = true;
+	/* A teleport has no motion before it: the next move by the mean velocity (PhysicsBody::moveByMeanVelocity) starts from rest. */
+	if(this->physicsId != UninitializedPoolId) Globals::Physics::bodies[this->physicsId].tickStartVelocity = glm::vec3(0.0f);
 }
 
 void Entity::moveTo(const glm::vec3& rPosition_)

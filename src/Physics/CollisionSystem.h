@@ -1,4 +1,5 @@
 #pragma once
+#include "PoolId.h"
 
 namespace Physics
 {
@@ -50,5 +51,12 @@ struct CollisionSystem
 	its collision is set or removed, so the tree always matches the collisions that exist.
 	*/
 	void rebuildQuadTree();
+
+	/*
+	The gap under an entity: a ray straight down from the lowest center of its first sphere or capsule shape (form 0 or 6), against the level triangles that shape's behaviour collides with; rGap_ is the distance of the
+	nearest hit minus the shape's radius (on a flat floor, how far the shape's bottom is above it), up to maxGap_. False if nothing is hit within that, or the entity has no such shape. Asked by the gameplay (sf.groundGap);
+	the move of this tick has not happened yet when a behaviour asks.
+	*/
+	bool groundGap(PoolId entityId_, float maxGap_, float& rGap_) const;
 };
 }
