@@ -14,4 +14,7 @@ model in ModelsMiles.rel is below the 16 textures of sonic.gvm, and the decoded 
 Only mip level 0 is read. Only CMPR and RGB5A3 textures are supported, the only formats in sonic.gvm; anything else throws.
 */
 void importGvm(const char* setName_, const std::vector<uint8_t>& rBytes_);
+
+/* Reads a single .gvr texture file (an optional GBIX header, then GVRT; same formats as importGvm) into the Texture pool under name_, uploaded to the GPU, and returns its id. Throws like importGvm. */
+PoolId importGvr(const char* name_, const std::vector<uint8_t>& rBytes_);
 }

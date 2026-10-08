@@ -5,6 +5,8 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <glad/glad.h>
 #include <array>
+#include "PoolId.h"
+#include "Constants.h"
 
 /* True if a sphere is not fully outside any of the planes (see Camera::frustumPlanes). May keep a sphere near a corner that misses the frustum. */
 inline bool sphereInFrustum(const std::array<glm::vec4, 6>& rPlanes_, const glm::vec3& rCenter_, float radius_)
@@ -14,6 +16,11 @@ inline bool sphereInFrustum(const std::array<glm::vec4, 6>& rPlanes_, const glm:
 		if(glm::dot(glm::vec3(rPlane), rCenter_) + rPlane.w < -radius_) return false;
 	}
 	return true;
+}
+
+namespace Graphics
+{
+struct RenderTarget;
 }
 
 struct Camera {
@@ -38,6 +45,18 @@ struct Camera {
 
 	/* Far plane of the projection; it is also the one render distance: levels stream by it and entities are drawn and active within it (the Camera tab changes it). */
 	float farPlane = 50000.0f;
+
+	/* Vertical field of view in degrees. */
+	float fov = 45.0f;
+
+	/* Whether the renderer draws this camera (Renderer::runAll). */
+	bool enabled = true;
+
+	/* Where it renders: a Graphics::RenderTarget in Globals::Game::renderTargets, or UninitializedPoolId = the screen (the window's framebuffer). Set it with setRenderTarget / setRenderToScreen. */
+	PoolId renderTargetId = UninitializedPoolId;
+
+	/* The entity that carries this camera as its module (Entity::cameraId), UninitializedPoolId for a camera made by hand. */
+	PoolId entityId = UninitializedPoolId;
     
 	glm::mat4 view;
     glm::mat4 projection;
@@ -46,6 +65,19 @@ struct Camera {
 
     void updateView();
     void updateProjection(float aspect);
+
+	/* The render target it renders to, nullptr for the screen; also nullptr when its target was removed (the camera then falls back to the screen). */
+	Graphics::RenderTarget* renderTarget() const;
+
+	/* The size of what it renders to: its render target, or the window while it renders to the screen (also when its target was removed). */
+	glm::uvec2 viewportSize() const;
+
+	/* Rebuilds the projection from fov, the planes and the aspect of viewportSize, and uploads it. Call it after any of them changed, and when the window is resized (screen cameras). */
+	void refreshProjection();
+
+	/* Render into a render target (its size decides the aspect), or back to the screen. */
+	void setRenderTarget(PoolId targetId_);
+	void setRenderToScreen();
 	void updateUBO(); 
 
 	/*

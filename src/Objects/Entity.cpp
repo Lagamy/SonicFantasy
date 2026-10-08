@@ -9,12 +9,15 @@
 #include "Globals.h"
 #include <stdexcept>
 #include <cmath>
+#include <algorithm>
+#include <format>
+#include <set>
 
 static void checkNoInstance(const Entity& rEntity_)
 {
-	if(rEntity_.instanceId != UninitializedPoolId)
+	if(rEntity_.instanceId != UninitializedPoolId || rEntity_.isExternalOnly())
 	{
-		throw std::runtime_error("Entity: already has an instance.");
+		throw std::runtime_error("Entity: already has an instance or is external-only.");
 	}
 }
 
@@ -84,6 +87,145 @@ void Entity::changeSAMesh(const SAModelKey& rKey_)
 		throw std::runtime_error("Entity: has no SA instance.");
 	}
 	Loading::changeSAMesh(this->instanceId, rKey_);
+	this->refreshBounds();
+}
+
+static Graphics::SAInstance& getActiveSAInstance(const Entity& rEntity_)
+{
+	if(rEntity_.instanceId == UninitializedPoolId || rEntity_.sourceEngine != SA_NINJA)
+	{
+		throw std::runtime_error("Entity: has no SA instance.");
+	}
+	return Graphics::getSAInstance(rEntity_.instanceId);
+}
+
+std::string Entity::discTexture() const
+{
+	if(this->sourceEngine == SA_NINJA)
+	{
+		const Graphics::SAInstance& rInstance = getActiveSAInstance(*this);
+		return rInstance.textureSetId == UninitializedPoolId ? std::string() : Graphics::textureSets.getName(rInstance.textureSetId);
+	}
+	const Graphics::ONEInstance& rInstance = getActiveONEInstance(*this);
+	if(rInstance.textureDictionaryIndex == STH2005::NoIndex) return std::string();
+	return Graphics::oneArchives[rInstance.archiveId].textureDictionaryNames[rInstance.textureDictionaryIndex];
+}
+
+void Entity::setDiscTexture(const std::string& rName_)
+{
+	if(this->sourceEngine == SA_NINJA)
+	{
+		getActiveSAInstance(*this);
+		SATextureSetKey key{rName_.c_str()};
+		Loading::changeSATextureSet(this->instanceId, rName_.empty() ? nullptr : &key);
+		return;
+	}
+	Graphics::ONEInstance& rInstance = getActiveONEInstance(*this);
+	if(rName_.empty()) return;
+	STH2005::TextureKey key{STH2005::ArchiveKey{Graphics::oneArchives.getName(rInstance.archiveId).c_str()}, rName_.c_str()};
+	rInstance.changeActiveTexture(key);
+}
+
+std::vector<std::string> Entity::discTextureOptions() const
+{
+	std::vector<std::string> names;
+	if(this->sourceEngine != STH2005_ONE) return names;
+	const STH2005::ONE& rArchive = Graphics::oneArchives[getActiveONEInstance(*this).archiveId];
+	for(const STH2005::ONEEntry& rEntry : rArchive.entries)
+	{
+		if(rEntry.name.size() > 4 && (rEntry.name.ends_with(".TXD") || rEntry.name.ends_with(".txd"))) names.push_back(rEntry.name);
+	}
+	return names;
+}
+
+void Entity::setOverrideTexture(Graphics::Texture* pTexture_)
+{
+	if(this->isExternalOnly())
+	{
+		this->pExternalTexture = pTexture_;
+		return;
+	}
+	if(this->sourceEngine == SA_NINJA) getActiveSAInstance(*this).pOverrideTexture = pTexture_;
+	else getActiveONEInstance(*this).pOverrideTexture = pTexture_;
+}
+
+/* A string that lives for the rest of the run: a Shadow mesh keeps the strings of the recipe it was built from (STH2005::ModelPart). */
+static const char* keepString(const std::string& rText_)
+{
+	static std::set<std::string> kept;
+	return kept.insert(rText_).first->c_str();
+}
+
+std::string Entity::discMesh() const
+{
+	if(this->sourceEngine == SA_NINJA) return Graphics::saMeshes.getName(getActiveSAInstance(*this).saMeshId);
+	const Graphics::ONEInstance& rInstance = getActiveONEInstance(*this);
+	return Graphics::oneArchives[rInstance.archiveId].meshNames[rInstance.meshIndex];
+}
+
+void Entity::setDiscMesh(const std::string& rName_)
+{
+	if(this->sourceEngine == SA_NINJA)
+	{
+		getActiveSAInstance(*this);
+		size_t at = rName_.rfind("@0x");
+		if(at == std::string::npos) throw std::runtime_error(std::format("'{}' is not a SADX model (<rel>@0x<offset>)", rName_));
+		std::string rel = rName_.substr(0, at);
+		SAModelKey key{rel.c_str(), static_cast<uint32_t>(std::stoul(rName_.substr(at + 3), nullptr, 16))};
+		std::string previous = this->discMesh();
+		Loading::changeSAMesh(this->instanceId, key);
+		if(this->discMesh() != previous)
+		{
+			this->animationIntent = AnimationIntent{};
+			this->appliedAnimation = AnimationIntent{};
+			this->blinkIntent = AnimationIntent{};
+			this->appliedBase = AnimationIntent{};
+		}
+		this->refreshBounds();
+		return;
+	}
+	Graphics::ONEInstance& rInstance = getActiveONEInstance(*this);
+	const STH2005::ONE& rArchive = Graphics::oneArchives[rInstance.archiveId];
+	STH2005::ModelKey key{STH2005::ArchiveKey{keepString(Graphics::oneArchives.getName(rInstance.archiveId))}, nullptr, {}};
+	auto found = rArchive.meshByName.find(rName_);
+	if(found != rArchive.meshByName.end())
+	{
+		key.name = keepString(rName_);
+		key.parts = rArchive.meshParts[found->second];
+	}
+	else if(rName_.starts_with("(mesh)/"))
+	{
+		key.name = keepString(rName_);
+		key.parts = {STH2005::ModelPart{keepString(rName_.substr(7)), nullptr, nullptr}};
+	}
+	else throw std::runtime_error(std::format("'{}' is not a model of this archive", rName_));
+	rInstance.changeActiveMesh(key);
+	this->refreshBounds();
+}
+
+std::vector<std::string> Entity::discMeshOptions() const
+{
+	std::vector<std::string> names;
+	if(this->sourceEngine != STH2005_ONE) return names;
+	const STH2005::ONE& rArchive = Graphics::oneArchives[getActiveONEInstance(*this).archiveId];
+	for(const STH2005::ONEEntry& rEntry : rArchive.entries)
+	{
+		if(rEntry.name.size() > 4 && (rEntry.name.ends_with(".DFF") || rEntry.name.ends_with(".dff"))) names.push_back(rEntry.name);
+	}
+	return names;
+}
+
+void Entity::setExternalOnly(PoolId shaderId_)
+{
+	checkNoInstance(*this);
+	this->sourceEngine = GLTF_FILE;
+	this->externalShaderId = shaderId_;
+	this->refreshBounds();
+}
+
+void Entity::setOverrideModel(const Graphics::ExternalModel* pModel_)
+{
+	this->pOverrideModel = pModel_;
 	this->refreshBounds();
 }
 
@@ -163,6 +305,18 @@ void Entity::turnTo(const glm::mat4& rRotation_)
 	this->transformDirty = true;
 }
 
+void Entity::setScale(const glm::vec3& rScale_)
+{
+	this->scale = rScale_;
+	this->transformDirty = true;
+	this->refreshBounds();
+}
+
+glm::vec3 Entity::collisionScale() const
+{
+	return this->physicsId == UninitializedPoolId ? this->scale : glm::vec3(1.0f);
+}
+
 void Entity::update(float deltaTime_)
 {
 	if(this->instanceId == UninitializedPoolId) return;
@@ -214,13 +368,18 @@ void Entity::update(float deltaTime_)
 		Graphics::getONEInstance(this->instanceId).speed = this->animationRate > 0.0f ? this->animationRate : 1.0f;
 		Graphics::getONEInstance(this->instanceId).update(deltaTime_);
 		break;
+	/* Returned above: an external-only entity has no instance to update. */
+	case GLTF_FILE:
+		break;
 	}
 }
 
 Graphics::BoundingSphere Entity::localBounds()
 {
 	Graphics::BoundingSphere bounds;
+	if(this->isExternalOnly()) return this->pOverrideModel != nullptr ? this->pOverrideModel->bounds : bounds;
 	if(this->instanceId == UninitializedPoolId) return bounds;
+	if(this->pOverrideModel != nullptr) return this->pOverrideModel->bounds;
 	if(this->sourceEngine == SA_NINJA)
 	{
 		Graphics::SAMesh& rMesh = Graphics::saMeshes[Graphics::getSAInstance(this->instanceId).saMeshId];
@@ -257,12 +416,17 @@ void Entity::refreshBounds()
 {
 	Graphics::BoundingSphere result = this->localBounds();
 	result.valid = true;
+
+	/* The index and withinRange place the sphere by position and rotation only, so the model's scale is applied here: the center per axis, the radius by the largest axis. */
+	result.center *= this->scale;
+	result.radius *= std::max({std::abs(this->scale.x), std::abs(this->scale.y), std::abs(this->scale.z)});
 	if(this->collisionId != UninitializedPoolId)
 	{
 		Graphics::BoundingSphere shapes;
 		shapes.valid = true;
-		for(const Physics::CollisionShape& rShape : Globals::Physics::collisions[this->collisionId].shapes)
+		for(const Physics::CollisionShape& rSourceShape : Globals::Physics::collisions[this->collisionId].shapes)
 		{
+			Physics::CollisionShape rShape = Physics::scaledShape(rSourceShape, this->collisionScale(), this->sourceEngine == SA_NINJA);
 			shapes.radius = std::max(shapes.radius, glm::length(rShape.center) + rShape.a + rShape.b + rShape.c);
 		}
 		result = enclose(result, shapes);
@@ -278,17 +442,17 @@ bool Entity::withinRange(const glm::vec3& rCameraPosition_, float maxDistance_)
 }
 
 /*
-Draws the entity unless it is out of sight: the model's bounding sphere (from its rest pose, with a margin) is moved by the entity's transform and tested against the view frustum and against maxDistance_
+Draws the entity unless it is out of sight: the model's bounding sphere (from its rest pose, with a margin) is moved by the entity's transform (its radius by the largest scale) and tested against the view frustum and against maxDistance_
 from the camera. The test uses the transform of the frame that is drawn (renderPosition and renderRotation).
 */
 void Entity::draw(const std::array<glm::vec4, 6>& rPlanes_, const glm::vec3& rCameraPosition_, float maxDistance_)
 {
-	if(this->instanceId == UninitializedPoolId) return;
+	if(this->instanceId == UninitializedPoolId && !(this->isExternalOnly() && this->pOverrideModel != nullptr)) return;
 	glm::vec3 renderPosition = this->renderPosition();
 	glm::mat4 renderRotation = this->renderRotation();
 	if(this->transformDirty || renderPosition != this->renderedPosition || renderRotation != this->renderedRotation)
 	{
-		this->transform = glm::translate(glm::mat4(1.0f), renderPosition) * renderRotation;
+		this->transform = glm::translate(glm::mat4(1.0f), renderPosition) * renderRotation * glm::scale(glm::mat4(1.0f), this->scale);
 		this->renderedPosition = renderPosition;
 		this->renderedRotation = renderRotation;
 		this->transformDirty = false;
@@ -296,10 +460,23 @@ void Entity::draw(const std::array<glm::vec4, 6>& rPlanes_, const glm::vec3& rCa
 
 	Graphics::BoundingSphere bounds = this->localBounds();
 	glm::vec3 center = glm::vec3(this->transform * glm::vec4(bounds.center, 1.0f));
-	if(glm::distance(center, rCameraPosition_) - bounds.radius > maxDistance_) return;
-	if(!sphereInFrustum(rPlanes_, center, bounds.radius)) return;
+	float radius = bounds.radius * std::max({std::abs(this->scale.x), std::abs(this->scale.y), std::abs(this->scale.z)});
+	if(glm::distance(center, rCameraPosition_) - radius > maxDistance_) return;
+	if(!sphereInFrustum(rPlanes_, center, radius)) return;
 
 	Graphics::renderStats.entitiesDrawn++;
+	if(this->isExternalOnly())
+	{
+		this->pOverrideModel->draw(this->externalShaderId, false, this->transform, this->pExternalTexture);
+		return;
+	}
+	if(this->pOverrideModel != nullptr)
+	{
+		Graphics::Texture* pTexture = this->sourceEngine == SA_NINJA ? Graphics::getSAInstance(this->instanceId).pOverrideTexture : Graphics::getONEInstance(this->instanceId).pOverrideTexture;
+		PoolId shaderId = this->sourceEngine == SA_NINJA ? Graphics::getSAInstance(this->instanceId).shaderId : Graphics::getONEInstance(this->instanceId).shaderId;
+		this->pOverrideModel->draw(shaderId, this->sourceEngine == STH2005_ONE, this->transform, pTexture);
+		return;
+	}
 	switch(this->sourceEngine)
 	{
 	case SA_NINJA:
@@ -307,6 +484,9 @@ void Entity::draw(const std::array<glm::vec4, 6>& rPlanes_, const glm::vec3& rCa
 		break;
 	case STH2005_ONE:
 		Graphics::getONEInstance(this->instanceId).draw(this->transform);
+		break;
+	/* External-only entities returned above; they have no instance. */
+	case GLTF_FILE:
 		break;
 	}
 }
@@ -363,7 +543,9 @@ void Entity::setPhysics(float weight_)
 		throw std::runtime_error("Entity: already has a physics.");
 	}
 	this->physicsId = Globals::Physics::bodies.add(Physics::PhysicsBody{weight_});
-	Globals::Game::spatialIndex.dirty = true;
+
+	/* The collision shapes of an entity with a physics body are not scaled (collisionScale), which changes its bounds. */
+	this->refreshBounds();
 }
 
 void Entity::markForDestroy()
@@ -377,6 +559,12 @@ void Entity::destroy()
 	{
 		Scripting::releaseState(this->scriptStateRef);
 		this->scriptStateRef = 0;
+	}
+	if(this->cameraId != UninitializedPoolId)
+	{
+		if(Globals::Game::mainCamera == this->cameraId) Globals::Game::mainCamera = UninitializedPoolId;
+		Globals::Game::cameras.remove(this->cameraId);
+		this->cameraId = UninitializedPoolId;
 	}
 	if(this->stateId != UninitializedPoolId)
 	{
@@ -406,6 +594,8 @@ void Entity::destroy()
 		break;
 	case STH2005_ONE:
 		Graphics::oneInstances.remove(this->instanceId);
+		break;
+	case GLTF_FILE:
 		break;
 	}
 	this->instanceId = UninitializedPoolId;

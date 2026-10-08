@@ -1,4 +1,4 @@
-# SonicFantasy
+# SonicSunset
 
 C++ reimplementation of the behavior of Sonic Adventure and Shadow the Hedgehog (2005).
 Compact docs for Claude, loaded on demand: docs/ai/README.md is the index (which twin to read for which task; read only those).
@@ -21,6 +21,11 @@ looks larger, say so and suggest a split. I must be able to maintain everything 
   (including yours) or unknown. Never imply you ran experiments yourself.
 - If sources and my observations conflict, show me the conflict; don't override my observation.
 - Reproduce observed behavior, quirks included. Don't "fix" it, invent causes, or build general systems for behavior we don't understand yet.
+- Visibility rule: before investigating a mismatch between the port and the original, say whether a player would see it
+  or gain or lose a capability from it. If not, don't spend time on it; list it in docs/POLISH_NOTES.md instead.
+- Decompile reading: use the Ghidra output (shadowDecomp/, sadxDecomp/ via tools/decompFunc.py) first. Decode by hand
+  (raw instructions in mem1.raw/main.dol, e.g. paired-single code Ghidra nops) only where Ghidra's output drops
+  something important; say which function and why when you do.
 - If you find leaked original source code, flag it and don't use it.
 - Document what you learn about the original game as you find it, in the repo's docs, not only in chat. Keep one consolidated
   reference per subsystem (docs/STH2005_PLAYER_REFERENCE.md is the model) next to the working notes, and update it in the same task.

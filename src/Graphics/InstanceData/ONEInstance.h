@@ -8,6 +8,7 @@
 #include <glm/glm.hpp>
 #include "PoolId.h"
 #include "STH2005Keys.h"
+#include "Texture.h"
 
 namespace Graphics
 {
@@ -89,11 +90,15 @@ struct ONEInstance
 	std::vector<glm::mat4> blendFrom;
 	float blendElapsed = 0.0f;
 	bool blending = false;
+	/* A texture drawn on every textured submesh in place of the binding's (an external texture, Entity::setOverrideTexture); nullptr = the binding's. It points into the external pools, which outlive the entities that use it. */
+	Texture* pOverrideTexture = nullptr;
 
 	void playMotion(const STH2005::MotionKey& rKey_, bool loop_ = true);
 	void setPose(const std::vector<PoseRequest>& rLayers_);
 	/* A frame of the active mesh by name, for the debug log: its local translation (3), its local rotation as Euler angles in radians in the order Rz * Ry * Rx (3, x y z), its scale (3) and its position in the model's own space (3), from the pose built last. False if there is no such frame. */
 	bool boneInfo(const std::string& rName_, float (&rOut_)[12]) const;
+	/* The world matrix of the frame of the active mesh named rName_, in the model's own space (no entity transform, no RenderWareYawDegrees turn), from the pose built last (the rest pose if none): the effects attached to a bone use it. False if there is no such frame. */
+	bool frameMatrix(const std::string& rName_, glm::mat4& rOut_) const;
 	/* The lowest y, in the model's own space, of the skinned vertices as drawn last (rOut_[0]) and in the rest pose (rOut_[1]), for the debug log: where the soles are against the model's origin. */
 	void lowestPoint(float (&rOut_)[2]) const;
 	void update(float deltaTime_);

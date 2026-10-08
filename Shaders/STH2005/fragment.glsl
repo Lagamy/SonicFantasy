@@ -6,6 +6,9 @@ in vec4 vertexColor;
 layout(binding = 0) uniform sampler2D baseTexture;
 layout(location = 1) uniform bool hasTexture;
 
+/* Multiplies the vertex color and alpha: an effect's tint and fade (Graphics::EffectBalls); white and opaque (no change) for everything else. */
+layout(location = 4) uniform vec4 effectTint = vec4(1.0);
+
 out vec4 FragColor;
 
 /*
@@ -21,7 +24,7 @@ vec3 srgbToLinear(vec3 c)
 
 void main()
 {
-	vec4 color = vec4(srgbToLinear(vertexColor.rgb), vertexColor.a);
+	vec4 color = vec4(srgbToLinear(vertexColor.rgb * effectTint.rgb), vertexColor.a * effectTint.a);
 	if(hasTexture)
 	{
 		color *= texture(baseTexture, vertexUv);

@@ -1,4 +1,4 @@
--- Sonic. Outside the debug mode (sf.debugMode, Tab) W A S D steer him relative to where the camera looks, Space jumps (and homes in the air), CTRL spin dashes; in the debug mode those keys fly the camera and
+-- Sonic. Outside the debug mode (sf.debugMode, editor mode; Play button) W A S D steer him relative to where the camera looks, Space jumps (and homes in the air), CTRL spin dashes; in the debug mode those keys fly the camera and
 -- he ignores them. Only the active player (state.active, main.lua) reads the keys. The engine's one physics system does the moving and the colliding (and the gravity): this only sets his velocity from what it reports of the last move (sf.grounded, sf.groundNormal).
 -- state.lock = ticks the control is locked for (a launch), state.invulnerable = ticks left (objects.lua), state.heading = where he faces (radians, forward = (cos, sin) over x and z, like the game's BAMS heading).
 -- External (_Main.rel, the per-character record of Sonic at 0x2C61E8 and the shared movement code, see the notes in the plan of 2026-10-05; the game's values are per frame, converted with 1 frame = 1 tick = 1/60 s,
@@ -360,10 +360,14 @@ sf.behavior("Player", function(entity)
 end)
 
 -- Called by main.lua's attachPlayer for the Sonic entity.
-function attachSonicPlayer(entity)
-	local state = sf.state(entity)
+-- The player's state table as it starts (also after the engine's reset: resetPlayers, main.lua).
+function initSonicState(state)
 	state.lock = 0
 	state.invulnerable = 0
+end
+
+function attachSonicPlayer(entity)
+	initSonicState(sf.state(entity))
 	sf.give(entity, "Player")
 	sf.setUncullable(entity, true)
 end

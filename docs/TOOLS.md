@@ -22,6 +22,29 @@ Reads the running game in Dolphin (through `dolphin-memory-engine`) and writes o
 - The camera is always logged (since 2026-10-06): `cam_eye_x/y/z` and `cam_target_x/y/z`, the eye and the look-at point of the player's camera, found through the camera manager at `0x8056ee14`. The cells are empty when that chain does not lead to a camera. The old `--camera` and `--find-camera` flags are gone.
 - The last column `vi_count` (since 2026-10-07) is the u32 at `0x805f1024`, read when the row is written. Hypothesis from the decompile of `FUN_8037d434` (the video interrupt handler), not yet checked live: the retrace count, +1 per video frame, so +1 per game tick. Check a new recording: it should rise by 1 per distinct position, and then ticks can be aligned by it.
 
+### shadowEffectLog.py: record the original's ball effects (you run it, Claude never does)
+
+```
+.venv/bin/python tools/shadowEffectLog.py [out.csv] [--seconds N] [--no-mem2] [--vtable HEX] [--range START-END]     (default out: tools/shadow_effect.csv)
+python3 tools/shadowEffectLog.py --digest out.csv
+```
+Dolphin running, Shadow in a stage; start it before the jump, Ctrl+C after (overwrites the CSV; reads only, can run next to `shadowLiveLog.py`). It finds the effect objects of the model-effect class (vtable word 0x8053c934, FUN_801d1238) with a background memory scan, tells Jump_ballA / Jump_ballB from other model effects by the EFD record address in the object, and writes one row per object per change: the player's behavior and pose, the animation object's ball handle slots, joint 0's node, the current behavior's first 0x70 bytes, and the whole object (91 words) plus its colour floats. `--digest` writes `out.ai.txt` (compact) and `out.txt` (readable) with each object's life, the behaviors around it, its colour / alpha track and which words changed (a counter shows as one that only goes up). Hypothesis, not run yet: the vtable word and the record matching may need `--vtable` or a second recording. Layout and what is known of the effect: `docs/STH2005_PLAYER_REFERENCE.md` section 21.
+
+### sadxLiveLog.py: record the original SADX Sonic (you run it, Claude never does; added 2026-10-07, not run yet)
+
+```
+.venv/bin/python tools/sadxLiveLog.py [out.csv] [--seconds N] [--buttons HEX]
+.venv/bin/python tools/sadxLiveLog.py --find-buttons
+```
+
+The SADX counterpart of `shadowLiveLog.py` (Dolphin running SADX GC, Sonic in a stage; same venv, same Ctrl+C, overwrites `out.csv`). It finds Sonic's task itself (three function pointers side by side) and writes one row per change of his position, velocity, state or stick. Core columns keep the Shadow names (`frame, t, behavior, substate, pos_*, rot_*, vel_*, planar, speed3d, pad_buttons, vi_count`) so the replay tools can read both. Values are as read: `vel_*`, `planar`, `speed3d`, `fwd_speed` are per game frame, `rot_*` are 16 bit angles. Layout and the evidence for it: `docs/SADX_SONIC_REFERENCE.md`.
+
+- The game's own processed stick is always logged: `stick_angle` (world direction, camera already applied) and `stick_mag`. Hypothesis: a replay can feed that directly, no camera and no raw pad needed for the stick.
+- `--buttons HEX` also logs the u32 at that address as `pad_buttons` (the button word; the replay's jump needs it). Its address is not known yet: `--find-buttons` finds it (release everything, hold A, then tap A; it prints candidate addresses with the bit mask of A).
+- The camera (`cam_rot_x/y`, `cam_x/y/z`) comes from the pointer at `0x808B3D10` (hypothesis); the cells are empty when it is null.
+- `vi_count` is the u32 at `0x800C44E4` (the VI retrace count). Whether SADX runs one game frame per retrace is not known: a first recording shows it.
+- Raw blocks for decoding later: `w1_raw`, `w2_raw`, `w3_raw`, `col_raw`, `stick_raw` (words, hex).
+
 ### makeReplay.py: recording to replay, and the camera check
 
 ```
@@ -69,6 +92,7 @@ These read the discs in `build/Disks/` and write files. Run them only when the g
 | Script | Writes | What |
 |---|---|---|
 | `genResourceMap.py` | `ResourceMap.txt` | Models, textures, audio, animations and collision on both discs, with paths and offsets. Downloads SA Tools INIs into `tools/.cache/` on first run. |
+| `genAssetCatalog.py` | `Catalog/AssetCatalog.tsv` | The models and textures of both discs, one row each (game, kind, group, name, source), for the editor's Assets tab; CMake copies it to `Assets/Catalog`. Groups guessed from names. Run `genResourceMap.py` first. `--ai` prints only the counts per game, kind and group instead of writing. |
 | `genCategoryMap.py` | `ResourceMapByCategory.txt` | The same, grouped per game into categories (grouping guessed from names). Run `genResourceMap.py` first. |
 | `genEntityKeys.py [stage ...]` | `src/STH2005EntityKeys.h` | Shadow object keys and per-stage placement tables (default stage `stg0100`). |
 | `genCCLKeys.py` | `src/STH2005ShapeKeys.h` | One collision key per `.CCL` entry on the Shadow disc. |

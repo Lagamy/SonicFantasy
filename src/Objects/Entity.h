@@ -3,6 +3,8 @@
 #include "SAKeys.h"
 #include "STH2005Keys.h"
 #include "PoolId.h"
+#include "TextureChoice.h"
+#include "MeshChoice.h"
 #include <array>
 #include <vector>
 #include "Constants.h"
@@ -10,15 +12,17 @@
 namespace Graphics
 {
 struct PoseRequest;
+struct ExternalModel;
 }
 #include "BoundingSphere.h"
 #include <glm/gtc/matrix_transform.hpp>
 
-/* Which engine's data the entity's instance comes from; selects the instance pool instanceId refers to. */
+/* Which engine's data the entity's instance comes from; selects the instance pool instanceId refers to. GLTF_FILE is a Level's (glTF levels) and an external-only entity's (setExternalOnly): it has no instance, only an external model. */
 enum SourceEngineEnum
 {
 	SA_NINJA,
-	STH2005_ONE
+	STH2005_ONE,
+	GLTF_FILE
 };
 
 /*
@@ -53,14 +57,16 @@ selfId is the entity's own PoolId in Globals::Game::entities (set by addEntity),
 animationIntent is the motion gameplay wants (changeAnimation); update plays it when it differs from appliedAnimation, the last one it played.
 stateId is its EntityState in Globals::Game::entityStates (UninitializedPoolId = none; made by entityStateOf in API.h, removed by destroy).
 behaviorSetId is the entity's record in Globals::Game::entityBehaviors (UninitializedPoolId = no behaviours): its behaviours, stacked in the order they were given and run in that order by the GameplaySystem every gameplay tick; add one with giveEntityBehavior (API.h), which makes the record. destroy removes it.
+cameraId is the entity's camera module, its Camera in Globals::Game::cameras (UninitializedPoolId = none; made by addCamera in API.h, removed by destroy). The camera keeps its own position and view: the entity's position is not kept in step with it.
 Only one of the two setters can be called, once: an entity has a single instance. Until then instanceId is
 UninitializedPoolId and the entity is not drawn.
 previousPosition and previousRotation are where the entity was at the start of the latest gameplay tick. What is drawn (and shown by the debug views) is renderPosition and renderRotation, by how far the frame is
 into the next tick (GameplaySystem::interpolationAlpha): extrapolated from the latest tick by the entity's velocity (a physics entity's body, otherwise the last tick's change) so that it is not a tick behind, or, with
 GameplaySystem::extrapolate off, interpolated between the last two ticks. The rotation is turned the same way between the two orientations (a quaternion slerp). setPosition and setRotation place the entity (a
 teleport: previous and current are the same); moveTo and turnTo are the simulation's moves (physics, collisions, behaviours) and keep the previous ones.
-The matrix of position and rotation (translate * rotation; rotation is a world-space orientation matrix, identity by default, set with setRotation: the caller decides the convention) is kept in transform and rebuilt by draw only after the position or rotation changed: setPosition and setRotation mark it
+The matrix of position, rotation and scale (translate * rotation * scale; rotation is a world-space orientation matrix, identity by default, set with setRotation: the caller decides the convention; scale is per axis of the entity's own space, (1, 1, 1) by default, set with setScale) is kept in transform and rebuilt by draw only after the position, rotation or scale changed: setPosition, setRotation and setScale mark it
 dirty (a new entity starts dirty). Change them with the setters, not by writing the fields.
+The model and the collision shapes of an entity without a physics body are scaled (collisionScale, Physics::scaledShape: the port's choice, whether the game's objects scale their collision is unknown); the physics body's shapes and the camera module keep their size. bounds holds the scaled model sphere.
 */
 struct Entity
 {
@@ -81,9 +87,25 @@ struct Entity
 	PoolId physicsId = UninitializedPoolId;
 	glm::vec3 stagingPosition = glm::vec3(0.0f);
 	glm::mat4 rotation = glm::mat4(1.0f);
+	glm::vec3 scale = glm::vec3(1.0f);
 	PoolId behaviorSetId = UninitializedPoolId;
 	PoolId selfId = UninitializedPoolId;
 	PoolId stateId = UninitializedPoolId;
+	PoolId cameraId = UninitializedPoolId;
+	/* The prefab the entity was made from (Globals::Game::prefabs, set by spawnPrefab; UninitializedPoolId = none, e.g. a camera): the editor groups the entity list by it. */
+	PoolId prefabId = UninitializedPoolId;
+	/* The texture the editor gave the entity in place of its model's own (setEntityTexture in API.h; Default = none). defaultTexture is the model's own disc texture (discTexture), remembered by the first change so Default can put it back; hasDefaultTexture says it was. */
+	TextureChoice textureChoice;
+	std::string defaultTexture;
+	bool hasDefaultTexture = false;
+	/* The same for the model (setEntityMesh in API.h): the choice, the model's own disc mesh (discMesh) remembered by the first change, and the external model drawn in place of the instance's (setOverrideModel; nullptr = the instance's). */
+	MeshChoice meshChoice;
+	std::string defaultMesh;
+	bool hasDefaultMesh = false;
+	const Graphics::ExternalModel* pOverrideModel = nullptr;
+	/* External-only entity (setExternalOnly; sourceEngine GLTF_FILE): the shader it is drawn with (the GLTF one) and the external texture it takes, in place of the instance's shader and pOverrideTexture it does not have. */
+	PoolId externalShaderId = UninitializedPoolId;
+	Graphics::Texture* pExternalTexture = nullptr;
 	/* The entity's table for what its script behaviours remember (sf.state, Scripting.h): a Lua registry reference, 0 = none yet; released by destroy. */
 	int scriptStateRef = 0;
 	AnimationIntent animationIntent;
@@ -107,6 +129,33 @@ struct Entity
 	void switchMeshPart(const STH2005::ModelPart& rPrevious_, const STH2005::ModelPart& rDesired_);
 	void changeActiveTexture(const STH2005::TextureKey& rKey_);
 	void changeSAMesh(const SAModelKey& rKey_);
+	/* The disc texture the instance draws with: an SA instance's TextureSet (its .gvm path), a ONE instance's .TXD entry name; empty = untextured. Throws without an instance. */
+	std::string discTexture() const;
+	/* Draws with another disc texture (empty = untextured; Loading::changeSATextureSet / changeActiveTexture, which throw when it can't, leaving the entity as it was). A ONE name is an entry of the instance's own archive. */
+	void setDiscTexture(const std::string& rName_);
+	/* The .TXD entries of the instance's archive, for a ONE instance (empty for an SA one). */
+	std::vector<std::string> discTextureOptions() const;
+	/* The disc model the instance draws: an SA instance's SAMesh name ("<rel>@0x<offset>"), a ONE instance's mesh name in its archive. Throws without an instance. */
+	std::string discMesh() const;
+	/*
+	Draws another disc model: an SA name is the form discMesh gives (Loading::changeSAMesh: the entity's texture set must hold the texture ids the model uses; a motion in progress is dropped and gameplay has to ask for one again), a ONE name is a mesh the archive
+	has built already (the entity's own) or "(mesh)/<entry>" for a .DFF entry of the archive, built as a static model. Throws when it can't, leaving the entity as it was.
+	*/
+	void setDiscMesh(const std::string& rName_);
+	/* The .DFF entries of the instance's archive, for a ONE instance (empty for an SA one). */
+	std::vector<std::string> discMeshOptions() const;
+	/*
+	Makes the entity one without a disc instance: it is drawn only by an external model (setOverrideModel, nothing is drawn until one is set) with an external texture (setOverrideTexture) and this shader (the GLTF one: unlit, linear vertex colour, as the
+	external models are written), independent of SADX and Shadow data. sourceEngine becomes GLTF_FILE. Throws if the entity already has an instance. It has no disc model or texture: setEntityMesh / setEntityTexture refuse a Disc choice for it.
+	*/
+	void setExternalOnly(PoolId shaderId_);
+	bool isExternalOnly() const { return this->sourceEngine == GLTF_FILE; }
+	/* Whether setEntityMesh and setEntityTexture have something to change: an instance, or the external-only drawing. */
+	bool hasModelSlot() const { return this->instanceId != UninitializedPoolId || this->isExternalOnly(); }
+	/* Draws this external model in place of the instance's (nullptr = the instance's) and refreshes the bounds. The model is not owned: it has to stay alive while set (the external pools do). */
+	void setOverrideModel(const Graphics::ExternalModel* pModel_);
+	/* Draws every textured submesh with this texture (nullptr = the instance's own textures). The texture is not owned: it has to stay alive while set (the external pools do). */
+	void setOverrideTexture(Graphics::Texture* pTexture_);
 	void playSAMotion(const SAMotionKey& rKey_);
 	void playONEMotion(const STH2005::MotionKey& rKey_, bool loop_ = true);
 	/* A pose of motions mixed by weight at given frames, in place of the main skeleton's playing motions (ONEInstance::setPose); an empty list ends it. ONE instances only. */
@@ -122,6 +171,10 @@ struct Entity
 	void setRotation(const glm::mat4& rRotation_);
 	void turnTo(const glm::mat4& rRotation_);
 	glm::mat4 renderRotation() const;
+	/* Sets the scale of the model (see above) and refreshes the bounds. */
+	void setScale(const glm::vec3& rScale_);
+	/* The scale the entity's collision shapes get in the contacts and the lines view: its scale, or (1, 1, 1) for an entity with a physics body. */
+	glm::vec3 collisionScale() const;
 	void update(float deltaTime_);
 	/* The bounding sphere of the entity's model in its own space, with the engine's own turn applied (invalid without an instance); computed once per mesh. Used to draw. */
 	Graphics::BoundingSphere localBounds();

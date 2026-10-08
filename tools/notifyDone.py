@@ -2,12 +2,12 @@
 Plays a short ring at 10% volume, to tell the user a prompt is done.
 
 Run from anywhere:  python3 tools/notifyDone.py [volume]      (volume 0..1, default 0.1)
-The ring (two decaying tones, twice) is written once to ~/.cache/sonicfantasy-notify/ring.wav and played with pw-play (PipeWire), paplay or ffplay, whichever is installed first;
+The ring (two decaying tones, twice) is written once to ~/.cache/sonicsunset-notify/ring.wav and played with pw-play (PipeWire), paplay or ffplay, whichever is installed first;
 the player's own volume is set, so the file stays at full scale. Nothing else is touched. Exits silently if no player exists.
 """
 import math, os, shutil, struct, subprocess, sys, wave
 
-CACHE = os.path.expanduser("~/.cache/sonicfantasy-notify/")
+CACHE = os.path.expanduser("~/.cache/sonicsunset-notify/")
 RING = CACHE + "ring.wav"
 RATE = 44100
 

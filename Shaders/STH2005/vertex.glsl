@@ -26,6 +26,9 @@ layout(std430, binding = 1) readonly buffer SkinBones {
 uniform mat4 model;
 layout(location = 2) uniform bool skinned;
 
+/* Added to every vertex's UV: the scroll of an effect's UV animation (Graphics::EffectBalls); zero for everything else. */
+layout(location = 3) uniform vec2 uvOffset = vec2(0.0);
+
 void main() {
     vec4 local = vec4(position, 1.0);
     vec4 world;
@@ -42,6 +45,6 @@ void main() {
         world = model * local;
     }
     gl_Position = projection * view * world;
-    vertexUv = uv;
+    vertexUv = uv + uvOffset;
     vertexColor = color;
 }

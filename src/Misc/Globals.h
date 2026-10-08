@@ -5,8 +5,10 @@
 #include <vector> 
 #include "GLFW/glfw3.h"
 #include "Camera.h"
+#include "RenderTarget.h"
 #include "Entity.h"
 #include "Level.h"
+#include "Prefab.h"
 #include "BABehavior.h"
 #include "BABehaviors.h"
 #include "EntityBehavior.h"
@@ -29,9 +31,6 @@ namespace Globals {
 		inline uint32_t windowHeight = 1080; 
 		inline GLFWwindow* window;
 
-		/* Debug mode (Tab, see main.cpp): shows the debug UI and the entity labels (Graphics::Text); Esc frees the cursor only while it is on. */
-		inline bool debugMode = false;
-	
 		inline float deltaTime = 0.0f;
 		inline float lastFrame = 0.0f;
 
@@ -41,9 +40,18 @@ namespace Globals {
 	}
 
 	namespace Game { 
-		inline std::vector<Camera> cameras;
+		/*
+		The cameras (Camera.h), each the module of an entity (Entity::cameraId; addCamera in API.h makes both) and each rendering to the screen or to a render target (Camera::setRenderTarget). mainCamera is the one
+		the player looks through: the mouse look, the follow camera, the debug flying, the scripts' camera calls, the labels, and what the gameplay takes as "the camera" for culling and activation all use it.
+		*/
+		inline Pool<Camera> cameras = ("Cameras");
+		inline PoolId mainCamera = UninitializedPoolId;
+		inline Pool<Graphics::RenderTarget> renderTargets = ("RenderTargets");
 		inline PoolMap<Entity> entities = ("Entities"); 
 		inline PoolMap<Level> levels = ("Levels"); 
+
+		/* The kinds of entity there are (Prefab.h), named "<game>/<key name>"; filled once by registerPrefabs. */
+		inline PoolMap<Prefab> prefabs = ("Prefabs");
 
 		/* Where the entities are, for culling (SpatialIndex.h); rebuilt by main.cpp once the level's entities exist. */
 		inline SpatialIndex spatialIndex;
@@ -101,7 +109,5 @@ namespace Globals {
 		inline float lastX = Globals::App::windowWidth / 2.0f;
 		inline float lastY = Globals::App::windowHeight / 2.0f;
 		inline bool firstMouse = true;
-		/* True while the cursor is free (visible, for the debug UI) and does not turn the camera; see main.cpp. */
-		inline bool cursorFree = false;
 	} 
 }

@@ -57,12 +57,12 @@ void Renderer::init()
 	rFloor.indicies = {0, 1, 2, 0, 2, 3};
 	rFloor.create();
 
-	collisionView.init();
+	dashTrail.init();
 }
 
-void Renderer::run(Camera& rCamera_) 
+void Renderer::run(Camera& rCamera_, bool clearColor_) 
 { 
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	glClear(clearColor_ ? (GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT) : GL_DEPTH_BUFFER_BIT);
 
 	// bind cameras UBO to binding = 0 (matches shader); must happen before drawing
 	glBindBufferBase(GL_UNIFORM_BUFFER, 0, rCamera_.UBOId);
@@ -107,12 +107,53 @@ void Renderer::run(Camera& rCamera_)
 		}
 	}
 
-	collisionView.draw(rCamera_);
+	dashTrail.draw();
+	effectBalls.draw();
 }
   
+void Renderer::drawEntity(Camera& rCamera_, Entity& rEntity_)
+{
+	glBindBufferBase(GL_UNIFORM_BUFFER, 0, rCamera_.UBOId);
+	std::array<glm::vec4, 6> planes = rCamera_.frustumPlanes();
+	rEntity_.draw(planes, rCamera_.position, rCamera_.farPlane);
+}
+
+void Renderer::runAll(Camera* pEditorCamera_)
+{
+	Pool<Camera>& rCameras = Globals::Game::cameras;
+	for(uint32_t i = 0; i < rCameras.objects.size(); i++)
+	{
+		if(!rCameras.alive[i] || !rCameras.objects[i].enabled) continue;
+		RenderTarget* pTarget = rCameras.objects[i].renderTarget();
+		if(pTarget == nullptr) continue;
+		pTarget->bind();
+		this->run(rCameras.objects[i]);
+	}
+
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glViewport(0, 0, Globals::App::windowWidth, Globals::App::windowHeight);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	/* With the editor camera the screen shows only it (and the collision view); the gameplay cameras that render to the screen are skipped. */
+	if(pEditorCamera_ != nullptr)
+	{
+		this->run(*pEditorCamera_, false);
+#ifdef EDITOR
+		editor.collisionView.draw(*pEditorCamera_);
+#endif
+		return;
+	}
+	for(uint32_t i = 0; i < rCameras.objects.size(); i++)
+	{
+		if(!rCameras.alive[i] || !rCameras.objects[i].enabled || rCameras.objects[i].renderTarget() != nullptr) continue;
+		this->run(rCameras.objects[i], false);
+	}
+}
+
 void Renderer::destroy() 
 {
-	collisionView.destroy();
+	dashTrail.destroy();
+	effectBalls.destroy();
 	glDeleteBuffers(1, &this->boneBuffer); 
 	oneArchives.clear();
 	basicMeshes.clear(); 

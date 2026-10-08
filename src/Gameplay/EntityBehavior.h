@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 #include <vector>
 #include "PoolId.h"
 
@@ -13,6 +14,9 @@ struct EntityBehavior
 
 	/* A behaviour written in a script has no pBehave: scriptFunction is the Lua registry reference of its function (Scripting.h), called with the entity's handle. 0 = none. */
 	int scriptFunction = 0;
+
+	/* A script behaviour: the file that registered it (sf.behavior), as the Lua chunk name without the '@' ("Assets/Scripts/sadx/objects.lua"), so the editor can offer a dropped script's behaviours. Empty otherwise. */
+	std::string sourceFile;
 };
 
 /*

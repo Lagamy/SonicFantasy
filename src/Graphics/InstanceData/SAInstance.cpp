@@ -110,7 +110,7 @@ Each node's world matrix is its parent's world matrix times its local matrix, rB
 The local matrix is nodePose[i] when the instance has a pose, otherwise the rest localTransform.
 Relies on SAMesh storing parents before children.
 A submesh with a texture id in the instance's TextureBinding has it bound to unit 0 (the shader's baseTexture) and hasTexture set,
-with the wrap of its material set on the texture before each draw (a texture used by materials that disagree is set again per submesh).
+with the wrap of its material set on the texture before each draw (a texture used by materials that disagree is set again per submesh). With pOverrideTexture every textured submesh takes that one.
 */
 void SAInstance::draw(const glm::mat4& rBase_)
 {
@@ -144,10 +144,10 @@ void SAInstance::draw(const glm::mat4& rBase_)
 			bool hasTexture = textureId != UninitializedPoolId;
 			if(hasTexture)
 			{
-				GLuint glTexture = textures[textureId].textureId;
+				Texture& rTexture = this->pOverrideTexture ? *this->pOverrideTexture : textures[textureId];
+				GLuint glTexture = rTexture.textureId;
 				renderStats.texture(glTexture);
 				glBindTextureUnit(0, glTexture);
-				Texture& rTexture = textures[textureId];
 				GLint wrapS = rSubmesh.clampU ? GL_CLAMP_TO_EDGE : rSubmesh.flipU ? GL_MIRRORED_REPEAT : GL_REPEAT;
 				GLint wrapT = rSubmesh.clampV ? GL_CLAMP_TO_EDGE : rSubmesh.flipV ? GL_MIRRORED_REPEAT : GL_REPEAT;
 				if(rTexture.appliedWrapS != wrapS)

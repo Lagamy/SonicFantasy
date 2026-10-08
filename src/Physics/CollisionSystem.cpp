@@ -1,6 +1,7 @@
 #include "CollisionSystem.h"
 #include "Globals.h"
 #include "SAMesh.h"
+#include "Editor.h"
 #include <algorithm>
 #include <cmath>
 #include <unordered_map>
@@ -511,9 +512,10 @@ static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCap
 	rEntity.stagingPosition = position;
 	rEntity.moveTo(position);
 
-	/* The callbacks run last: they may add or remove entities or behaviours, which invalidates rEntity (the areas are kept by PoolId). */
+	/* The callbacks run last: they may add or remove entities or behaviours, which invalidates rEntity (the areas are kept by PoolId). Not in the editor: the push-out above is collision, the interactions are behaviour. */
 	for(const Interaction& rInteraction : interactions)
 	{
+		if(editorActive()) break;
 		rInteraction.function.call(rInteraction.parent, rInteraction.contact);
 	}
 }
@@ -536,9 +538,10 @@ struct WorldShape
 	float boundingRadius;
 };
 
-static bool worldShapeOf(const Entity& rEntity_, const CollisionShape& rShape_, WorldShape& rOut_)
+static bool worldShapeOf(const Entity& rEntity_, const CollisionShape& rSourceShape_, WorldShape& rOut_)
 {
 	bool sadx = rEntity_.sourceEngine == SA_NINJA;
+	const CollisionShape rShape_ = scaledShape(rSourceShape_, rEntity_.collisionScale(), sadx);
 	glm::mat4 entityRotation = sadx ? rEntity_.rotation : glm::mat4(1.0f);
 	glm::mat4 rotation = entityRotation * Graphics::composeNinjaTransform(glm::vec3(0.0f), glm::vec3(rShape_.angle), glm::vec3(1.0f), Graphics::NinjaNoPosition | Graphics::NinjaNoScale);
 	if(sadx && rShape_.form == 6) rotation = rotation * glm::rotate(glm::mat4(1.0f), -glm::half_pi<float>(), glm::vec3(1.0f, 0.0f, 0.0f));
@@ -722,8 +725,9 @@ static bool spheresApart(const glm::vec3& rCenterA_, float radiusA_, const glm::
 Where a shape's bounding sphere is, without building its orientation (the angles of the shape do not move a sphere around its center): the center in the world and the radius, the same as WorldShape's
 boundingRadius. False for a form that is not touched. Cheap enough to do for every shape every frame; the full WorldShape is only built for the pairs that get past it.
 */
-static bool boundsOf(const Entity& rEntity_, const CollisionShape& rShape_, glm::vec3& rCenter_, float& rRadius_)
+static bool boundsOf(const Entity& rEntity_, const CollisionShape& rSourceShape_, glm::vec3& rCenter_, float& rRadius_)
 {
+	const CollisionShape rShape_ = scaledShape(rSourceShape_, rEntity_.collisionScale(), rEntity_.sourceEngine == SA_NINJA);
 	if(rShape_.form == 0) rRadius_ = rShape_.a;
 	else if(rShape_.form == 6) rRadius_ = rShape_.b + rShape_.a;
 	else if(rShape_.form == 1 || rShape_.form == 2) rRadius_ = std::max(rShape_.b * 0.5f - rShape_.a, 0.0f) + rShape_.a;
@@ -897,6 +901,7 @@ static void updateEntityContacts()
 	}
 	for(const Interaction& rInteraction : interactions)
 	{
+		if(editorActive()) break;
 		rInteraction.function.call(rInteraction.parent, rInteraction.contact);
 	}
 }
@@ -997,6 +1002,7 @@ void CollisionSystem::update()
 		}
 		for(const Interaction& rInteraction : interactions)
 		{
+			if(editorActive()) break;
 			rInteraction.function.call(rInteraction.parent, rInteraction.contact);
 		}
 	}

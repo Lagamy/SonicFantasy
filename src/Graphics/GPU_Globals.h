@@ -5,14 +5,18 @@
 #include "ONEInstance.h"
 #include "SALevelInstance.h"
 #include "ONELevelInstance.h"
+#include "GLTFLevelInstance.h"
 #include "ONE.h"
 #include "Renderer.h"
-#include "DebugUI.h"
-#include "CollisionView.h"
-#include "Text.h"
+#ifdef EDITOR
+#include "Editor.h"
+#endif
+#include "DashTrail.h"
+#include "EffectBalls.h"
 #include "Pool.h"
 #include "Shader.h"
 #include "BasicMesh.h"
+#include "ExternalModel.h"
 #include "Texture.h"
 #include "SAMesh.h"
 #include "SAAnimation.h"
@@ -23,11 +27,13 @@
 namespace Graphics 
 {
 	inline Renderer renderer;
-	inline DebugUI debugUI;
-	inline CollisionView collisionView;
-	inline Text text;
+	inline DashTrail dashTrail;
+	inline EffectBalls effectBalls;
 	inline PoolMap<BasicMesh> basicMeshes = ("Meshes"); 
 	inline PoolMap<Texture> textures = ("Textures");
+	inline PoolMap<VertexLayout> vertexLayouts = ("VertexLayouts");
+	inline ExternalPools externalProject("ProjectMeshes", "ProjectTextures", "ProjectModels");
+	inline ExternalPools externalLevel("LevelMeshes", "LevelTextures", "LevelModels");
 	inline PoolMap<TextureSet> textureSets = ("TextureSets");
 	inline Pool<TextureBinding> textureBindings = ("TextureBindings");
 	inline PoolMap<Shader> shaders = ("Shaders");
@@ -39,4 +45,5 @@ namespace Graphics
 	inline Pool<ONEInstance> oneInstances = ("ONEInstances");
 	inline Pool<SALevelInstance> saLevelInstances = ("SALevelInstances");
 	inline Pool<ONELevelInstance> oneLevelInstances = ("ONELevelInstances");
+	inline Pool<GLTFLevelInstance> gltfLevelInstances = ("GLTFLevelInstances");
 }

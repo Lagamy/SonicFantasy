@@ -331,6 +331,7 @@ static DffGeometry readGeometry(const std::vector<uint8_t>& rBytes_, const Chunk
 			rVertex.color *= materials[m].color;
 		}
 		rSubmesh.textureName = materials[m].textureName;
+		rSubmesh.uvAnimName = materials[m].uvAnimName;
 		geometry.submeshes.push_back(rSubmesh);
 	}
 	return geometry;

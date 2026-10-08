@@ -1,6 +1,7 @@
 #include "Text.h"
 #include "Globals.h"
 #include "GPU_Globals.h"
+#include "Editor.h"
 #include "imgui.h"
 #include <algorithm>
 #include <cfloat>
@@ -25,7 +26,7 @@ static const std::string& nameOf(const Entity& rEntity_, uint32_t index_, Text::
 		if(rEntity_.collisionId == UninitializedPoolId) return None;
 		return Globals::Physics::collisions[rEntity_.collisionId].name;
 	}
-	if(rEntity_.instanceId == UninitializedPoolId) return None;
+	if(rEntity_.instanceId == UninitializedPoolId) return rEntity_.isExternalOnly() && rEntity_.pOverrideModel != nullptr ? rEntity_.pOverrideModel->name : None;
 	if(rEntity_.sourceEngine == SA_NINJA) return saMeshes.names[saInstances[rEntity_.instanceId].saMeshId.id];
 	const ONEInstance& rInstance = oneInstances[rEntity_.instanceId];
 	return oneArchives[rInstance.archiveId].meshNames[rInstance.meshIndex];
@@ -75,7 +76,7 @@ void Text::draw(const Camera& rCamera_)
 	glm::mat4 viewProjection = rCamera_.projection * rCamera_.view;
 	std::array<glm::vec4, 6> planes = rCamera_.frustumPlanes();
 	/* A label farther than the distance at which its size would get below MinFontSize is not drawn at all (it could not be read, and drawing hundreds of them every frame is what made the debug mode slow). */
-	float distance = std::min({collisionView.drawDistance, rCamera_.farPlane, baseFontSize * ReferenceDistance / MinFontSize});
+	float distance = std::min({editor.collisionView.drawDistance, rCamera_.farPlane, baseFontSize * ReferenceDistance / MinFontSize});
 	for(uint32_t i = 0; i < Globals::Game::entities.objects.size(); i++)
 	{
 		if(!Globals::Game::entities.alive[i]) continue;

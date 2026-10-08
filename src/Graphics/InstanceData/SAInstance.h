@@ -3,6 +3,7 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 #include "PoolId.h"
+#include "Texture.h"
 
 namespace Graphics
 {
@@ -27,6 +28,8 @@ struct SAInstance
 	float framesPerSecond = 0.0f;
 	std::vector<glm::mat4> nodePose;
 	bool poseDirty = false;
+	/* A texture drawn on every textured submesh in place of the binding's (an external texture, Entity::setOverrideTexture); nullptr = the binding's. It points into the external pools, which outlive the entities that use it. */
+	Texture* pOverrideTexture = nullptr;
 
 	void update(float deltaTime_);
 	float playbackRate() const;

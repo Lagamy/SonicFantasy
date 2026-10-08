@@ -4,6 +4,10 @@
 #include "ResourceLoader.h"
 #include "Globals.h"
 #include "API.h"
+#include "Prefab.h"
+#ifdef EDITOR
+#include "ExternalPrefabs.h"
+#endif
 #include "ONEInstance.h"
 #include "Placement.h"
 #include "RingLine.h"
@@ -37,6 +41,16 @@ void Level::setONEGPUInstance(PoolId shaderId_, const STH2005::LevelKey& rLevel_
 	this->sourceEngine = STH2005_ONE;
 }
 
+void Level::setGLTFGPUInstance(PoolId shaderId_, const GLTFLevelKey& rLevel_)
+{
+	if(this->instanceId != UninitializedPoolId)
+	{
+		throw std::runtime_error("Level: already has an instance.");
+	}
+	this->instanceId = Loading::addGLTFLevelInstance(shaderId_, rLevel_);
+	this->sourceEngine = GLTF_FILE;
+}
+
 void Level::setPosition(const glm::vec3& rPosition_)
 {
 	this->position = rPosition_;
@@ -50,7 +64,7 @@ void Level::setPosition(const glm::vec3& rPosition_)
 /*
 Entities of a Shadow stage's placement files, see Level.h. The records are in the game's space: the level is drawn with RenderWareYawDegrees about +Y
 (hypothesis, see ONEInstance.h) and ONEInstance gives every model the same yaw, so the position gets it too (as DebugSetup::addShadowPlacementMarkers does).
-Which entity a type is made of is in the key (generated, see tools/genEntityKeys.py); a type it does not list (invisible triggers, effects, enemies without an archive entry) gets a marker instead (Graphics::collisionView).
+Which entity a type is made of is in the key (generated, see tools/genEntityKeys.py); a type it does not list (invisible triggers, effects, enemies without an archive entry) gets a marker instead (Editor::collisionView).
 */
 void Level::setONEEntities(PoolId shaderId_, const STH2005::LevelKey& rLevel_)
 {
@@ -91,7 +105,9 @@ void Level::setONEEntities(PoolId shaderId_, const STH2005::LevelKey& rLevel_)
 					auto name = rLevel_.typeNames->find(rPlacement.type);
 					if(name != rLevel_.typeNames->end()) pLabel = name->second;
 				}
-				Graphics::collisionView.markers.push_back(Graphics::CollisionView::Marker{glm::vec3(yaw * glm::vec4(rPlacement.position, 1.0f)) + this->position, rPlacement.type, pLabel});
+#ifdef EDITOR
+				editor.collisionView.markers.push_back(Graphics::CollisionView::Marker{glm::vec3(yaw * glm::vec4(rPlacement.position, 1.0f)) + this->position, rPlacement.type, pLabel});
+#endif
 				continue;
 			}
 			if(found->entity.models.empty()) continue;
@@ -140,7 +156,14 @@ void Level::setONEEntities(PoolId shaderId_, const STH2005::LevelKey& rLevel_)
 			for(const Spawn& rSpawn : spawns)
 			{
 				glm::vec3 position = glm::vec3(yaw * glm::vec4(rSpawn.gamePosition, 1.0f)) + this->position;
-				PoolId id = spawnONEObject(shaderId_, rKey, rSpawn.modelIndex, rSpawn.collisions, position, worldRotation(rSpawn.gameRotation), std::format("{}#{}", rKey.name, this->entityIds.size()), std::format("(type {}) of {}", static_cast<unsigned>(rPlacement.type), pPath));
+				SpawnParams params;
+				params.position = position;
+				params.rotation = worldRotation(rSpawn.gameRotation);
+				params.name = std::format("{}#{}", rKey.name, this->entityIds.size());
+				params.what = std::format("(type {}) of {}", static_cast<unsigned>(rPlacement.type), pPath);
+				params.modelIndex = rSpawn.modelIndex;
+				params.pONECollisions = &rSpawn.collisions;
+				PoolId id = spawnPrefab(findPrefab(STH2005_ONE, rKey.name), shaderId_, params);
 				if(id == UninitializedPoolId) continue;
 				this->entityIds.push_back(id);
 			}
@@ -186,10 +209,18 @@ void Level::setSAEntities(PoolId shaderId_, const SALandTableKey& rLandTable_)
 		throw std::runtime_error("Level: already has entities.");
 	}
 
-	/* One entity of the level (spawnSAObject): what_ names the source in a message. */
+	/* One entity of the level (spawnPrefab): what_ names the source in a message. */
 	auto createEntity = [&](const SAEntityKey& rKey_, const SAModelKey& rModel_, const std::vector<SACollisionShapesKey>& rCollisions_, const glm::vec3& rPosition_, const glm::mat4& rRotation_, const std::string& what_, const Ninja::SAPlacement* pPlacement_)
 	{
-		PoolId id = spawnSAObject(shaderId_, rKey_, rModel_, rCollisions_, rPosition_, rRotation_, std::format("{}#{}", rKey_.name, this->entityIds.size()), what_, pPlacement_);
+		SpawnParams params;
+		params.position = rPosition_;
+		params.rotation = rRotation_;
+		params.name = std::format("{}#{}", rKey_.name, this->entityIds.size());
+		params.what = what_;
+		params.pModel = &rModel_;
+		params.pCollisions = &rCollisions_;
+		params.pPlacement = pPlacement_;
+		PoolId id = spawnPrefab(findPrefab(SA_NINJA, rKey_.name), shaderId_, params);
 		if(id != UninitializedPoolId) this->entityIds.push_back(id);
 	};
 
@@ -208,7 +239,9 @@ void Level::setSAEntities(PoolId shaderId_, const SALandTableKey& rLandTable_)
 					auto name = rLandTable_.typeNames->find(rPlacement.type);
 					if(name != rLandTable_.typeNames->end()) pLabel = name->second;
 				}
-				Graphics::collisionView.markers.push_back(Graphics::CollisionView::Marker{position, rPlacement.type, pLabel});
+#ifdef EDITOR
+				editor.collisionView.markers.push_back(Graphics::CollisionView::Marker{position, rPlacement.type, pLabel});
+#endif
 				continue;
 			}
 			const SAEntityKey& rKey = found->entity;
@@ -217,7 +250,9 @@ void Level::setSAEntities(PoolId shaderId_, const SALandTableKey& rLandTable_)
 			const std::vector<SACollisionShapesKey>& rCollisions = rKey.variantCollisions.empty() ? rKey.collisions : rKey.variantCollisions[variantValue % rKey.variantCollisions.size()];
 			if(rModel.rel == nullptr)
 			{
-				Graphics::collisionView.markers.push_back(Graphics::CollisionView::Marker{position, rPlacement.type, rKey.name});
+#ifdef EDITOR
+				editor.collisionView.markers.push_back(Graphics::CollisionView::Marker{position, rPlacement.type, rKey.name});
+#endif
 				continue;
 			}
 			createEntity(rKey, rModel, rCollisions, position, saObjectRotation(rPlacement.rotation, rKey.rotation), std::format("(type {}) of {}", static_cast<unsigned>(rPlacement.type), pPath), &rPlacement);
@@ -251,6 +286,52 @@ void Level::setONECollision(const STH2005::LevelKey& rLevel_)
 	Globals::Physics::collisionSystem.rebuildQuadTree();
 }
 
+void Level::setGLTFCollision(const GLTFLevelKey& rLevel_)
+{
+	if(this->collisionId != UninitializedPoolId)
+	{
+		throw std::runtime_error("Level: already has a collision.");
+	}
+	this->collisionId = Loading::addGLTFCollision(rLevel_);
+	Globals::Physics::collisions[this->collisionId].setPosition(this->position);
+	Globals::Physics::collisionSystem.rebuildQuadTree();
+}
+
+void Level::swapGLTFGPUInstance(PoolId shaderId_, const GLTFLevelKey& rLevel_)
+{
+	if(this->sourceEngine != GLTF_FILE) throw std::runtime_error("Level: not a glTF level.");
+	if(this->instanceId != UninitializedPoolId)
+	{
+		Graphics::gltfLevelInstances.remove(this->instanceId);
+		this->instanceId = UninitializedPoolId;
+	}
+	this->setGLTFGPUInstance(shaderId_, rLevel_);
+}
+
+void Level::swapGLTFCollision(const GLTFLevelKey& rLevel_)
+{
+	if(this->sourceEngine != GLTF_FILE) throw std::runtime_error("Level: not a glTF level.");
+	if(this->collisionId != UninitializedPoolId)
+	{
+		Globals::Physics::collisions.remove(this->collisionId);
+		this->collisionId = UninitializedPoolId;
+	}
+	if(rLevel_.collisions.empty()) Globals::Physics::collisionSystem.rebuildQuadTree();
+	else this->setGLTFCollision(rLevel_);
+}
+
+void Level::appendGLTFCollision(const GLTFLevelKey& rLevel_, const std::string& rName_)
+{
+	if(this->sourceEngine != GLTF_FILE) throw std::runtime_error("Level: not a glTF level.");
+	if(this->collisionId == UninitializedPoolId)
+	{
+		this->setGLTFCollision(rLevel_);
+		return;
+	}
+	Loading::appendGLTFCollision(this->collisionId, rLevel_, rName_);
+	Globals::Physics::collisionSystem.rebuildQuadTree();
+}
+
 void Level::update(float deltaTime_)
 {
 	if(this->instanceId == UninitializedPoolId) return;
@@ -268,17 +349,90 @@ void Level::draw(const Camera& rCamera_)
 	case STH2005_ONE:
 		Graphics::getONELevelInstance(this->instanceId).draw(base, rCamera_);
 		break;
+	case GLTF_FILE:
+		Graphics::gltfLevelInstances[this->instanceId].draw(base, rCamera_);
+		break;
 	}
 }
 
 /* Removes the level's instance, which gives back the users of its pieces. Called by PoolMap::remove. */
+void Level::markSourceEntities()
+{
+	this->sourceEntityCount = static_cast<uint32_t>(this->entityIds.size());
+	this->sourcePositions.clear();
+	this->sourceRotations.clear();
+	this->sourceScales.clear();
+	this->sourceBehaviors.clear();
+	this->sourceShapes.clear();
+	for(PoolId id : this->entityIds)
+	{
+		const Entity& rEntity = getEntity(id);
+		this->sourcePositions.push_back(rEntity.position);
+		this->sourceRotations.push_back(rEntity.rotation);
+		this->sourceScales.push_back(rEntity.scale);
+		this->sourceBehaviors.push_back(rEntity.behaviorSetId == UninitializedPoolId ? std::vector<PoolId>() : Globals::Game::entityBehaviors[rEntity.behaviorSetId].behaviorIds);
+		this->sourceShapes.push_back(entityShapes(id));
+	}
+}
+
+int32_t Level::sourceIndexOf(PoolId entityId_) const
+{
+	for(uint32_t i = 0; i < this->sourceEntityCount; i++)
+	{
+		if(this->entityIds[i].id == entityId_.id && this->entityIds[i].generation == entityId_.generation) return static_cast<int32_t>(i);
+	}
+	return -1;
+}
+
+void Level::revertSourceEntity(uint32_t index_)
+{
+	if(index_ >= this->sourceEntityCount || !entityExists(this->entityIds[index_])) return;
+	Entity& rEntity = getEntity(this->entityIds[index_]);
+	rEntity.setPosition(this->sourcePositions[index_]);
+	rEntity.setRotation(this->sourceRotations[index_]);
+	rEntity.setScale(this->sourceScales[index_]);
+}
+
+void Level::restoreSource()
+{
+	clearPrefabEdits();
+	for(uint32_t i = 0; i < this->sourceEntityCount; i++)
+	{
+		this->revertSourceEntity(i);
+		if(!entityExists(this->entityIds[i])) continue;
+		setEntityBehaviors(this->entityIds[i], this->sourceBehaviors[i]);
+		setEntityShapes(this->entityIds[i], this->sourceShapes[i]);
+		if(entityMesh(this->entityIds[i]).kind != MeshChoiceKind::Default) setEntityMesh(this->entityIds[i], MeshChoice{});
+		if(entityTexture(this->entityIds[i]).kind != TextureChoiceKind::Default) setEntityTexture(this->entityIds[i], TextureChoice{});
+	}
+	for(uint32_t i = this->sourceEntityCount; i < this->entityIds.size(); i++)
+	{
+		if(entityExists(this->entityIds[i])) Globals::Game::entities.remove(this->entityIds[i]);
+	}
+	this->entityIds.resize(this->sourceEntityCount);
+}
+
 void Level::destroy()
 {
+#ifdef EDITOR
+	/* The markers do not say which level they belong to; one level is loaded at a time, so all of them go. */
+	editor.collisionView.markers.clear();
+#endif
 	for(PoolId id : this->entityIds)
 	{
 		if(entityExists(id)) Globals::Game::entities.remove(id);
 	}
 	this->entityIds.clear();
+	this->sourceEntityCount = 0;
+	this->sourcePositions.clear();
+	this->sourceRotations.clear();
+	this->sourceScales.clear();
+	this->sourceBehaviors.clear();
+	this->sourceShapes.clear();
+#ifdef EDITOR
+	/* The level's own External prefabs go with its entities. */
+	Loading::unloadLevelPrefabs();
+#endif
 	if(this->collisionId != UninitializedPoolId)
 	{
 		Globals::Physics::collisions.remove(this->collisionId);
@@ -293,6 +447,9 @@ void Level::destroy()
 		break;
 	case STH2005_ONE:
 		Graphics::oneLevelInstances.remove(this->instanceId);
+		break;
+	case GLTF_FILE:
+		Graphics::gltfLevelInstances.remove(this->instanceId);
 		break;
 	}
 	this->instanceId = UninitializedPoolId;

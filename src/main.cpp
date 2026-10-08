@@ -16,116 +16,30 @@
 #include "GCDisc.h"
 #include "ResourceKeys.h"
 #include "DebugSetup.h"
+#ifdef EDITOR
+#include "Editor.h"
+#include "ExternalPrefabs.h"
+#endif
 
 inline bool OPressed = false;
 inline bool PPressed = false; 
-inline bool CPressed = false;
-inline bool VPressed = false;
-inline bool LeftPressed = false;
-inline bool RightPressed = false;
-inline bool UpPressed = false;
-inline bool DownPressed = false;
-inline bool TabPressed = false;
-inline bool EscPressed = false;
 
 /*
-Outside the debug mode (Globals::App::debugMode) the player is controlled and the camera sits behind it, where the mouse look points (placeholder distance and height).
+The gameplay camera sits behind the player it follows, where the mouse look points while the editor is not active (the mouse and the fly keys then move the editor camera, see Editor.h); placeholder distance and height. The player is controlled only outside the editor (Lua sf.debugMode).
 */
-constexpr float FollowDistance = 45.0f;
-constexpr float FollowHeight = 12.0f;
+constexpr float FollowDistance = 70.0f;
+constexpr float FollowHeight = 18.0f;
 
 void updateFollowCamera(PoolId targetId_)
 {
-	Camera& cam = Globals::Game::cameras[0];
+	Camera& cam = getMainCamera();
 	cam.set(getEntity(targetId_).renderPosition() + glm::vec3(0.0f, FollowHeight, 0.0f) - cam.front * FollowDistance);
 }
 
 void processInputs() {
-	Camera& cam = Globals::Game::cameras[0]; 
-	/* The keys that fly the camera (W A S D, Space, Ctrl) only do so in the debug mode (Tab): outside it they control the player, and the camera follows it (updateFollowCamera). */
-	if(Globals::App::debugMode)
-	{
-	// front / back
-    float speed = cam.speed * Globals::App::deltaTime;
-    if (glfwGetKey(Globals::App::window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS)
-        speed *= cam.speedUp;
-    if (glfwGetKey(Globals::App::window, GLFW_KEY_W) == GLFW_PRESS)
-        cam.move(cam.front * speed);
-
-    if (glfwGetKey(Globals::App::window, GLFW_KEY_S) == GLFW_PRESS)
-        cam.move(-cam.front * speed);
-
-    // right / left
-    glm::vec3 right = glm::normalize(glm::cross(cam.front, cam.up));
-    if (glfwGetKey(Globals::App::window, GLFW_KEY_A) == GLFW_PRESS)
-        cam.move(-right * speed);
-
-    if (glfwGetKey(Globals::App::window, GLFW_KEY_D) == GLFW_PRESS)
-        cam.move(right * speed);
-
-	// up / down 
-	if(glfwGetKey(Globals::App::window, GLFW_KEY_SPACE))
-		cam.move(glm::vec3({0.0, 1.0, 0.0f}) * speed);
-	if(glfwGetKey(Globals::App::window, GLFW_KEY_LEFT_CONTROL)) 
-		cam.move(-glm::vec3({0.0, 1.0, 0.0f}) * speed);
-	}
-
-	/*
-	Tab toggles the debug mode: the debug UI and the entity labels show (the camera keeps working, the cursor stays captured); leaving it captures the cursor again. While it is on, Esc frees the cursor
-	(visible, no camera look) so the UI can be used. The next mouse position becomes the baseline when the camera gets the cursor back, so it does not jump.
-	*/
-	bool tabDown = glfwGetKey(Globals::App::window, GLFW_KEY_TAB) == GLFW_PRESS;
-	if(tabDown && !TabPressed)
-	{
-		Globals::App::debugMode = !Globals::App::debugMode;
-		if(!Globals::App::debugMode && Globals::Mouse::cursorFree)
-		{
-			Globals::Mouse::cursorFree = false;
-			glfwSetInputMode(Globals::App::window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-			Globals::Mouse::firstMouse = true;
-		}
-	}
-	TabPressed = tabDown;
-	bool escDown = glfwGetKey(Globals::App::window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
-	if(escDown && !EscPressed && Globals::App::debugMode)
-	{
-		Globals::Mouse::cursorFree = !Globals::Mouse::cursorFree;
-		glfwSetInputMode(Globals::App::window, GLFW_CURSOR, Globals::Mouse::cursorFree ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_DISABLED);
-		Globals::Mouse::firstMouse = true;
-	}
-	EscPressed = escDown;
-	if(Globals::Mouse::cursorFree && !Graphics::debugUI.wantsMouse() && glfwGetMouseButton(Globals::App::window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
-	{
-		Globals::Mouse::cursorFree = false;
-		glfwSetInputMode(Globals::App::window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-		Globals::Mouse::firstMouse = true;
-	}
-
-	/* C toggles the collision lines view (Graphics::CollisionView). */
-	bool CDown = glfwGetKey(Globals::App::window, GLFW_KEY_C) == GLFW_PRESS;
-	if(CDown && !CPressed) Graphics::collisionView.enabled = !Graphics::collisionView.enabled;
-	CPressed = CDown;
-
-	/* V switches the lines view between coloring by triangle attribute and by slope. */
-	bool VDown = glfwGetKey(Globals::App::window, GLFW_KEY_V) == GLFW_PRESS;
-	if(VDown && !VPressed) Graphics::collisionView.colorByAttribute = !Graphics::collisionView.colorByAttribute;
-	VPressed = VDown;
-
-	/* Left / Right move the highlighted attribute of the lines view along the legend, through "none": the entities' legend while the debug UI shows its Entities sub tab, otherwise the level's. */
-	bool leftDown = glfwGetKey(Globals::App::window, GLFW_KEY_LEFT) == GLFW_PRESS;
-	bool rightDown = glfwGetKey(Globals::App::window, GLFW_KEY_RIGHT) == GLFW_PRESS;
-	if(leftDown && !LeftPressed) Graphics::collisionView.entityTabActive ? Graphics::collisionView.selectEntityAttribute(-1) : Graphics::collisionView.selectAttribute(-1);
-	if(rightDown && !RightPressed) Graphics::collisionView.entityTabActive ? Graphics::collisionView.selectEntityAttribute(1) : Graphics::collisionView.selectAttribute(1);
-	LeftPressed = leftDown;
-	RightPressed = rightDown;
-
-	/* Up / Down switch the labels over the entities (Graphics::Text) between entity, mesh and collision names. */
-	bool upDown = glfwGetKey(Globals::App::window, GLFW_KEY_UP) == GLFW_PRESS;
-	bool downDown = glfwGetKey(Globals::App::window, GLFW_KEY_DOWN) == GLFW_PRESS;
-	if(upDown && !UpPressed) Graphics::text.selectMode(-1);
-	if(downDown && !DownPressed) Graphics::text.selectMode(1);
-	UpPressed = upDown;
-	DownPressed = downDown;
+#ifdef EDITOR
+	editor.processInputs();
+#endif
 
 	// increas / decrease block height
 	// bool ODown = glfwGetKey(Globals::window, GLFW_KEY_O) == GLFW_PRESS; 
@@ -153,7 +67,6 @@ void processInputs() {
 			// float h = rInstance.height;
     		// h = std::max(h - 0.2f, 0.0f);
     		// rInstance.height = h;
-
 			// BlockGlobals::faces.updateSSBO();
     		// PPressed = true;
 
@@ -169,14 +82,24 @@ int main() {
 	Globals::App::window = createWindow(Globals::App::windowWidth, Globals::App::windowHeight);
 	Graphics::renderer.init(); 
 	Globals::Game::baBehaviors.init();
-	/* The gameplay is the Lua scripts of Assets/Scripts (main.lua loads sadx/main.lua for Sonic and shadow/main.lua for Shadow, J switches the player, see Scripting.h); a script that fails to load is reported on stderr and the game runs without it. */
+	/* The gameplay is the Lua scripts of Assets/Scripts (main.lua loads sadx/main.lua for Sonic and shadow/main.lua for Shadow, J switches the player, see Scripting.h; game.lua, run once the discs are open, loads the level and the players); a script that fails to load is reported on stderr and the game runs without it. */
 	Scripting::init();
 	Scripting::loadFile("main.lua");
-	Graphics::debugUI.init(Globals::App::window);
-	Globals::Game::cameras.emplace_back(Camera({0.0f, 0.0f, 0.0f}));
+	/* After main.lua: a prefab reads the behaviours the scripts registered for it. Before any level or entity is made. */
+	registerPrefabs();
+#ifdef EDITOR
+	/* The editor's Global External prefabs (Assets/External/prefabs.json); the level's own are read when it opens. */
+	Loading::loadExternalPrefabs(Loading::ExternalScope::Project);
+#endif
+	addCamera("MainCamera", {0.0f, 0.0f, 0.0f});
+#ifdef EDITOR
+	editor.init(Globals::App::window);
+#endif
 	
-	PoolId saShaderId = Graphics::addShader("SA");
-	PoolId oneShaderId = Graphics::addShader("STH2005");
+	/* The scripts find these by name (sf.loadLevel, sf.spawnPlayer). */
+	Graphics::addShader("SA");
+	Graphics::addShader("STH2005");
+	Graphics::addShader("GLTF");
 
 	/*
 	The discs stay open for the whole run: everything an instance's resource keys (ResourceKeys.h) name is loaded from
@@ -184,54 +107,14 @@ int main() {
 	*/
 	Globals::Discs::sadx = GameCube::openGCDisc(sadxDiscPath.c_str());
 	Globals::Discs::shadow = GameCube::openGCDisc(shadowDiscPath.c_str());
-	PoolId sonicId = addEntity("SASonic", {-1000, -1000, -1000});
-	PoolId shadowId =  addEntity("Shadow", {-1000, -1000, -1000}); 
 
-	getEntity(sonicId).setSAGPUInstance(saShaderId, SonicMesh, SonicTextures);
-	getEntity(sonicId).playSAMotion(SonicIdle);
-
-	getEntity(shadowId).setONEGPUInstance(oneShaderId, ShadowMesh, ShadowTextures);
-	getEntity(shadowId).playONEMotion(ShadowIdle);
-	getEntity(shadowId).playONEMotion(ShadowIdleLeftHand);
-	getEntity(shadowId).playONEMotion(ShadowIdleRightHand);
-
-
-
-	/*
-	Emerald Coast (SADX), with its collision (off while Shadow plays in Westopolis; the two would overlap at similar coordinates; its player script is sadx/main.lua).
-	*/
-	// PoolId emeraldCoastId = addLevel("EmeraldCoast", {0, 0, 0});
-	// getLevel(emeraldCoastId).setSAGPUInstance(saShaderId, EmeraldCoastLandTable, EmeraldCoastTextures);
-	// getLevel(emeraldCoastId).setSACollision(EmeraldCoastLandTable);
-	// getLevel(emeraldCoastId).setSAEntities(saShaderId, EmeraldCoastLandTable);
-	// setCameraPosition({-12.0f, 30.0f, 142.0f});
-	// getEntity(sonicId).setPosition({0, 10, 5});
-	// getEntity(shadowId).setPosition({0, 4, -5});
-	// DebugSetup::addSonicShape(sonicId);
-	// DebugSetup::addShadowShape(shadowId);
-	// DebugSetup::enablePhysics(sonicId, shadowId);
-	// Scripting::attachPlayer(sonicId);
-	// Scripting::attachPlayer(shadowId);
-
-	/*
-	A Shadow stage (Stg0000Level is the one with a single section). The camera starts at the middle of the largest sector of
-	the first section of stg0100 (observed in its world, with the 90 degree yaw of ONEInstance.h applied); the real start
-	position of the stage is not known. The far plane is the render distance (Camera::farPlane).
-	*/
-	PoolId westopolisId = addLevel("Stg0100", {0, 0, 0});
-	getLevel(westopolisId).setONEGPUInstance(oneShaderId, Stg0100Level);
-	getLevel(westopolisId).setONECollision(Stg0100Level);
-	getEntity(sonicId).setPosition({-3430, -4542 + 5.3, 5});
-	getEntity(shadowId).setPosition({-3430, -4541.5, -5}); 
-	setCameraPosition({-3440, -4860, 0}); 
-	// getLevel(westopolisId).setONEEntities(oneShaderId, Stg0100Level);
-	
-	DebugSetup::enablePhysics(sonicId, shadowId);
-	DebugSetup::addSonicShape(sonicId);
-	DebugSetup::addShadowShape(shadowId);
-	Scripting::attachPlayer(sonicId);
-	Scripting::attachPlayer(shadowId);
+	/* The level and the players are the script game.lua's (it needs the discs and shaders above). */
+	Scripting::loadFile("game.lua");
 	Globals::Game::spatialIndex.rebuild();
+#ifdef EDITOR
+	/* game.lua placed the gameplay camera: the editor camera starts there. */
+	editor.matchGameplayCamera();
+#endif
 	/*
 	The first frame's deltaTime would otherwise be the time since glfwInit, i.e. the whole loading time (seconds): the physics
 	would move everything by that much at once, and the entities would land in a single frame.
@@ -266,7 +149,7 @@ int main() {
 		if(fpsTime >= 0.5f)
 		{
 			Globals::App::fps = static_cast<float>(fpsFrames) / fpsTime;
-			glfwSetWindowTitle(Globals::App::window, std::format("SonicFantasy - {:.0f} FPS", Globals::App::fps).c_str());
+			glfwSetWindowTitle(Globals::App::window, std::format("SonicSunset - {:.0f} FPS", Globals::App::fps).c_str());
 			fpsFrames = 0;
 			fpsTime = 0.0f;
 		}
@@ -285,14 +168,20 @@ int main() {
 			if(Globals::Game::entities.alive[i]) Globals::Game::entities.objects[i].update(Globals::App::deltaTime);
 		}
 		Globals::Game::gameEvents.drain();
-		if(!Globals::App::debugMode && entityExists(Globals::Game::cameraTarget)) updateFollowCamera(Globals::Game::cameraTarget);
+		if(entityExists(Globals::Game::cameraTarget)) updateFollowCamera(Globals::Game::cameraTarget);
 		// double renderStart = glfwGetTime();
 		// Graphics::renderStats.resetFrame();
 		// if(statsOn) glBeginQuery(GL_TIME_ELAPSED, gpuQueries[frameNumber % 3]);
-		Graphics::renderer.run(Globals::Game::cameras[0]);
+#ifdef EDITOR
+		Graphics::renderer.runAll(editor.active ? &editor.camera : nullptr);
+#else
+		Graphics::renderer.runAll();
+#endif
 		// if(statsOn) glEndQuery(GL_TIME_ELAPSED);
 		// double uiStart = glfwGetTime();
-		if(Globals::App::debugMode) Graphics::debugUI.draw(Globals::Game::cameras[0]);
+#ifdef EDITOR
+		editor.draw();
+#endif
 		// double swapStart = glfwGetTime();
 		glfwSwapBuffers(Globals::App::window);
 
@@ -346,7 +235,9 @@ int main() {
     }
 	
 	Scripting::destroy();
-	Graphics::debugUI.destroy();
+#ifdef EDITOR
+	editor.destroy();
+#endif
 	Graphics::renderer.destroy();
     destroyWindow(Globals::App::window);
 

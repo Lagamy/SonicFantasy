@@ -1,0 +1,50 @@
+{
+  "engine": "sth2005",
+  "shader": "STH2005",
+  "position": [
+    0,
+    0,
+    0
+  ],
+  "sections": [
+    "stg0100/stg0100_01.one",
+    "stg0100/stg0100_02.one",
+    "stg0100/stg0100_03.one",
+    "stg0100/stg0100_04.one",
+    "stg0100/stg0100_05.one",
+    "stg0100/stg0100_06.one",
+    "stg0100/stg0100_07.one",
+    "stg0100/stg0100_08.one",
+    "stg0100/stg0100_09.one",
+    "stg0100/stg0100_10.one",
+    "stg0100/stg0100_11.one",
+    "stg0100/stg0100_12.one",
+    "stg0100/stg0100_13.one",
+    "stg0100/stg0100_14.one",
+    "stg0100/stg0100_15.one",
+    "stg0100/stg0100_16.one",
+    "stg0100/stg0100_17.one",
+    "stg0100/stg0100_18.one",
+    "stg0100/stg0100_19.one",
+    "stg0100/stg0100_20.one",
+    "stg0100/stg0100_21.one",
+    "stg0100/stg0100_22.one",
+    "stg0100/stg0100_23.one"
+  ],
+  "textures": {
+    "archive": "stg0100/stg0100_texCM.one",
+    "txd": "STG0100_TEXCM.TXD"
+  },
+  "skippedEntries": [
+    "_D_",
+    "_G_"
+  ],
+  "placementFiles": [
+    "stg0100/stg0100_cmn.dat",
+    "stg0100/stg0100_nrm.dat",
+    "stg0100/stg0100_hrd.dat",
+    "stg0100/stg0100_ds1.dat"
+  ],
+  "entityTable": "EntityTable_stg0100",
+  "typeNames": "ObjectTypeNames"
+}

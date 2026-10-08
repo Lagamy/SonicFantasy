@@ -21,7 +21,7 @@ struct PoolMap {
 	std::string name;
 
 	PoolMap(const char* name_) : name(name_){};
-	void isPoolIdValid(PoolId pId_)
+	void isPoolIdValid(PoolId pId_) const
 	{
 		if(pId_ == UninitializedPoolId)
 		{
@@ -64,6 +64,14 @@ struct PoolMap {
 		nameToId.emplace(name_, id);
         return id;
     }
+
+	/* add for a pool whose names must be unique: throws, adding nothing, when the name is taken (add accepts a duplicate; nameToId then keeps the first). */
+	template <typename... Args>
+	PoolId addUnique(const char* name_, Args&&... args)
+	{
+		if(this->nameToId.contains(name_)) throw std::runtime_error(std::format("{} Pool: the name '{}' is taken.", this->name, name_));
+		return this->add(name_, std::forward<Args>(args)...);
+	}
 
 	/*
 	Removes the name of slot id_ from nameToId only if it points to that slot: with a duplicate name, nameToId keeps the

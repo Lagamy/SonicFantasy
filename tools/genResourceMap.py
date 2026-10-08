@@ -64,7 +64,7 @@ def row(name, what, path):
     w(f"  {name} | {what} | {path}")
 
 # ---------------------------------------------------------------- header
-w("SonicFantasy resource map")
+w("SonicSunset resource map")
 w("=========================")
 w(f"Generated {datetime.date.today()} from the two GameCube disc images in the project root:")
 w("  Sonic Adventure DX.iso   (GXSE8P, Sonic Adventure DX: Director's Cut, GameCube)")

@@ -1,10 +1,11 @@
--- Entry script (main.cpp loads it). The engine calls attachPlayer(entity) once for each playable entity and setupObject(entity, name, placement) for every object a level makes (sadx/objects.lua). One player is active at a time:
+-- Entry script (main.cpp loads it). The engine calls attachPlayer(entity) once for each playable entity and the prefab behaviours registered with sf.prefabBehavior for every object a level makes (sadx/objects.lua). One player is active at a time:
 -- only the active one reads the keys (state.active, read by both player scripts), the other stands where it is under the same physics. The first one attached is active; J switches, moving only the camera (sf.followCamera)
 -- to the new one. R puts every player back at the position it had when it was attached, with no velocity.
 sf.include("sadx/main.lua")
 sf.include("shadow/main.lua")
 
 local ATTACH = {SASonic = attachSonicPlayer, Shadow = attachShadowPlayer}
+local INIT_STATE = {SASonic = initSonicState, Shadow = initShadowState}
 
 local players = {}
 local active = 0
@@ -56,4 +57,19 @@ function attachPlayer(entity)
 	else
 		sf.state(entity).active = false
 	end
+end
+
+-- Gives every player's state table (sf.state) its starting contents again, the active flag kept as it is (game.lua calls it when the engine resets the game).
+function resetPlayers()
+	for i, player in ipairs(players) do
+		local state = sf.state(player)
+		for key in pairs(state) do state[key] = nil end
+		INIT_STATE[sf.name(player)](state)
+		state.active = i == active
+	end
+end
+
+-- Records the players' current positions as the ones R returns them to (game.lua calls it after moving them to a new level's start).
+function recordPlayerStarts()
+	for i, player in ipairs(players) do starts[i] = {sf.position(player)} end
 end

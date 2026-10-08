@@ -1,0 +1,16 @@
+{
+  "engine": "sth2005",
+  "shader": "STH2005",
+  "position": [
+    0,
+    0,
+    0
+  ],
+  "sections": [
+    "stg0000/stg0000_01.one"
+  ],
+  "textures": {
+    "archive": "stg0000/stg0000_texCM.one",
+    "txd": "STG0000_TEXCM.TXD"
+  }
+}

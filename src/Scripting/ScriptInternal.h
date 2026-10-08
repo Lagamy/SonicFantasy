@@ -21,6 +21,9 @@ inline PoolId fromHandle(int64_t handle_)
 	return PoolId{static_cast<uint32_t>(bits & 0xFFFFFFFFu), static_cast<uint32_t>(bits >> 32)};
 }
 
+/* Registers the function in the Lua registry (reference_, a luaL_ref) as the behaviour of a prefab (sf.prefabBehavior); a second one for the same name replaces the first, whose reference is released. */
+void registerPrefabBehavior(const char* prefabName_, int reference_);
+
 /* Registers the global table `sf`. */
 void registerAPI(lua_State* pState_);
 }

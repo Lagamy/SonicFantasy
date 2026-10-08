@@ -22,10 +22,14 @@ namespace STH2005
 name (44 bytes, null-terminated), u32 uncompressed size, u32 data offset (relative to 0xC), u32 always 1.
 Entries with that last field != 1 are dummies (the first two in shadow.one).
 Compressed size is the distance to the next entry's offset, or to the end of the archive for the last one.
+"One Ver 0.50" (disc file common/CommonEffect.one, decoded 2026-10-07: 83 entries, all PRS sizes match) has the same header, entry count and 56-byte entries,
+but the name field is 32 bytes, so the size, offset and always-1 fields sit at +32, +36 and +40 (the rest of the entry is zeros).
 */
 constexpr uint32_t ONEHeaderSize = 0xC;
 constexpr uint32_t ONEEntriesOffset = 0x40;
 constexpr uint32_t ONEEntrySize = 56;
+constexpr uint32_t ONEName060 = 44;
+constexpr uint32_t ONEName050 = 32;
 
 ONE openONE(std::vector<uint8_t> bytes_)
 {
@@ -33,24 +37,26 @@ ONE openONE(std::vector<uint8_t> bytes_)
 	archive.bytes = std::move(bytes_);
 	const std::vector<uint8_t>& rBytes = archive.bytes;
 
-	if(rBytes.size() < ONEEntriesOffset || std::memcmp(rBytes.data() + 0x0C, "One Ver 0.60", 13) != 0)
+	bool version050 = rBytes.size() >= ONEEntriesOffset && std::memcmp(rBytes.data() + 0x0C, "One Ver 0.50", 13) == 0;
+	if(rBytes.size() < ONEEntriesOffset || (!version050 && std::memcmp(rBytes.data() + 0x0C, "One Ver 0.60", 13) != 0))
 	{
-		throw std::runtime_error("STH2005::ONE: not a \"One Ver 0.60\" archive.");
+		throw std::runtime_error("STH2005::ONE: not a \"One Ver 0.60\" or \"One Ver 0.50\" archive.");
 	}
+	uint32_t nameSize = version050 ? ONEName050 : ONEName060;
 
 	uint32_t fileCount = readLE<uint32_t>(rBytes, 0x1C);
 	for(uint32_t i = 0; i < fileCount + 2; i++)
 	{
 		uint32_t entry = ONEEntriesOffset + i * ONEEntrySize;
-		if(readLE<uint32_t>(rBytes, entry + 52) != 1)
+		if(readLE<uint32_t>(rBytes, entry + nameSize + 8) != 1)
 		{
 			continue;
 		}
 		const char* pName = reinterpret_cast<const char*>(rBytes.data() + entry);
 		archive.entries.push_back(ONEEntry{
-			std::string(pName, strnlen(pName, 44)),
-			readLE<uint32_t>(rBytes, entry + 44),
-			readLE<uint32_t>(rBytes, entry + 48),
+			std::string(pName, strnlen(pName, nameSize)),
+			readLE<uint32_t>(rBytes, entry + nameSize),
+			readLE<uint32_t>(rBytes, entry + nameSize + 4),
 			0
 		});
 	}

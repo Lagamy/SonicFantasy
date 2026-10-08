@@ -1,4 +1,4 @@
-SonicFantasy resource map
+SonicSunset resource map
 =========================
 Generated 2026-10-02 from the two GameCube disc images in the project root:
   Sonic Adventure DX.iso   (GXSE8P, Sonic Adventure DX: Director's Cut, GameCube)

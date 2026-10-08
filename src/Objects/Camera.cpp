@@ -13,8 +13,7 @@ Camera::Camera(glm::vec3 position_) {
 	);
 
 	this->updateView();
-	this->updateProjection((float)Globals::App::windowWidth / (float)Globals::App::windowHeight);
-	this->updateUBO();	
+	this->refreshProjection();
 }
 
 void Camera::processMouse(float xoffset, float yoffset) {
@@ -60,11 +59,42 @@ void Camera::updateView() {
 
 void Camera::updateProjection(float aspect) {
     this->projection = glm::perspective(
-        glm::radians(45.0f),
+        glm::radians(this->fov),
         aspect,
         this->nearPlane,
         this->farPlane
     );
+}
+
+Graphics::RenderTarget* Camera::renderTarget() const {
+	PoolId id = this->renderTargetId;
+	Pool<Graphics::RenderTarget>& rTargets = Globals::Game::renderTargets;
+	bool exists = id != UninitializedPoolId && id.id < rTargets.alive.size() && rTargets.alive[id.id] && rTargets.generation[id.id] == id.generation;
+	return exists ? &rTargets.objects[id.id] : nullptr;
+}
+
+glm::uvec2 Camera::viewportSize() const {
+	if(const Graphics::RenderTarget* pTarget = this->renderTarget())
+	{
+		return glm::uvec2(pTarget->width, pTarget->height);
+	}
+	return glm::uvec2(Globals::App::windowWidth, Globals::App::windowHeight);
+}
+
+void Camera::refreshProjection() {
+	glm::uvec2 size = this->viewportSize();
+	this->updateProjection(static_cast<float>(size.x) / static_cast<float>(size.y));
+	this->updateUBO();
+}
+
+void Camera::setRenderTarget(PoolId targetId_) {
+	this->renderTargetId = targetId_;
+	this->refreshProjection();
+}
+
+void Camera::setRenderToScreen() {
+	this->renderTargetId = UninitializedPoolId;
+	this->refreshProjection();
 }
 
 /*

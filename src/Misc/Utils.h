@@ -1,7 +1,10 @@
 #pragma once
 
 #include <stdexcept>
+#ifdef EDITOR
 #include "Debug.h"
+#include "Editor.h"
+#endif
 #include "Globals.h"
 
 /**
@@ -13,6 +16,7 @@ inline void initGlad(GLFWwindow* window) {
         throw std::runtime_error("Failed to initialize GLAD");
     }
 
+#ifdef EDITOR
     // Setup debug messages for OpenGL
     if (glDebugMessageCallback) {
         glEnable(GL_DEBUG_OUTPUT);
@@ -20,6 +24,7 @@ inline void initGlad(GLFWwindow* window) {
         glDebugMessageCallback(debugCallback, nullptr);
         glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DONT_CARE, 0, nullptr, GL_TRUE);
     }
+#endif
 }
 
 inline void framebufferSizeCallback(GLFWwindow*, int width, int height) // window and buffer resize 
@@ -29,11 +34,14 @@ inline void framebufferSizeCallback(GLFWwindow*, int width, int height) // windo
 	Globals::Mouse::lastX = width / 2.0f;
 	Globals::Mouse::lastY = height / 2.0f;
 
-	for(Camera& camera : Globals::Game::cameras)
+	/* Only the cameras that render to the screen follow the window; a render target keeps its size. */
+	for(uint32_t i = 0; i < Globals::Game::cameras.objects.size(); i++)
 	{
-		camera.updateProjection((float)width / (float)height);
-		camera.updateUBO();
+		if(Globals::Game::cameras.alive[i] && Globals::Game::cameras.objects[i].renderTargetId == UninitializedPoolId) Globals::Game::cameras.objects[i].refreshProjection();
 	}
+#ifdef EDITOR
+	if(editor.initialized) editor.camera.refreshProjection();
+#endif
 
     glViewport(0, 0, width, height);
 	
@@ -48,8 +56,17 @@ inline void focusCallback(GLFWwindow*, int focused)
 	if (focused) Globals::Mouse::firstMouse = true;
 }
 
+inline void scrollCallback(GLFWwindow*, double, double yoffset)
+{
+#ifdef EDITOR
+	editor.onScroll(static_cast<float>(yoffset));
+#endif
+}
+
 inline void mouseCallback(GLFWwindow* window, double xpos, double ypos) {
-	if (Globals::Mouse::cursorFree) return;
+#ifdef EDITOR
+	if (editor.cursorFree) return;
+#endif
     if (Globals::Mouse::firstMouse) {
 		Globals::Mouse::lastX = xpos;
 		Globals::Mouse::lastY = ypos;
@@ -62,9 +79,17 @@ inline void mouseCallback(GLFWwindow* window, double xpos, double ypos) {
 	Globals::Mouse::lastX = xpos;
 	Globals::Mouse::lastY = ypos;
 
-	if (!Globals::Game::cameras.empty()) // Player camera exists
+	/* While the editor is active the mouse turns its camera, not the gameplay one. */
+#ifdef EDITOR
+	if (editor.active)
 	{
-    	Globals::Game::cameras[0].processMouse(xoffset, yoffset);
+		if (editor.initialized) editor.onMouse(xoffset, yoffset);
+		return;
+	}
+#endif
+	if (Globals::Game::mainCamera != UninitializedPoolId) // Main camera exists
+	{
+    	Globals::Game::cameras[Globals::Game::mainCamera].processMouse(xoffset, yoffset);
 	}
 }
 
@@ -83,7 +108,9 @@ inline GLFWwindow* createWindow(const uint32_t width, const uint32_t height) {
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
 
     glfwWindowHint(GLFW_VISIBLE, GLFW_TRUE);
+#ifdef EDITOR
     glfwWindowHint(GLFW_OPENGL_DEBUG_CONTEXT, GLFW_TRUE);
+#endif
 
     GLFWwindow* window = glfwCreateWindow(
         static_cast<int>(width),
@@ -104,6 +131,7 @@ inline GLFWwindow* createWindow(const uint32_t width, const uint32_t height) {
 	glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
 
 	glfwSetCursorPosCallback(window, mouseCallback);
+	glfwSetScrollCallback(window, scrollCallback);
 	glfwSetWindowFocusCallback(window, focusCallback);
 	glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);	
 

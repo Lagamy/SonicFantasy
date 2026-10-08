@@ -12,11 +12,13 @@ namespace Graphics
 /*
 textureName is the base texture's name in its texture dictionary, empty if the material is untextured.
 A ONEInstance resolves it into a Texture pool id when it is created.
+uvAnimName is the name of the material's UV animation in the model's .UVA, empty if it has none (not used by drawing yet).
 */
 struct RenderWareSubmesh
 {
 	BasicMesh mesh;
 	std::string textureName;
+	std::string uvAnimName;
 };
 
 /*

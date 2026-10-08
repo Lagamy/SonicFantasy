@@ -17,9 +17,11 @@ void addShadowShape(PoolId shadowId_);
 /* Gives Sonic a hand-made body sphere (see DebugSetup.cpp). */
 void addSonicShape(PoolId sonicId_);
 
+#ifdef EDITOR
 /*
 Reads a Shadow stage's placement file from the disc (e.g. "stg0100/stg0100_nrm.dat") and adds a marker for each of its objects to the collision view
 (C key), colored by the object's type, at the position the level draws it at (see DebugSetup.cpp). levelPosition_ is the position of the level.
 */
 void addShadowPlacementMarkers(const char* path_, const glm::vec3& rLevelPosition_);
+#endif
 }

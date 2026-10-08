@@ -11,8 +11,11 @@ Token-saving versions of the long human docs, in dense shorthand. The human doc 
 | ground speed, turning, skid, slopes, drift | + `STH2005_GROUND.md` | same |
 | ground resolve, collision sweep, probe/snap, fence kick | + `STH2005_COLLISION.md` | same |
 | jump, jumpdash, landing, drawn model, animation | + `STH2005_AIR_ANIM.md` | same |
+| the original SADX Sonic (task/struct layout, input, time, `sadxLiveLog.py`) | `SADX_SONIC.md` | `docs/SADX_SONIC_REFERENCE.md` |
+| using the engine: loading a level, level JSON, adding a level or a game, the Lua `sf` entry points | `ENGINE_USAGE.md` | `docs/ENGINE_USAGE.md` |
 | replay recording / comparison | `REPLAY.md` | `docs/REPLAY_COMPARISON.md` |
 | running a tool | skill `project-tools` | `docs/TOOLS.md` |
+| deciding what is left / parked as polish | `POLISH.md` | `docs/POLISH_NOTES.md` |
 
 Rules:
 - A task that changes a human doc updates the matching twin file in the same task. Twins keep current truth only; a superseded claim stays as a one-line `~~...~~` pointer at most; history lives in the human doc. A new fact goes in the topic file it belongs to, not in the core file.

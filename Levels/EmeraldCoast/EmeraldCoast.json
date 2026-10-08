@@ -1,0 +1,23 @@
+{
+  "engine": "sadx",
+  "shader": "SA",
+  "position": [
+    0,
+    0,
+    0
+  ],
+  "landTable": {
+    "rel": "_Stg01.rel",
+    "offset": "0x1B8D68"
+  },
+  "textures": "BEACH01.GVM",
+  "skippedTextures": [
+    "m8_shadows"
+  ],
+  "placementFiles": [
+    "Set0100S.bin"
+  ],
+  "entityTable": "SAEntityTable_EmeraldCoast",
+  "typeNames": "SAObjectTypeNames_EmeraldCoast",
+  "stageEntities": "EmeraldCoastStageEntities"
+}

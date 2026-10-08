@@ -151,6 +151,24 @@ bool ONEInstance::boneInfo(const std::string& rName_, float (&rOut_)[12]) const
 	return false;
 }
 
+bool ONEInstance::frameMatrix(const std::string& rName_, glm::mat4& rOut_) const
+{
+	const RenderWareMesh& rMesh = oneArchives[this->archiveId].meshes[this->meshIndex];
+	bool posed = this->framePose.size() == rMesh.frames.size();
+	for(size_t f = 0; f < rMesh.frames.size(); f++)
+	{
+		if(rMesh.frames[f].name != rName_) continue;
+		glm::mat4 world = posed ? this->framePose[f] : rMesh.frames[f].localTransform;
+		for(int32_t parent = rMesh.frames[f].parent; parent >= 0; parent = rMesh.frames[parent].parent)
+		{
+			world = (posed ? this->framePose[parent] : rMesh.frames[parent].localTransform) * world;
+		}
+		rOut_ = world;
+		return true;
+	}
+	return false;
+}
+
 /*
 The vertices of every atomic carried by the frames' world matrices (a skinned vertex by its weights over world[skin bone frame] * inverse bind matrix, like the shader), the lowest y of them: with the pose built last, and with every frame at its rest transform.
 */
@@ -398,7 +416,7 @@ void ONEInstance::buildPose()
 Binds the instance's shader, uploads the mesh if needed and draws every atomic, mirroring SAInstance::draw.
 Each frame's world matrix is its parent's world matrix times its local matrix, rBase_ being the parent of roots.
 The local matrix is framePose[i] when the instance has a pose, otherwise the rest localTransform.
-A textured submesh has its texture bound to unit 0 (the shader's baseTexture) and hasTexture set.
+A textured submesh has its texture bound to unit 0 (the shader's baseTexture) and hasTexture set; with pOverrideTexture every textured submesh takes that one.
 A skinned atomic sets skinned and uploads world[skin bone frame] * inverse bind matrix per skin bone to the shared bone
 buffer (Renderer::boneBuffer, binding 1); its vertices are placed by those alone. Others use model = world[frame].
 */
@@ -453,8 +471,9 @@ void ONEInstance::draw(const glm::mat4& rBase_)
 			bool hasTexture = textureId != UninitializedPoolId;
 			if(hasTexture)
 			{
-				renderStats.texture(textures[textureId].textureId);
-				glBindTextureUnit(0, textures[textureId].textureId);
+				GLuint glTexture = this->pOverrideTexture ? this->pOverrideTexture->textureId : textures[textureId].textureId;
+				renderStats.texture(glTexture);
+				glBindTextureUnit(0, glTexture);
 			}
 			glUniform1i(HasTextureLocation, hasTexture);
 			rSubmesh.mesh.draw();

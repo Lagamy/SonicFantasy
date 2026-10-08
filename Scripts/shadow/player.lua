@@ -17,6 +17,10 @@ local JUMP_SPEED = 100                     -- external (Jump, table 0x804b0558)
 local JUMP_HOLD_ACCEL = 270                -- external (same table): along the jump direction while held
 local JUMP_HOLD_TIME = 0.75                -- external (DAT_805f2794)
 local DASH_SPEED = 180                      -- external (FUN_800882a4, DAT_805f27a8), observed: added once along the facing
+-- observed (live_jumpdash_all 7.5603 s, live_uphill_jump; 2 jumps): the Jump behavior, and its animation, ends 2 ticks after the vertical speed first drops to 0 or below, not on that tick. Counted in ticks.
+local JUMP_FALL_DELAY = 2
+-- observed (live Landing entries, docs/ai/REPLAY.md: Fall lasts 14 to 26 ticks after a Jump, 1 to 4 after a JumpDash) and by the user (a plain jump's landing started for 2 frames with its effect when it should not): the airborne Landing cannot start in a jump (no dash) until this many ticks after the vertical speed first dropped to 0 or below.
+local JUMP_LANDING_MIN_TICKS = JUMP_FALL_DELAY + 14
 local DASH_UPDATES = 25                     -- observed (live_jumpdash_holdstick2, 5 dashes): the push is in the acceleration of 25 updates, the entry one and 24 more (external DAT_805f27a0 = 0.4 s = 24 ticks); counted in ticks, a float 0.4 s ended it after 23 or 24. Then the Fall state
 local DASH_PUSH_TIME = 2.0                  -- external (DAT_805f27a4): the push's countdown (outlasts the dash)
 local DASH_PUSH_ACCEL = 430                 -- external (DAT_805f27b0), observed: every tick of the dash along the facing
@@ -32,16 +36,22 @@ local TURN_FAST_FROM = 150                 -- external (FUN_800838f4, DAT_805f26
 local AIR_TURN = 15                        -- external (Fall)
 local JUMP_TURN = 6.5                      -- external (Jump, DAT_805f2788)
 local IDLE_SPEED = 1                     -- placeholder, see the animation block
-local HOLD_PLANAR_SPEED = 150              -- hypothesis: round value in the observed (105.9, 153]; REF section 20
+local SLOPE_NORMAL_Y = 0.95               -- a ground whose normal's height is under this counts as a slope for the animation (the recorded slope is 0.866)
+local SLOPE_WALK_SPEED = 12.5               -- the speed the Ground animation is held to on a slope with no stick until he stops: rate 1, the walk (no idle pair in between)
+local ANIM_IDLE_SPEED = 0.2                -- observed: the original goes Ground to Idle with no stick when the planar speed falls under about 0.2 (27 transitions in the recordings: planar after 0.145 to 0.199, before 0.156 to 0.278)
+local HOLD_PLANAR_SPEED = 110              -- hypothesis: round value in the observed (105.9, 119.8] (live_fence_headon 1.80 s held at 119.8; was 150 in (105.9, 153]); REF section 20
 local SKID_MIN_PLANAR = 200                -- hypothesis: round value in the observed (151.8, 221.65]; REF "Skid at planar 221.65"
 local SKID_COSINE = 0                      -- hypothesis: 90 degrees, observed range (44, 93]
 local SKID_END_PLANAR = 0.2                -- observed (live_flick): threshold or first speed below it, unknown
 local LANDING_FACTOR = 0.7166               -- observed (16 landings): probably the ground drag e^(-1/3); REF "Landing tick"
-local LANDING_GAP = 9.7                      -- fitted, spread 7.1-11.4: Landing starts when the gap below is at most this; the original probes a fixed distance (decompile), not a time. REF "Landing trigger decoded"
+local DASH_END_LANDING_GAP_PER_SPEED = 0.25
+local DASH_END_LANDING_TICKS = 8
+local LANDING_GAP_PER_SPEED = 0.118          -- fitted (27 landings, 18 fit; fixed 9.7 fit 10): Landing starts when the gap below is at most this times the fall speed. REF "Landing trigger vs the recordings"
 local LANDING_PROBE = 40                    -- placeholder: longest gap the Landing test looks down for
 local GROUND_GRAVITY_FAST = 250             -- observed (live_slopes 1.52 to 1.58 s): 3D speed from which gravity stops pulling along the surface
 local UPHILL_TARGET_SHIFT = math.rad(7.6)        -- observed fit (live_slopes 7.0 to 8.4 s): turn target offset per unit sin(tilt) on fast uphill rows
-local SLIDE_MAX_NORMAL_Y = 0.9              -- hypothesis: with no stick the slope pull acts only this steep or steeper (observed at 0.866)
+local SLIDE_MAX_NORMAL_Y = 0.87             -- hypothesis: with no stick the slope pull acts only this steep or steeper; observed: slides on at 0.866 with speed 17 (live_jumpdash), stands still at 0.872 from rest (live_jumpdash_all 16.35 s, 190 rows)
+local JUMP_BALL_DELAY_TICKS = 15           -- ball A starts this many ticks into the jump motion (live measurement: 14 and 15)
 local BRAKE_SPEED = 150                  -- placeholder: Brake motion from this speed with the stick pointing back
 local GROUND_SNAP = 1                      -- only switches the ground probe on (the engine knows its length, see attachShadowPlayer); it acts only when he was on the ground the tick before (the game's player flag 2), and is off after a jump
 local SNAP_MEMORY_TICKS = 2              -- placeholder: ticks after the last ground contact the probe still acts (the contact flickers)
@@ -218,7 +228,7 @@ sf.behavior("ShadowPlayer", function(entity)
 	if not hasStick then state.turnRate, state.turnSpeed = nil, nil end
 
 	local acceleration = 0
-	local animSpeed
+	local animSpeed, animVx, animVz
 	local k = GROUND_DRAG
 	local startJump = grounded and justPressed
 	if startJump then
@@ -227,11 +237,12 @@ sf.behavior("ShadowPlayer", function(entity)
 		if nx * nx + ny * ny + nz * nz < 0.0001 then nx, ny, nz = 0, 1, 0 end
 		local along = vx * nx + vy * ny + vz * nz
 		vx, vy, vz = vx + (JUMP_SPEED - along) * nx, vy + (JUMP_SPEED - along) * ny, vz + (JUMP_SPEED - along) * nz
-		state.jumped, state.holdTime, state.jumpGrace, state.jumpPlanar = true, JUMP_HOLD_TIME, JUMP_GRACE_TICKS, planarBefore
+		state.jumped, state.holdTime, state.jumpGrace, state.jumpPlanar, state.jumpCutShort = true, JUMP_HOLD_TIME, JUMP_GRACE_TICKS, planarBefore, false
 		state.jumpDirX, state.jumpDirY, state.jumpDirZ = nx, ny, nz
 		state.dashed, state.dashTime = false, nil
 		-- The airborne Landing state ends with the jump (observed in the port, live_jumpdash_holdstick 2.4 s).
 		state.airLanding = false
+		state.firstGrowthAfterLanding = false
 		state.speed = MIN_SPEED
 	elseif grounded then
 		-- The speed word (external, FUN_800831d8, FUN_80082c48): target MIN_SPEED + share x range, share from COSINE_START (only from FAST_SPEED); grows by cosine^8 x dt x ACCEL_SHARE x range.
@@ -266,6 +277,7 @@ sf.behavior("ShadowPlayer", function(entity)
 			acceleration = 0
 		elseif landed and hasStick then
 			acceleration = 0
+			state.firstGrowthAfterLanding = true
 		elseif hasStick and not state.hadStick and planarBefore < IDLE_SPEED then
 			-- The tick the stick starts him from rest accelerates nothing (observed, 9 Idle to Ground transitions in 8 recordings: the first Ground row has planar speed 0 to 0.1, the next one the full step with that tick's pad;
 			-- hypothesis: Idle takes the stick and switches to Ground). The word stays. REF "Start from rest".
@@ -289,10 +301,13 @@ sf.behavior("ShadowPlayer", function(entity)
 			if mag < STICK_FULL then state.speed = math.max(state.speed * STICK_DECAY, MIN_SPEED)
 			else
 				-- A target below the word leaves it unchanged from HOLD_PLANAR_SPEED on, else drops to it (observed, live_turn, live_flick, live_flick2, live_snap).
+				-- Not on the first growth row after a landing: the original dropped the word to 1000 there at planar 155 and 188 (observed, live_jumpdash_stick 2.41 s and 7.18 s, the only drops at 150 or more
+				-- in all recordings; hypothesis: the hold does not apply there, two samples). REF "Landing tick".
 				local newSpeed = math.min(grown, target)
-				if newSpeed < state.speed and math.sqrt(vx * vx + vz * vz) >= HOLD_PLANAR_SPEED then newSpeed = state.speed end
+				if newSpeed < state.speed and math.sqrt(vx * vx + vz * vz) >= HOLD_PLANAR_SPEED and not state.firstGrowthAfterLanding then newSpeed = state.speed end
 				state.speed = newSpeed
 			end
+			state.firstGrowthAfterLanding = false
 			acceleration = math.min(state.speed, MAX_SPEED) * mag
 		else
 			-- No stick: the word is the line at the speed after this update's drag (observed, live_skid release 2.53 s).
@@ -368,15 +383,11 @@ sf.behavior("ShadowPlayer", function(entity)
 			local into = vx * nx + vy * ny + vz * nz
 			if into < 0 then vx, vy, vz = vx - into * nx, vy - into * ny, vz - into * nz end
 		end
-		-- Uphill the step's result is turned into the ground plane, its length kept (observed, live_slopes 5.753 s, within 0.05). REF "Uphill: the step is turned into the ground plane".
+		-- Uphill the part of the step's result into the ground plane is only dropped (plain projection; observed, live_slopes 5.579 to 5.596 s: at the plane change the original's 3D speed falls by 0.9781 = the cosine between the two planes 0.9720
+		-- x the tick's growth 1.0063, and 5.862 s: 1.0048 = 0.9993 x 1.0055; observed, live_uphill_walk: plain projection gives the original's plateau, the length-kept turn gave planar 27 against 19.4). REF "Uphill: the step is turned into the ground plane".
 		if ny > 1e-3 and not landingCarry and nx * vx + nz * vz < 0 then
 			local into = vx * nx + vy * ny + vz * nz
-			if into < 0 then
-				local length = math.sqrt(vx * vx + vy * vy + vz * vz)
-				local px, py, pz = vx - into * nx, vy - into * ny, vz - into * nz
-				local inPlane = math.sqrt(px * px + py * py + pz * pz)
-				if inPlane > 1e-6 then vx, vy, vz = px * length / inPlane, py * length / inPlane, pz * length / inPlane end
-			end
+			if into < 0 then vx, vy, vz = vx - into * nx, vy - into * ny, vz - into * nz end
 		end
 		-- Downhill the velocity follows the surface (hypothesis, not decoded).
 		if ny > 1e-3 and not landingCarry then
@@ -385,19 +396,23 @@ sf.behavior("ShadowPlayer", function(entity)
 		end
 		-- The animation's speed: the velocity before the press (the original's stored velocity has no part into the ground; observed in the animation log).
 		animSpeed = math.sqrt(vx * vx + vy * vy + vz * vz)
+		animVx, animVz = vx, vz
 		state.logOut = animSpeed
 		state.lastOut = animSpeed
 		-- The ground press (GROUND_GRAVITY): keeps him on the ground, the engine cancels it on a walkable floor. Along the normal from GROUND_GRAVITY_FAST on (observed, live_slopes), else straight down.
+		-- With no stick on ground gentler than SLIDE_MAX_NORMAL_Y the press also goes along the normal (observed, live_jumpdash_all 16.4 s: the original stands still on ny 0.872; the straight-down press made the port creep about 5 units a second; hypothesis for the cause).
 		-- When the slope pull applied, only the press's part along the normal is added: its in-plane part is the pull, already counted
 		-- (hypothesis, port arithmetic; the original has one gravity and projects onto the plane, external FUN_800a7700, FUN_800986f0). REF "Ground gravity acts along the surface".
 		local press = GROUND_GRAVITY * clamp / k * (1 - ex)
+		-- Standing still (no stick, no slope pull, no horizontal velocity) he gets no press: it only left a stored velocity of (5.6, -9.9) when a wall blocked the engine's cancel (observed, live_jumpdash_all 16.4 s; hypothesis, untested: the ground probe holds him on the floor without it).
 		state.lastPressNormal = 0
-		if aboveGround then state.lastPressNormal = 0
-		elseif speed >= GROUND_GRAVITY_FAST and ny > 1e-3 then vx, vy, vz = vx + press * nx, vy + press * ny, vz + press * nz; state.lastPressNormal = press
+		if aboveGround or (not slopePull and vx * vx + vz * vz < 0.01) then state.lastPressNormal = 0
+		elseif (speed >= GROUND_GRAVITY_FAST or not slopePull) and ny > 1e-3 then vx, vy, vz = vx + press * nx, vy + press * ny, vz + press * nz; state.lastPressNormal = press
 		elseif speed < GROUND_GRAVITY_FAST and ny > 1e-3 and slopePull then vx, vy, vz = vx + press * ny * nx, vy + press * ny * ny, vz + press * ny * nz; state.lastPressNormal = press * ny
 		else vy = vy + press end
 		state.jumped, state.holdTime = false, 0
 		state.dashed, state.dashTime = false, nil
+		sf.setDashTrail(entity, false)
 		state.airLanding = false
 	else
 		-- In the air (external, Fall, Jump, FUN_80093728): AIR_ACCEL along the stick, drags AIR_DRAG_SIDE / AIR_DRAG_UP; JUMP_HOLD_ACCEL along the jump direction while the button is held, at most
@@ -410,6 +425,7 @@ sf.behavior("ShadowPlayer", function(entity)
 		if justPressed and state.jumped and not state.dashed and state.dashTime == nil then
 			state.dashTime, state.dashPush, state.dashed, state.holdTime = DASH_UPDATES, DASH_PUSH_TIME, true, 0
 			vx, vz = vx + DASH_SPEED * math.cos(headingBefore), vz + DASH_SPEED * math.sin(headingBefore)
+			sf.setDashTrail(entity, true)
 		end
 		if state.dashTime ~= nil then
 			state.dashPush = state.dashPush - dt
@@ -417,20 +433,25 @@ sf.behavior("ShadowPlayer", function(entity)
 				ax, az = ax + DASH_PUSH_ACCEL * math.cos(headingBefore), az + DASH_PUSH_ACCEL * math.sin(headingBefore)
 			end
 			state.dashTime = state.dashTime - 1
-			if state.dashTime <= 0 then state.dashTime, state.jumped = nil, false end
+			if state.dashTime <= 0 then state.dashTime, state.jumped = nil, false; sf.setDashTrail(entity, false) end
 		elseif state.jumped and (state.holdTime or 0) > 0 and pressed then
 			ax, az, up = ax + JUMP_HOLD_ACCEL * (state.jumpDirX or 0), az + JUMP_HOLD_ACCEL * (state.jumpDirZ or 0), up + JUMP_HOLD_ACCEL * (state.jumpDirY or 1)
 			state.holdTime = state.holdTime - dt
 		elseif state.jumped then
+			if (state.holdTime or 0) > 0 then state.jumpCutShort = true end
 			state.holdTime = 0
 		end
-		-- The airborne Landing state (observed, 15 landings): falling, 5 to 11 frames before touchdown, then only AIR_GRAVITY acts. Tested on the last tick's state; trigger: a fixed gap (LANDING_GAP, fitted;
+		-- A jumpdash that ends close to the ground goes straight to the Landing animation, with no Fall pose or Fall ball (observed by the user, original; in the port the Fall showed for 1 to 5 ticks first). Within DASH_END_LANDING_TICKS of the dash's end the Landing starts from a wider gap (DASH_END_LANDING_GAP_PER_SPEED is a guess to be tuned by what the user sees; the old recordings had a 1 to 4 tick Fall after a dash, which conflicts).
+		-- The airborne Landing state (observed, 15 landings): falling, 5 to 11 frames before touchdown, then only AIR_GRAVITY acts. Tested on the last tick's state; trigger: the gap at most LANDING_GAP_PER_SPEED x fall speed (fitted;
 		-- gap from sf.groundGap). REF "The airborne Landing state".
 		-- The row that enters the state still has the stick acceleration (observed, live_jumpdash_holdstick2: 217 to 219 on its first Landing rows, zero from the next), so only a state set on an earlier tick zeroes it.
+		state.postDashTicks = state.dashed and state.dashTime == nil and (state.postDashTicks or 0) + 1 or 0
 		local wasAirLanding = state.airLanding
-		if not state.airLanding and state.dashTime == nil and vy < 0 then
+		if not state.airLanding and state.dashTime == nil and vy < 0 and not (state.jumped and not state.dashed and (state.jumpFallTicks or 0) < JUMP_LANDING_MIN_TICKS) then
 			local gap = sf.groundGap(entity, LANDING_PROBE)
-			if gap ~= nil and gap <= LANDING_GAP then state.airLanding = true end
+			local gapPerSpeed = LANDING_GAP_PER_SPEED
+			if state.dashed and (state.postDashTicks or 0) < DASH_END_LANDING_TICKS then gapPerSpeed = DASH_END_LANDING_GAP_PER_SPEED end
+			if gap ~= nil and gap <= gapPerSpeed * -vy then state.airLanding = true end
 		end
 		if wasAirLanding then ax, az, up = 0, 0, AIR_GRAVITY end
 		local ex = math.exp(-AIR_DRAG_SIDE * dt)
@@ -439,34 +460,58 @@ sf.behavior("ShadowPlayer", function(entity)
 		vy = up / AIR_DRAG_UP + (vy - up / AIR_DRAG_UP) * math.exp(-AIR_DRAG_UP * dt)
 	end
 
-	-- Animation state (see animation.lua): air = jump while rising after a jump, else fall; ground = landing (until its motion ends), idle (below IDLE_SPEED, placeholder), brake (placeholder rule)
+	-- Animation state (see animation.lua): air = jump while rising after a jump, else fall; ground = landing (until its motion ends), idle (no stick and below ANIM_IDLE_SPEED), brake (placeholder rule)
 	-- or the ground blend. The contact is debounced so a flicker does not change the state.
 	if grounded then
+		if (state.airTicks or 0) > 0 then state.lastAirTicks = state.airTicks end
 		state.groundTicks, state.airTicks = (state.groundTicks or 0) + 1, 0
 	else
 		state.groundTicks, state.airTicks = 0, (state.airTicks or 0) + 1
 	end
 	if state.animGrounded == nil then state.animGrounded = true end
 	if state.animGrounded and state.airTicks >= AIR_ANIMATION_TICKS then state.animGrounded = false
-	elseif not state.animGrounded and state.groundTicks >= LAND_ANIMATION_TICKS then state.animGrounded = true end
+	-- After an air spell as long as the air motions' own debounce the touch is no flicker, so the ground motions start at once; the debounce stays for short contact losses. Without it the fall motion played for LAND_ANIMATION_TICKS ticks after the touch (observed by the user: a 2 frame fall with its effect after a jump, JUMP_FALL_DELAY changes did nothing).
+	elseif not state.animGrounded and state.groundTicks >= ((state.lastAirTicks or 0) >= AIR_ANIMATION_TICKS and 1 or LAND_ANIMATION_TICKS) then state.animGrounded = true end
 	if state.jumped and not grounded then state.animGrounded = false end
 	local planar = math.sqrt(vx * vx + vz * vz)
-	if state.wasAnimGrounded == false and state.animGrounded then state.landing = true end
+	-- The idle test and the reverse test use the planar velocity before the ground press: on a slope the press leaves a planar part (5.4 at rest on the 0.872 slope, live_uphill_stop port run 3.9 to 4.1 s, position still) that kept the walk playing at a standstill and flipped it with idle.
+	local animPlanar = animVx ~= nil and math.sqrt(animVx * animVx + animVz * animVz) or planar
+	-- A cut-short jump ends with no Landing animation at all (observed by the user: the port played it for 2 frames with its effect and the original does not; JUMP_FALL_DELAY 20 did not change it, so it is this touch and not the airborne Landing).
+	if state.wasAnimGrounded == false and state.animGrounded then state.landing = not state.jumpCutShort; state.jumpCutShort = false end
 	-- Hypothesis: a pushed stick ends the landing motion, so he runs on at once.
 	if state.landing and hasStick then state.landing = false end
 	state.wasAnimGrounded = state.animGrounded
 	local motion
 	if state.animGrounded then
+		state.jumpFallTicks = 0
 		if state.landing then motion = "landing"
 		elseif state.skid then motion = "brake"
 		elseif hasStick and cosine < -0.5 and planar >= BRAKE_SPEED then motion = "brake"
-		elseif not hasStick and planar < IDLE_SPEED then motion = "idle"
+		elseif not hasStick and animPlanar < ANIM_IDLE_SPEED then motion = "idle"
 		else motion = "ground" end
 	else
 		state.landing = false
-		motion = state.dashTime ~= nil and "dash" or (state.jumped and vy > 0 and "jump" or "fall")
+		state.jumpFallTicks = vy > 0 and 0 or (state.jumpFallTicks or 0) + 1
+		-- The Landing animation starts with the airborne Landing state, not at the touch (observed in live_jumpdash_all: the original's anim index changes to Landing 5 to 11 frames before touchdown, the port showed the Fall pose until the contact).
+		-- A cut-short jump has no airborne Landing animation (observed by the user: it started briefly in the port and should not start at all; the jump motion is kept to the touch).
+		-- A jump whose button was released before the hold time ran out never goes to the Fall animation: it stays the jump until the landing (observed by the user, original; decompile FUN_800871d8, hypothesis: Jump's state 2 goes to state 3 only when the hold timer +0x2c runs out, and only state 3 and 4 lead to Fall, so a release leaves it in state 2 until the ground).
+		motion = state.airLanding and not (state.jumped and state.jumpCutShort) and "landing" or state.dashTime ~= nil and "dash" or (state.jumped and (state.jumpCutShort or state.jumpFallTicks <= JUMP_FALL_DELAY) and "jump" or "fall")
 	end
-	if ShadowAnimation.update(entity, state, motion, {speed = animSpeed or math.sqrt(vx * vx + vy * vy + vz * vz), jumpPlanar = state.jumpPlanar or 0}) then state.landing = false end
+	-- The effect balls (REF "Jump_ballA / Jump_ballB decoded"): ball A while the jump motion plays (decompile: from Jump's update to its leave; the condition FUN_800a9e1c it also needs is not decoded), the dash's ball B while the dash lasts (hypothesis: it ends with the dash ribbon), the Fall's ball B in the fall after a dash (the user's observation: the fall effect only appears after a jumpdash; the decompile says a Fall entered from Jump also spawns it, unresolved).
+	-- Live measurement (tools/shadowEffectLog.py, two recordings): ball A is created 14 to 15 ticks after the Jump behavior begins, not at takeoff; both balls fade out over 8 ticks after the stop (EffectBalls).
+	state.jumpMotionTicks = motion == "jump" and (state.jumpMotionTicks or 0) + 1 or 0
+	sf.setEffectBall(entity, "jumpA", motion == "jump" and state.jumpMotionTicks > JUMP_BALL_DELAY_TICKS - 1)
+	sf.setEffectBall(entity, "dashB", motion == "dash")
+	sf.setEffectBall(entity, "fallB", motion == "fall" and state.dashed)
+	-- The walking motions play in reverse while he moves against the model's facing (the user saw the original do it with a negative speed; which signed speed it is is a hypothesis: the planar velocity along the facing of the last tick, with a deadband of IDLE_SPEED).
+	local reverse = false
+	if state.faceHeading ~= nil then reverse = (animVx or vx) * math.cos(state.faceHeading) + (animVz or vz) * math.sin(state.faceHeading) < -IDLE_SPEED end
+	state.animReverse = reverse
+	-- MADE UP BY THE USER, kept on purpose (decided 2026-10-07): not the original's behavior (the recording swaps to the idle pair in about 2 frames there): on a slope with no stick the Ground animation never drops under the walk until he stops, so the release before the slide back shows no swap to idle.
+	local ratedSpeed = animSpeed or math.sqrt(vx * vx + vy * vy + vz * vz)
+	local _, slopeNy = sf.groundNormal(entity)
+	if motion == "ground" and not hasStick and grounded and slopeNy < SLOPE_NORMAL_Y then ratedSpeed = math.max(ratedSpeed, SLOPE_WALK_SPEED) end
+	if ShadowAnimation.update(entity, state, motion, {speed = ratedSpeed, jumpPlanar = state.jumpPlanar or 0, reverse = reverse}) then state.landing = false end
 	local faceHeading = heading
 	if planar >= FACE_FOLLOW_SPEED then faceHeading = math.atan(vz, vx) end
 	state.faceHeading = state.faceHeading or faceHeading
@@ -488,13 +533,17 @@ sf.behavior("ShadowPlayer", function(entity)
 	state.hadStick = hasStick
 	state.lastVx, state.lastVy, state.lastVz = vx, vy, vz
 	sf.setVelocity(entity, vx, vy, vz)
-	ShadowReplay.log(entity, motion)
+	ShadowReplay.log(entity, motion, wx, wz, pressed, fx, fz)
 end)
 
 -- Called by main.lua's attachPlayer for the Shadow entity.
-function attachShadowPlayer(entity)
-	local state = sf.state(entity)
+-- The player's state table as it starts (also after the engine's reset: resetPlayers, main.lua).
+function initShadowState(state)
 	state.speed = MIN_SPEED
+end
+
+function attachShadowPlayer(entity)
+	initShadowState(sf.state(entity))
 	sf.give(entity, "ShadowPlayer")
 	sf.setWeight(entity, 0)
 	-- His ground snap is the game's probe (PhysicsBody::snapByRay): a ray along minus the last floor's normal from his center, 2.37 times his sphere radius (5.0 in the live record) plus the frame's move long, accepting a surface within 80 degrees of that normal. blockedByWall (hypothesis, the fence kick of live_slopes): a wall stopping that snap move before a floor leaves him not grounded, so the air branch (Fall) runs.

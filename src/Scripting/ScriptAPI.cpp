@@ -4,10 +4,13 @@
 #include "Globals.h"
 #include "BABehaviors.h"
 #include "ResourceKeys.h"
+#include "LevelLoader.h"
 #include "EntityBehavior.h"
 #include "GPU_Globals.h"
 #include "GPU_API.h"
 #include "ONEInstance.h"
+#include "DebugSetup.h"
+#include "Editor.h"
 #include "lua.h"
 #include "lauxlib.h"
 #include <GLFW/glfw3.h>
@@ -17,16 +20,18 @@
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 /*
 The global table `sf`: what a script can ask of the engine. Every function is a thin wrapper over the engine's own API (API.h and the pools), written to stay simple; each one that takes an entity fails with a Lua
 error if the handle is of an entity that is gone. Vectors are three numbers (x, y, z) both ways. Angles are in BAMS (65536 = a turn) where the games use them. The list, grouped:
 - time and game: tickRate(), tickTime(), rings(), setRings(n), debugMode(), key(name), cameraForward(), followCamera(e)
 - animation: animate(e, name [, framesPerGameFrame]) (Sonic's motions by name: stand, walk, speedwalk, jog, run, sprint, brake, turnAround, springFall, fall, landing, damage, jump (curled model), ball (jumpball model); for a Shadow entity: stand, walk, run, jump, jumpB (play once), jumpC, fall, brake, damage, skate, highSkate; it loops), pose(e, {{name, frame, weight}, ...}), setAnimationScaleMode(n), setAnimationEulerOrder(n), motionRange(e, name) and bone(e, name) (a Shadow entity's mixed pose, see below), lowestPoint(e) (the lowest y of a Shadow entity's vertices, posed and at rest), blink(e, name | false) (draws that animation in place of the animate one while it is on; the animate one keeps its own clock)
-- entities: exists(e), name(e), position(e), setPosition(e, x, y, z), moveTo(e, x, y, z), turnY(e, radians), orient(e, yaw, nx, ny, nz), destroy(e), state(e), axis(e, x, y, z), setUncullable(e, bool), postEvent(name, e [, x, y, z])
+- entities: exists(e), name(e), position(e), setPosition(e, x, y, z), moveTo(e, x, y, z), turnY(e, radians), orient(e, yaw, nx, ny, nz), destroy(e), state(e), axis(e, x, y, z), setUncullable(e, bool), postEvent(name, e [, x, y, z]), setDashTrail(e, bool) (the jump dash ribbon, Graphics::DashTrail), setEffectBall(e, kind, bool) (Shadow's effect balls, Graphics::EffectBalls; kind "jumpA", "dashB" or "fallB")
 - bodies (an entity with a physics): hasBody(e), velocity(e), setVelocity(e, x, y, z), setGroundSnap(e, distance), setGroundSnapMode(e, {ray, radius, minNormalY, blockedByWall}), setMeanVelocityMove(e, on), setWeight(e, w), grounded(e), groundNormal(e), groundSurface(e), groundGap(e, maxGap), touchingWall(e), wallNormal(e)
-- behaviours: behavior(name, fn), give(e, name)
+- behaviours: behavior(name, fn), give(e, name), prefabBehavior(prefabName, fn) (fn(entity, placement) is called for every entity made from that prefab, prefabName like "SADX/SPRING"; placement is the SET record {type, rotation, position, scale} or nil)
 - collision: tag(name), collisionBehavior(name, {tags, collidesWith, interactions}), setShapeBehavior(e, behavior)
+- setup: loadLevel(name) (the name of a Levels/<name>/ folder: "EmeraldCoast", "Stg0100", "Stg0000"; returns the level), unloadLevel(level) (done at the start of the next tick), levelExists(level), spawnPlayer(character, x, y, z) ("sonic", "shadow"; returns the entity, which the script then attaches), setCamera(x, y, z)
 - scripts: include(path), rotateBamsZXY(x, y, z, az, ax, ay), none
 */
 namespace Scripting
@@ -102,7 +107,7 @@ static int setRings(lua_State* pLua_)
 
 static int debugMode(lua_State* pLua_)
 {
-	lua_pushboolean(pLua_, Globals::App::debugMode);
+	lua_pushboolean(pLua_, editorActive());
 	return 1;
 }
 
@@ -286,7 +291,7 @@ static int blink(lua_State* pLua_)
 
 static int cameraForward(lua_State* pLua_)
 {
-	return pushVector(pLua_, Globals::Game::cameras[0].front);
+	return pushVector(pLua_, getMainCamera().front);
 }
 
 /* followCamera(e): the entity the camera follows outside the debug mode (the active player). */
@@ -398,6 +403,26 @@ static int postEvent(lua_State* pLua_)
 	return 0;
 }
 
+/* Starts (on) or lets go of (off, it then fades out) the entity's dash ribbon (Graphics::DashTrail); on again while it has one attached does nothing. */
+static int setDashTrail(lua_State* pLua_)
+{
+	Graphics::dashTrail.setActive(checkEntity(pLua_, 1), lua_toboolean(pLua_, 2) != 0);
+	return 0;
+}
+
+/* Starts (on) or ends (off) one of the entity's effect balls (Graphics::EffectBalls): kind is "jumpA", "dashB" or "fallB"; on again while it has that one does nothing. */
+static int setEffectBall(lua_State* pLua_)
+{
+	std::string kind = luaL_checkstring(pLua_, 2);
+	Graphics::EffectBalls::Kind ball;
+	if(kind == "jumpA") ball = Graphics::EffectBalls::JumpBallA;
+	else if(kind == "dashB") ball = Graphics::EffectBalls::DashBallB;
+	else if(kind == "fallB") ball = Graphics::EffectBalls::FallBallB;
+	else return luaL_error(pLua_, "sf.setEffectBall: unknown kind '%s' (jumpA, dashB or fallB).", kind.c_str());
+	Graphics::effectBalls.setActive(checkEntity(pLua_, 1), ball, lua_toboolean(pLua_, 3) != 0);
+	return 0;
+}
+
 /* ---- bodies ---- */
 
 static int hasBody(lua_State* pLua_)
@@ -504,18 +529,36 @@ static int behavior(lua_State* pLua_)
 	luaL_checktype(pLua_, 2, LUA_TFUNCTION);
 	lua_pushvalue(pLua_, 2);
 	int reference = luaL_ref(pLua_, LUA_REGISTRYINDEX);
+
+	/* The file the calling chunk was loaded from (luaL_loadfile names a chunk "@<path>"), kept for the editor; empty if the caller is not a file. */
+	std::string sourceFile;
+	lua_Debug caller;
+	if(lua_getstack(pLua_, 1, &caller) && lua_getinfo(pLua_, "S", &caller) && caller.source != nullptr && caller.source[0] == '@') sourceFile = caller.source + 1;
+
 	auto found = Globals::Game::entityBehaviorTypes.nameToId.find(pName);
 	if(found == Globals::Game::entityBehaviorTypes.nameToId.end())
 	{
 		PoolId id = addEntityBehavior(pName, nullptr);
 		Globals::Game::entityBehaviorTypes[id].scriptFunction = reference;
+		Globals::Game::entityBehaviorTypes[id].sourceFile = sourceFile;
 	}
 	else
 	{
 		EntityBehavior& rBehavior = Globals::Game::entityBehaviorTypes[found->second];
 		if(rBehavior.scriptFunction != 0) luaL_unref(pLua_, LUA_REGISTRYINDEX, rBehavior.scriptFunction);
 		rBehavior.scriptFunction = reference;
+		rBehavior.sourceFile = sourceFile;
 	}
+	return 0;
+}
+
+/* Registers fn(entity, placement) as the setup of a prefab (Scripting::setupPrefab), by the prefab's name ("SADX/SPRING"); the same name again replaces the function. */
+static int prefabBehavior(lua_State* pLua_)
+{
+	const char* pName = luaL_checkstring(pLua_, 1);
+	luaL_checktype(pLua_, 2, LUA_TFUNCTION);
+	lua_pushvalue(pLua_, 2);
+	registerPrefabBehavior(pName, luaL_ref(pLua_, LUA_REGISTRYINDEX));
 	return 0;
 }
 
@@ -604,6 +647,76 @@ static int setShapeBehavior(lua_State* pLua_)
 	return 0;
 }
 
+/* ---- setup ---- */
+
+static PoolId shaderByName(const char* name_)
+{
+	return Graphics::shaders.nameToId.at(name_);
+}
+
+/*
+Makes a level from Assets/Levels/<name>/<name>.json (Loading::loadLevel, see LevelLoader.h) and returns it. Load one level at a time: Emerald Coast and Westopolis would overlap at similar coordinates. The player's start
+position is the script's to choose (the real start of a stage is not known).
+*/
+static int loadLevel(lua_State* pLua_)
+{
+	lua_pushinteger(pLua_, toHandle(Loading::loadLevel(luaL_checkstring(pLua_, 1))));
+	return 1;
+}
+
+/* The levels unloadLevel was asked to remove; processPendingUnloads (Scripting.h) removes them. */
+static std::vector<PoolId> pendingUnloads;
+
+/*
+Asks for a level to be removed, with its collision and the entities it placed. It happens at the start of the next gameplay tick, not now: the script is usually running inside a tick, and the physics
+and collision systems have already read which entities are active. A script that loads another level right after waits one tick (sf.levelExists says when the old one is gone).
+*/
+static int unloadLevel(lua_State* pLua_)
+{
+	PoolId id = fromHandle(luaL_checkinteger(pLua_, 1));
+	Globals::Game::levels.isPoolIdValid(id);
+	pendingUnloads.push_back(id);
+	return 0;
+}
+
+static int levelExists(lua_State* pLua_)
+{
+	PoolId id = fromHandle(luaL_checkinteger(pLua_, 1));
+	lua_pushboolean(pLua_, id.id < Globals::Game::levels.objects.size() && Globals::Game::levels.alive[id.id] && Globals::Game::levels.generation[id.id] == id.generation);
+	return 1;
+}
+
+/* Makes a player entity from the character's prefab (spawnPrefab: model, idle motions, hand-made collision shape and physics of weight 1) and returns it; the script attaches it (attachPlayer). */
+static int spawnPlayer(lua_State* pLua_)
+{
+	std::string character = luaL_checkstring(pLua_, 1);
+	SpawnParams params;
+	params.position = checkVector(pLua_, 2);
+	PoolId id;
+	if(character == "sonic")
+	{
+		params.name = "SASonic";
+		params.what = "(player)";
+		id = spawnPrefab(findPrefab(SA_NINJA, "Sonic"), shaderByName("SA"), params);
+	}
+	else if(character == "shadow")
+	{
+		params.name = "Shadow";
+		params.what = "(player)";
+		id = spawnPrefab(findPrefab(STH2005_ONE, "Shadow"), shaderByName("STH2005"), params);
+	}
+	else return luaL_error(pLua_, "unknown character '%s'", character.c_str());
+	if(id == UninitializedPoolId) return luaL_error(pLua_, "could not spawn '%s'", character.c_str());
+	lua_pushinteger(pLua_, toHandle(id));
+	return 1;
+}
+
+static int setCamera(lua_State* pLua_)
+{
+	setCameraPosition(checkVector(pLua_, 1));
+	return 0;
+}
+
 /* ---- scripts ---- */
 
 static int include(lua_State* pLua_)
@@ -627,6 +740,17 @@ static int rotateBamsZXY(lua_State* pLua_)
 	return pushVector(pLua_, glm::vec3(rotation * glm::vec4(vector, 0.0f)));
 }
 
+void processPendingUnloads()
+{
+	if(pendingUnloads.empty()) return;
+	for(PoolId id : pendingUnloads)
+	{
+		if(Globals::Game::levels.alive[id.id] && Globals::Game::levels.generation[id.id] == id.generation) Globals::Game::levels.remove(id);
+	}
+	pendingUnloads.clear();
+	Globals::Game::spatialIndex.rebuild();
+}
+
 void registerAPI(lua_State* pLua_)
 {
 	const luaL_Reg functions[] = {
@@ -634,11 +758,12 @@ void registerAPI(lua_State* pLua_)
 		{"debugMode", guarded<debugMode>}, {"key", guarded<key>}, {"cameraForward", guarded<cameraForward>}, {"followCamera", guarded<followCamera>}, {"animate", guarded<animate>}, {"blink", guarded<blink>}, {"pose", guarded<pose>}, {"setAnimationScaleMode", guarded<setAnimationScaleMode>}, {"setAnimationEulerOrder", guarded<setAnimationEulerOrder>}, {"motionRange", guarded<motionRange>}, {"bone", guarded<bone>}, {"lowestPoint", guarded<lowestPoint>},
 		{"exists", guarded<exists>}, {"name", guarded<name>}, {"position", guarded<position>}, {"setPosition", guarded<setPosition>},
 		{"moveTo", guarded<moveTo>}, {"turnY", guarded<turnY>}, {"orient", guarded<orient>}, {"destroy", guarded<destroy>}, {"state", guarded<state>}, {"axis", guarded<axis>},
-		{"setUncullable", guarded<setUncullable>}, {"postEvent", guarded<postEvent>},
+		{"setUncullable", guarded<setUncullable>}, {"postEvent", guarded<postEvent>}, {"setDashTrail", guarded<setDashTrail>}, {"setEffectBall", guarded<setEffectBall>},
 		{"hasBody", guarded<hasBody>}, {"velocity", guarded<velocity>}, {"setVelocity", guarded<setVelocity>}, {"grounded", guarded<grounded>}, {"setGroundSnap", guarded<setGroundSnap>}, {"setWeight", guarded<setWeight>}, {"setGroundSnapMode", guarded<setGroundSnapMode>}, {"setMeanVelocityMove", guarded<setMeanVelocityMove>},
 		{"groundNormal", guarded<groundNormal>}, {"groundSurface", guarded<groundSurface>}, {"groundGap", guarded<groundGap>}, {"touchingWall", guarded<touchingWall>}, {"wallNormal", guarded<wallNormal>},
-		{"behavior", guarded<behavior>}, {"give", guarded<give>},
+		{"behavior", guarded<behavior>}, {"give", guarded<give>}, {"prefabBehavior", guarded<prefabBehavior>},
 		{"tag", guarded<tag>}, {"collisionBehavior", guarded<collisionBehavior>}, {"setShapeBehavior", guarded<setShapeBehavior>},
+		{"loadLevel", guarded<loadLevel>}, {"unloadLevel", guarded<unloadLevel>}, {"levelExists", guarded<levelExists>}, {"spawnPlayer", guarded<spawnPlayer>}, {"setCamera", guarded<setCamera>},
 		{"include", guarded<include>}, {"rotateBamsZXY", guarded<rotateBamsZXY>},
 		{nullptr, nullptr}
 	};

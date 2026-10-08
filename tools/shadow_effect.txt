@@ -1,0 +1,91 @@
+Behavior changes (vi_count since the first row: name, t seconds):
+  0:Idle (0.0076s), 30:Jump (0.5013s), 71:JumpDash (1.1862s), 96:Fall (1.6117s), 98:Landing (1.6345s), 133:Idle (2.2138s)
+
+Object 0x80b1dad0 (label A: A = Jump_ballA, B = Jump_ballB, ? = another model effect):
+  vi 45..98 events new..gone behaviors Jump..Landing rows 47
+  colour (r,g,b,a floats as they changed, vi): 45:1.0000,0.5020,0.0000,0.0000 45:1.0000,0.5020,0.0000,0.1216 46:1.0000,0.5020,0.0000,0.2471 47:1.0000,0.5020,0.0000,0.3725 48:1.0000,0.5020,0.0000,0.4980 49:1.0000,0.5020,0.0000,0.6235 50:1.0000,0.5020,0.0000,0.7490 51:1.0000,0.5020,0.0000,0.8745 52:1.0000,0.5020,0.0000,1.0000 73:1.0000,0.5020,0.0000,0.8745 74:1.0000,0.5020,0.0000,0.7490 75:1.0000,0.5020,0.0000,0.6235 76:1.0000,0.5020,0.0000,0.4980 77:1.0000,0.5020,0.0000,0.3725 78:1.0000,0.5020,0.0000,0.2471 79:1.0000,0.5020,0.0000,0.1216 80:1.0000,0.5020,0.0000,0.0000 97:1.0000,0.5020,0.0000,0.2471
+  Words that changed: 48 (offset: distinct values, first -> last, direction):
+    +0x004: 2 values, 0000a720 -> 0000a720, mixed
+    +0x00c: 38 values, 0.0000 -> 2.0000 (float), mixed
+    +0x018: 3 values, 00000003 -> 00000003, mixed
+    +0x020: 2 values, 80b1dde0 -> 80b1e7e0, up
+    +0x024: 2 values, 80fe7b18 -> 80fe50a8, down
+    +0x028: 2 values, 00000000 -> 00000000, mixed
+    +0x02c: 2 values, 00000000 -> 00000000, mixed
+    +0x034: 2 values, 80b1dde0 -> 80b1e7e0, up
+    +0x038: 2 values, 80fe7b18 -> 80fe50a8, down
+    +0x03c: 2 values, 00000000 -> 00000000, mixed
+    +0x040: 2 values, 00000000 -> 00000000, mixed
+    +0x044: 2 values, 80ae4580 -> 80ae4654, up
+    +0x048: 2 values, 80f0ffd8 -> 8154ea78, up
+    +0x058: 2 values, 0.0000 -> -1.0000 (float), down
+    +0x05c: 2 values, 3f7ffe9b -> b33bbc28, up
+    +0x060: 12 values, -751.1425 -> -822.0824 (float), down
+    +0x068: 2 values, 3f800000 -> b33bbd2e, up
+    +0x06c: 2 values, 0.0000 -> 1.0000 (float), up
+    +0x070: 38 values, -5130.4331 -> -5139.8091 (float), mixed
+    +0x078: 2 values, 0.0000 -> -0.0065 (float), down
+    +0x07c: 2 values, 3bd5cb3f -> af9cc974, up
+    +0x080: 12 values, -4243.8955 -> -4244.3599 (float), down
+    +0x088: 2 values, 0.0000 -> -1.0000 (float), down
+    +0x08c: 2 values, 3f7ffe9b -> b33bbc28, up
+    +0x090: 12 values, -751.1425 -> -822.0824 (float), down
+    +0x098: 2 values, 3f800000 -> b33bbd2e, up
+    +0x09c: 2 values, 0.0000 -> 1.0000 (float), up
+    +0x0a0: 38 values, -5130.4331 -> -5139.8091 (float), mixed
+    +0x0a8: 2 values, 0.0000 -> -0.0065 (float), down
+    +0x0ac: 2 values, 3bd5cb3f -> af9cc974, up
+    +0x0b0: 12 values, -4243.8955 -> -4244.3599 (float), down
+    +0x0b4: 12 values, -751.1425 -> -822.0824 (float), down
+    +0x0b8: 38 values, -5130.4331 -> -5139.8091 (float), mixed
+    +0x0bc: 12 values, -4243.8955 -> -4244.3599 (float), down
+    +0x0c0: 12 values, 0.0000 -> -2.5008 (float), mixed
+    +0x0c4: 38 values, 0.0000 -> -1.7549 (float), mixed
+    +0x0c8: 6 values, 0.0000 -> -0.0161 (float), mixed
+    +0x0fc: 2 values, 00000000 -> 00000000, mixed
+    +0x110: 9 values, 00000000 -> 0ff00000, mixed
+    +0x114: 4 values, 80ae4630 -> 80ae4704, mixed
+    +0x118: 4 values, 80b1e310 -> 80b1e310, mixed
+    +0x11c: 10 values, 80b1e350 -> 80b1e350, mixed
+    +0x124: 2 values, 809f03a0 -> 81308140, up
+    +0x128: 2 values, 80a23ce0 -> 80a2e6c0, up
+    +0x130: 2 values, 01000000 -> 01000000, mixed
+    +0x140: 9 values, 0.0000 -> 0.2471 (float), mixed
+    +0x15c: 37 values, 0.0000 -> 0.0333 (float), mixed
+    +0x168: 2 values, 80fe7ab8 -> 80fe58e8, down
+
+Object 0x80b1e7e0 (label B: A = Jump_ballA, B = Jump_ballB, ? = another model effect):
+  vi 72..106 events new..gone behaviors JumpDash..Landing rows 39
+  colour (r,g,b,a floats as they changed, vi): 72:1.0000,0.5020,0.0000,0.0000 72:1.0000,0.5020,0.0000,0.1216 73:1.0000,0.5020,0.0000,0.2471 74:1.0000,0.5020,0.0000,0.3725 75:1.0000,0.5020,0.0000,0.4980 76:1.0000,0.5020,0.0000,0.6235 77:1.0000,0.5020,0.0000,0.7490 78:1.0000,0.5020,0.0000,0.8745 79:1.0000,0.5020,0.0000,1.0000 97:1.0000,0.5020,0.0000,0.8745 98:1.0000,0.5020,0.0000,0.7490 99:1.0000,0.5020,0.0000,0.6235 100:1.0000,0.5020,0.0000,0.4980 101:1.0000,0.5020,0.0000,0.3725 102:1.0000,0.5020,0.0000,0.2471 103:1.0000,0.5020,0.0000,0.1216 104:1.0000,0.5020,0.0000,0.0000
+  Words that changed: 31 (offset: distinct values, first -> last, direction):
+    +0x004: 2 values, 0000eca0 -> 0000eca0, mixed
+    +0x00c: 34 values, 0.0000 -> 34.0000 (float), up
+    +0x018: 3 values, 00000003 -> 00000012, mixed
+    +0x020: 2 values, 80b1dad0 -> 80b1dde0, up
+    +0x024: 2 values, 80fe83a0 -> 80fe7b18, down
+    +0x028: 2 values, 00000000 -> 00000000, mixed
+    +0x02c: 2 values, 00000000 -> 00000000, mixed
+    +0x034: 2 values, 80b1dad0 -> 80b1dde0, up
+    +0x038: 2 values, 80fe83a0 -> 80fe7b18, down
+    +0x03c: 2 values, 00000000 -> 00000000, mixed
+    +0x040: 2 values, 00000000 -> 00000000, mixed
+    +0x060: 33 values, -754.1273 -> -838.1631 (float), down
+    +0x070: 33 values, -5111.5142 -> -5150.9009 (float), mixed
+    +0x080: 33 values, -4243.9150 -> -4244.4648 (float), down
+    +0x090: 33 values, -754.1273 -> -838.1631 (float), down
+    +0x0a0: 33 values, -5111.5142 -> -5150.9009 (float), mixed
+    +0x0b0: 33 values, -4243.9150 -> -4244.4648 (float), down
+    +0x0b4: 33 values, -754.1273 -> -838.1631 (float), down
+    +0x0b8: 33 values, -5111.5142 -> -5150.9009 (float), mixed
+    +0x0bc: 33 values, -4243.9150 -> -4244.4648 (float), down
+    +0x0c0: 33 values, 0.0000 -> -1.6764 (float), mixed
+    +0x0c4: 33 values, 0.0000 -> -2.2026 (float), mixed
+    +0x0c8: 16 values, 0.0000 -> -0.0107 (float), mixed
+    +0x0fc: 2 values, 00000000 -> 00000001, up
+    +0x110: 9 values, 00000000 -> 00000000, mixed
+    +0x114: 3 values, 80ae4704 -> 00000000, mixed
+    +0x118: 4 values, 80b1e9b0 -> 00000000, mixed
+    +0x11c: 9 values, 80b1e9f0 -> 00000000, mixed
+    +0x130: 2 values, 01000000 -> 00000000, down
+    +0x140: 9 values, 0.0000 -> 0.0000 (float), mixed
+    +0x15c: 33 values, 0.0000 -> 0.5500 (float), up

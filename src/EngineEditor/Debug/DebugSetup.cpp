@@ -2,7 +2,9 @@
 #include "API.h"
 #include "Globals.h"
 #include "GPU_Globals.h"
-#include "CollisionView.h"
+#ifdef EDITOR
+#include "Editor.h"
+#endif
 #include "ONEInstance.h"
 #include "Placement.h"
 #include <glm/ext/matrix_transform.hpp>
@@ -69,6 +71,7 @@ void addSonicShape(PoolId sonicId_)
 	getEntity(sonicId_).refreshBounds();
 }
 
+#ifdef EDITOR
 /*
 Markers for the objects of a Shadow stage placement file. The records' positions are in the game's space; the level is drawn and its collision built
 with RenderWareYawDegrees about +Y (hypothesis, see ONEInstance.h), so the same yaw is applied here and the level's position added. If the markers do not
@@ -81,7 +84,8 @@ void addShadowPlacementMarkers(const char* path_, const glm::vec3& rLevelPositio
 	for(const STH2005::Placement& rPlacement : placements)
 	{
 		glm::vec3 position = glm::vec3(yaw * glm::vec4(rPlacement.position, 1.0f)) + rLevelPosition_;
-		Graphics::collisionView.markers.push_back(Graphics::CollisionView::Marker{position, rPlacement.type});
+		editor.collisionView.markers.push_back(Graphics::CollisionView::Marker{position, rPlacement.type});
 	}
 }
+#endif
 }

@@ -66,6 +66,13 @@ static uint32_t readGVR(const std::vector<uint8_t>& rBytes_, uint32_t offset_, c
 	return end;
 }
 
+PoolId importGvr(const char* name_, const std::vector<uint8_t>& rBytes_)
+{
+	PoolId textureId;
+	readGVR(rBytes_, 0, name_, textureId);
+	return textureId;
+}
+
 /*
 GVM archive, decoded from sonic.gvm; no outside source for the header. "GVMH", u32 little-endian offset of the first
 texture minus 8, then big-endian u16 flags (0xF: every optional entry field present), u16 texture count, and one 38 byte

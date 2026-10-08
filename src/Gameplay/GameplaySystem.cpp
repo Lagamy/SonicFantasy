@@ -3,6 +3,7 @@
 #include "API.h"
 #include "GPU_Globals.h"
 #include "Scripting.h"
+#include "Editor.h"
 #include <algorithm>
 #include <chrono>
 #include <utility>
@@ -54,15 +55,16 @@ that is gone by its turn is skipped.
 */
 void GameplaySystem::tick()
 {
+	Scripting::processPendingUnloads();
 	this->destroyedCleanUp();
 
 	/*
 	Which entities are active this tick (SpatialIndex::updateActive): those within the draw distance of the camera, and those with behaviorNotCulled. Only they have their
 	previous position (and a body's tickStartVelocity, PhysicsBody::moveByMeanVelocity) kept and are run by the behaviours, the physics and the collision system. There is no camera before the first one is made, then all are active.
 	*/
-	bool cull = this->cullFarEntities && !Globals::Game::cameras.empty();
-	glm::vec3 cameraPosition = cull ? Globals::Game::cameras[0].position : glm::vec3(0.0f);
-	float maxDistance = cull ? Globals::Game::cameras[0].farPlane : 0.0f;
+	bool cull = this->cullFarEntities && Globals::Game::mainCamera != UninitializedPoolId;
+	glm::vec3 cameraPosition = cull ? getMainCamera().position : glm::vec3(0.0f);
+	float maxDistance = cull ? getMainCamera().farPlane : 0.0f;
 	Globals::Game::spatialIndex.updateActive(cull, cameraPosition, maxDistance);
 	for(uint32_t i : Globals::Game::spatialIndex.activeEntities)
 	{
@@ -75,6 +77,21 @@ void GameplaySystem::tick()
 			rBody.tickStartVelocity = rBody.velocity + rBody.floorCancelledVelocity;
 			rBody.floorCancelledVelocity = glm::vec3(0.0f);
 		}
+	}
+
+	/*
+	In the editor (editorActive) nothing is simulated except the collision: no behaviours, no physics, no effects. The collision system moves an entity to its stagingPosition (PhysicsSystem::update), so each active
+	entity's is set to where it is: collision then only pushes it out of what it overlaps and calls the interactions.
+	*/
+	if(editorActive())
+	{
+		for(uint32_t i : Globals::Game::spatialIndex.activeEntities)
+		{
+			Entity& rEntity = Globals::Game::entities.objects[i];
+			rEntity.stagingPosition = rEntity.position;
+		}
+		Globals::Physics::collisionSystem.update();
+		return;
 	}
 
 	std::vector<std::pair<PoolId, std::vector<PoolId>>> sets;
@@ -100,4 +117,6 @@ void GameplaySystem::tick()
 
 	Globals::Physics::physicsSystem.update(this->tickTime());
 	Globals::Physics::collisionSystem.update();
+	Graphics::dashTrail.tick();
+	Graphics::effectBalls.tick(this->tickTime());
 }

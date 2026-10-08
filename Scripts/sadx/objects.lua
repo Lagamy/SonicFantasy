@@ -112,29 +112,39 @@ local springBehavior = sf.collisionBehavior("Spring", {tags = {tagSpring}, inter
 local dashPanelBehavior = sf.collisionBehavior("DashPanel", {tags = {tagDashPanel}, interactions = {[tagBody] = dashPanelTouched}})
 local enemyBehavior = sf.collisionBehavior("Enemy", {tags = {tagHazard, tagEnemy}, interactions = {[tagBody] = enemyTouched}})
 
--- Called by the engine for every object a level makes (placement: the SET record, see Scripting.h; nil for an object the stage creates).
-function setupObject(entity, name, placement)
-	if name == "RING" then
-		sf.setShapeBehavior(entity, ringBehavior)
-	elseif name == "SPRING" or name == "SPRINGB" then
-		sf.setShapeBehavior(entity, springBehavior)
-		local state = sf.state(entity)
-		state.ux, state.uy, state.uz = sf.axis(entity, 0, 1, 0)
-		local scale = placement ~= nil and placement.scale or {x = 0, y = 0}
-		state.speed = SPRING_BASE_SPEED + scale.y
-		state.lock = math.floor(math.max(scale.x, 0))
-		state.cooldown = 0
-		sf.give(entity, "Cooldown")
-	elseif name == "O AXPNL" and placement ~= nil then
-		sf.setShapeBehavior(entity, dashPanelBehavior)
-		local state = sf.state(entity)
-		state.speed = placement.scale.x > 0 and placement.scale.x or DASH_PANEL_DEFAULT_SPEED
-		state.disable = placement.scale.y > 0 and math.floor(placement.scale.y) or DASH_PANEL_DEFAULT_DISABLE_TICKS
-		state.dx, state.dy, state.dz = sf.rotateBamsZXY(1, 0, 0, placement.rotation.z, placement.rotation.x, placement.rotation.y - 0x4000)
-		state.cooldown = 0
-		sf.give(entity, "Cooldown")
-	elseif name == "E SARU" or name == "E SAITO" or name == "E AMEMB" then
-		sf.setShapeBehavior(entity, enemyBehavior)
-		homingTargets[entity] = true
-	end
+-- Each prefab's setup (sf.prefabBehavior): the engine calls it for every entity it makes from the prefab "SADX/<object name>" (placement: the SET record, see Scripting.h; nil for an object the stage creates).
+sf.prefabBehavior("SADX/RING", function(entity)
+	sf.setShapeBehavior(entity, ringBehavior)
+end)
+
+local function setupSpring(entity, placement)
+	sf.setShapeBehavior(entity, springBehavior)
+	local state = sf.state(entity)
+	state.ux, state.uy, state.uz = sf.axis(entity, 0, 1, 0)
+	local scale = placement ~= nil and placement.scale or {x = 0, y = 0}
+	state.speed = SPRING_BASE_SPEED + scale.y
+	state.lock = math.floor(math.max(scale.x, 0))
+	state.cooldown = 0
+	sf.give(entity, "Cooldown")
 end
+sf.prefabBehavior("SADX/SPRING", setupSpring)
+sf.prefabBehavior("SADX/SPRINGB", setupSpring)
+
+sf.prefabBehavior("SADX/O AXPNL", function(entity, placement)
+	if placement == nil then return end
+	sf.setShapeBehavior(entity, dashPanelBehavior)
+	local state = sf.state(entity)
+	state.speed = placement.scale.x > 0 and placement.scale.x or DASH_PANEL_DEFAULT_SPEED
+	state.disable = placement.scale.y > 0 and math.floor(placement.scale.y) or DASH_PANEL_DEFAULT_DISABLE_TICKS
+	state.dx, state.dy, state.dz = sf.rotateBamsZXY(1, 0, 0, placement.rotation.z, placement.rotation.x, placement.rotation.y - 0x4000)
+	state.cooldown = 0
+	sf.give(entity, "Cooldown")
+end)
+
+local function setupEnemy(entity)
+	sf.setShapeBehavior(entity, enemyBehavior)
+	homingTargets[entity] = true
+end
+sf.prefabBehavior("SADX/E SARU", setupEnemy)
+sf.prefabBehavior("SADX/E SAITO", setupEnemy)
+sf.prefabBehavior("SADX/E AMEMB", setupEnemy)

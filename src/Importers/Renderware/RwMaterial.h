@@ -7,11 +7,15 @@
 
 namespace Renderware
 {
-/* A RenderWare material as the importers use it: its color and its base texture name (empty if untextured). */
+/*
+A RenderWare material as the importers use it: its color, its base texture name (empty if untextured) and the name of its UV
+animation in the model's .UVA (empty if none).
+*/
 struct RwMaterial
 {
 	glm::vec4 color;
 	std::string textureName;
+	std::string uvAnimName;
 };
 
 /* Reads a MaterialList chunk (of a clump's geometry or of a world), see RwMaterial.cpp. */

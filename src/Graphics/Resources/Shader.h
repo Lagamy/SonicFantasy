@@ -18,6 +18,10 @@ constexpr GLint HasTextureLocation = 1;
 /* Location of the skinned uniform of Shaders/STH2005/vertex.glsl (layout(location = 2)). */
 constexpr GLint SkinnedLocation = 2;
 
+/* Locations of the uvOffset uniform of Shaders/STH2005/vertex.glsl (layout(location = 3)) and the effectTint uniform of its fragment.glsl (layout(location = 4)); both default to no change. */
+constexpr GLint UvOffsetLocation = 3;
+constexpr GLint EffectTintLocation = 4;
+
 struct Shader { 
 	GLuint id;
 	GLint modelLocation;

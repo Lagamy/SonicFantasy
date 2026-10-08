@@ -1,7 +1,9 @@
 #include "CollisionView.h"
 #include "GPU_API.h"
 #include "Globals.h"
+#include "Editor.h"
 #include "SAMesh.h"
+#include "imgui.h"
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -316,7 +318,7 @@ static void addShapeLines(AddLine addLine_, const Physics::CollisionShape& rShap
 
 void CollisionView::draw(const Camera& rCamera_)
 {
-	if(!Globals::App::debugMode || (!this->enabled && this->markers.empty())) return;
+	if(!editor.active || (!this->enabled && this->markers.empty())) return;
 
 	std::vector<PoolId> levelCollisions;
 	if(this->enabled)
@@ -367,7 +369,7 @@ void CollisionView::draw(const Camera& rCamera_)
 				rValue.second = rShape.behavior;
 				if(this->colorByAttribute && this->hasSelectedEntityValue && rShape.attr != this->selectedEntityValue) continue;
 				glm::vec4 shapeColor = this->colorByAttribute ? attributeColor(rShape.attr) : glm::vec4(0.0f, 1.0f, 1.0f, 1.0f);
-				addShapeLines(addLine, rShape, entityPosition, rEntity.sourceEngine == SA_NINJA ? entityRotation : glm::mat4(1.0f), rEntity.sourceEngine == SA_NINJA, shapeColor);
+				addShapeLines(addLine, Physics::scaledShape(rShape, rEntity.collisionScale(), rEntity.sourceEngine == SA_NINJA), entityPosition, rEntity.sourceEngine == SA_NINJA ? entityRotation : glm::mat4(1.0f), rEntity.sourceEngine == SA_NINJA, shapeColor);
 			}
 			const Physics::CollisionMesh& rMesh = rCollision.mesh;
 			for(size_t t = 0; t + 2 < rMesh.indices.size(); t += 3)
@@ -457,5 +459,63 @@ void CollisionView::destroy()
 	glDeleteBuffers(1, &this->fillVBO);
 	glDeleteVertexArrays(1, &this->dynamicVAO);
 	glDeleteBuffers(1, &this->dynamicVBO);
+}
+
+/*
+The collision lines view's panel (drawn in the Debug window's and the Level panel's Collision tab): its switches, then a sub tab for each kind of collision with the legend of its raw attribute values, in the color their lines have. Level: the shown level collisions
+(Shadow attributes / SADX piece flags), most triangles first; clicking a value highlights it (the left and right arrow keys do the same), clicking it again shows all. Entities: the object shapes' attributes, highlighted the same way (the arrow keys move the selection of the sub tab that is shown).
+*/
+void CollisionView::drawPanel()
+{
+	ImGui::Checkbox("Show collision lines (C)", &this->enabled);
+	ImGui::Checkbox("Color by attribute, otherwise by slope (V)", &this->colorByAttribute);
+	ImGui::SliderFloat("Draw distance", &this->drawDistance, 100.0f, 20000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
+	if(ImGui::BeginTabBar("CollisionTabs"))
+	{
+		if(ImGui::BeginTabItem("Level"))
+		{
+			if(this->enabled && this->colorByAttribute && !this->attributes.empty())
+			{
+				ImGui::Text("%u values", static_cast<uint32_t>(this->attributes.size()));
+				ImGui::BeginChild("CollisionValues", ImVec2(0.0f, 0.0f), ImGuiChildFlags_None);
+				for(int i = 0; i < static_cast<int>(this->attributes.size()); i++)
+				{
+					const CollisionView::AttributeCount& rEntry = this->attributes[i];
+					char line[96];
+					std::snprintf(line, sizeof(line), "0x%08X  %s  %u triangles", rEntry.attribute, rEntry.behavior.c_str(), rEntry.count);
+					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(rEntry.color.r, rEntry.color.g, rEntry.color.b, 1.0f));
+					if(ImGui::Selectable(line, i == this->selectedAttribute)) this->selectedAttribute = i == this->selectedAttribute ? -1 : i;
+					ImGui::PopStyleColor();
+				}
+				ImGui::EndChild();
+			}
+			ImGui::EndTabItem();
+		}
+		if(ImGui::BeginTabItem("Entities"))
+		{
+			this->entityTabActive = true;
+			if(this->enabled && this->colorByAttribute && !this->entityAttributes.empty())
+			{
+				ImGui::Text("%u values", static_cast<uint32_t>(this->entityAttributes.size()));
+				ImGui::BeginChild("EntityCollisionValues", ImVec2(0.0f, 0.0f), ImGuiChildFlags_None);
+				for(const CollisionView::AttributeCount& rEntry : this->entityAttributes)
+				{
+					char line[96];
+					std::snprintf(line, sizeof(line), "0x%08X  %s  %u shapes", rEntry.attribute, rEntry.behavior.c_str(), rEntry.count);
+					bool selected = this->hasSelectedEntityValue && this->selectedEntityValue == rEntry.attribute;
+					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(rEntry.color.r, rEntry.color.g, rEntry.color.b, 1.0f));
+					if(ImGui::Selectable(line, selected))
+					{
+						this->hasSelectedEntityValue = !selected;
+						this->selectedEntityValue = rEntry.attribute;
+					}
+					ImGui::PopStyleColor();
+				}
+				ImGui::EndChild();
+			}
+			ImGui::EndTabItem();
+		}
+		ImGui::EndTabBar();
+	}
 }
 }

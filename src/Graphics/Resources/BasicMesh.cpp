@@ -25,27 +25,17 @@ void BasicMesh::create()
 {
 	// init Vertex Buffer 
 	glCreateBuffers(1, &this->VBO); 
-	glNamedBufferStorage(this->VBO, this->verticies.size() * sizeof(Vertex), this->verticies.data(), 0);
+	glNamedBufferStorage(this->VBO, this->verticies.byteSize(), this->verticies.data(), 0);
 
 	// init VAO
 	glCreateVertexArrays(1, &this->VAO);
 
 	/*
-	Interleaved Vertex buffer on binding 0. Attribute locations:
-	0 position, 1 normal, 2 uv, 3 color, 4 bone indices (integer), 5 bone weights. Shaders must use the same locations.
+	Interleaved vertex buffer on binding 0, the attributes described by the mesh's VertexLayout. The standard layout uses locations
+	0 position, 1 normal, 2 uv, 3 color, 4 bone indices (integer), 5 bone weights; shaders must use the same locations.
 	*/
-	glVertexArrayAttribFormat(this->VAO, 0, 3, GL_FLOAT, GL_FALSE, offsetof(Vertex, position));
-	glVertexArrayAttribFormat(this->VAO, 1, 3, GL_FLOAT, GL_FALSE, offsetof(Vertex, normal));
-	glVertexArrayAttribFormat(this->VAO, 2, 2, GL_FLOAT, GL_FALSE, offsetof(Vertex, uv));
-	glVertexArrayAttribFormat(this->VAO, 3, 4, GL_FLOAT, GL_FALSE, offsetof(Vertex, color));
-	glVertexArrayAttribIFormat(this->VAO, 4, 4, GL_UNSIGNED_BYTE, offsetof(Vertex, boneIndices));
-	glVertexArrayAttribFormat(this->VAO, 5, 4, GL_FLOAT, GL_FALSE, offsetof(Vertex, boneWeights));
-	for(GLuint i = 0; i < 6; i++)
-	{
-		glEnableVertexArrayAttrib(this->VAO, i);
-		glVertexArrayAttribBinding(this->VAO, i, 0);
-	}
-	glVertexArrayVertexBuffer(this->VAO, 0, this->VBO, 0, sizeof(Vertex));
+	this->verticies.pLayout->setupVertexArray(this->VAO);
+	glVertexArrayVertexBuffer(this->VAO, 0, this->VBO, 0, static_cast<GLsizei>(this->verticies.pLayout->stride));
 
 	if(!this->indicies.empty())
 	{

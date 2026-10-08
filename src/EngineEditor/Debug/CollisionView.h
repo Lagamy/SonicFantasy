@@ -9,7 +9,7 @@
 namespace Graphics
 {
 /*
-Debug view of the collision, toggled with `enabled` (the C key, see main.cpp) and drawn only in the debug mode (Globals::App::debugMode, the markers too). Drawn by Renderer::run after the scene
+Debug view of the collision, toggled with `enabled` (the C key, see Editor::processInputs) and drawn only while the editor is active (Editor::active, the markers too). Drawn by Renderer::runAll for the editor camera after the scene
 with the Default shader, and not part of it: it only reads Globals::Physics and Globals::Game.
 - Level collision (Level::collisionId): the edges of every triangle, in world space (the collision's position included, as in the collision system).
   With colorByAttribute (the V key), each triangle is colored by its raw value: its attribute when the collision stores them per triangle
@@ -71,6 +71,9 @@ struct CollisionView
 
 	void init();
 	void draw(const Camera& rCamera_);
+
+	/* The ImGui panel of the view (switches, draw distance, legends); inside an open tab, in the Debug window and the editor's Level panel. */
+	void drawPanel();
 
 	/* Moves the selection along `attributes` by step_ (wrapping), through "none" (-1, nothing highlighted) as well. */
 	void selectAttribute(int step_);
