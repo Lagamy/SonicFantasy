@@ -249,10 +249,12 @@ void setEntityMesh(PoolId entityId_, const MeshChoice& rChoice_)
     rEntity.meshChoice = rChoice_;
 }
 
-/* Moves the main camera (Globals::Game::mainCamera); the view and its UBO are updated by Camera::set. */
+/* Moves the main camera (Globals::Game::mainCamera) through its entity, which carries it (Entity::moveCameraModule; the view and its UBO are updated by Camera::set); a camera made by hand has no entity and is moved itself. */
 void setCameraPosition(const glm::vec3& rPosition_)
 {
-    getMainCamera().set(rPosition_);
+    Camera& rCamera = getMainCamera();
+    if(entityExists(rCamera.entityId)) getEntity(rCamera.entityId).setPosition(rPosition_);
+    else rCamera.set(rPosition_);
 }
 
 /*
@@ -421,25 +423,25 @@ PoolId spawnPrefab(PoolId prefabId_, PoolId shaderId_, const SpawnParams& rParam
             rEntity.setExternalOnly(Graphics::getShaderId("GLTF"));
             if(inScene) Scripting::setupPrefab(rEntity.selfId, Globals::Game::prefabs.names[prefabId_.id].c_str(), nullptr);
             /* Set on the entity itself, not through setEntityMesh / setEntityTexture, which name the game's pool (this may be the thumbnails'). A missing asset is reported and the entity is made without it. */
-            if(rPrefab.mesh.kind == MeshChoiceKind::External)
+            if(rPrefab.level.mesh.kind == MeshChoiceKind::External)
             {
-                const Graphics::ExternalModel* pModel = Loading::findExternalModel(rPrefab.mesh.name);
+                const Graphics::ExternalModel* pModel = Loading::findExternalModel(rPrefab.level.mesh.name);
                 if(pModel != nullptr)
                 {
                     rEntity.setOverrideModel(pModel);
-                    rEntity.meshChoice = rPrefab.mesh;
+                    rEntity.meshChoice = rPrefab.level.mesh;
                 }
-                else std::fprintf(stderr, "Spawn: %s %s: there is no external model named %s\n", rPrefab.name.c_str(), rParams_.what.c_str(), rPrefab.mesh.name.c_str());
+                else std::fprintf(stderr, "Spawn: %s %s: there is no external model named %s\n", rPrefab.name.c_str(), rParams_.what.c_str(), rPrefab.level.mesh.name.c_str());
             }
-            if(rPrefab.texture.kind == TextureChoiceKind::External)
+            if(rPrefab.level.texture.kind == TextureChoiceKind::External)
             {
-                Graphics::Texture* pTexture = Loading::findExternalTexture(rPrefab.texture.name);
+                Graphics::Texture* pTexture = Loading::findExternalTexture(rPrefab.level.texture.name);
                 if(pTexture != nullptr)
                 {
                     rEntity.setOverrideTexture(pTexture);
-                    rEntity.textureChoice = rPrefab.texture;
+                    rEntity.textureChoice = rPrefab.level.texture;
                 }
-                else std::fprintf(stderr, "Spawn: %s %s: there is no external texture named %s\n", rPrefab.name.c_str(), rParams_.what.c_str(), rPrefab.texture.name.c_str());
+                else std::fprintf(stderr, "Spawn: %s %s: there is no external texture named %s\n", rPrefab.name.c_str(), rParams_.what.c_str(), rPrefab.level.texture.name.c_str());
             }
             break;
         }

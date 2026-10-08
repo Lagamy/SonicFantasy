@@ -2,6 +2,7 @@
 #include <string>
 #include <vector>
 #include "PoolId.h"
+#include "ExternalField.h"
 
 /*
 A piece of gameplay logic an entity can have, stored in Globals::Game::entityBehaviorTypes (a PoolMap named by the behaviour, so scripts and mods find one by name and keep its PoolId). pBehave is called
@@ -17,6 +18,9 @@ struct EntityBehavior
 
 	/* A script behaviour: the file that registered it (sf.behavior), as the Lua chunk name without the '@' ("Assets/Scripts/sadx/objects.lua"), so the editor can offer a dropped script's behaviours. Empty otherwise. */
 	std::string sourceFile;
+
+	/* A script behaviour's declared fields (sf.behavior's third argument), in the order the inspector lists them. Before the behaviour's first call on an entity Scripting::callBehavior writes each into the entity's sf.state table: the value the editor set (Entity::externals) or the default. */
+	std::vector<ExternalField> fields;
 };
 
 /*

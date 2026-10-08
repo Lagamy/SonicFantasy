@@ -83,7 +83,7 @@ void EntityListPanel::drawCameraSettings()
 	ImGui::SliderFloat("Look sensitivity (degrees/pixel)", &rCamera.lookSensitivity, 0.005f, 0.5f, "%.3f", ImGuiSliderFlags_Logarithmic);
 	ImGui::SliderFloat("Pan (per pixel, x speed)", &rCamera.panPerSpeed, 0.0005f, 0.05f, "%.4f", ImGuiSliderFlags_Logarithmic);
 	ImGui::SliderFloat("Zoom (per notch, x speed)", &rCamera.zoomPerSpeed, 0.01f, 2.0f, "%.3f", ImGuiSliderFlags_Logarithmic);
-	ImGui::SliderFloat("Speed change per notch", &rCamera.speedPerNotch, 1.01f, 2.0f, "%.2f");
+	ImGui::SliderFloat("Full-speed distance (to nearest entity)", &rCamera.referenceDistance, 0.1f, 10000.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
 	ImGui::SliderFloat("Fly speed (units/s)", &rCamera.speed, rCamera.minSpeed, rCamera.maxSpeed, "%.0f", ImGuiSliderFlags_Logarithmic);
 	ImGui::SliderFloat("Boost (Shift multiplier)", &rCamera.speedUp, 1.0f, 100.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
 	if(ImGui::SliderFloat("Field of view", &rCamera.fov, 10.0f, 150.0f, "%.0f")) rCamera.refreshProjection();
@@ -96,7 +96,7 @@ void EntityListPanel::drawEntities()
 	if(ImGui::Button("Add camera"))
 	{
 		glm::vec3 position = editor.camera.position;
-		this->selected = addCamera("Camera", position);
+		editor.recordCreated(editor.addLevelCamera("Camera", position));
 	}
 	ImGui::SameLine();
 	if(ImGui::Button("New folder"))

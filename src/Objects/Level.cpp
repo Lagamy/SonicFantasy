@@ -366,6 +366,16 @@ void Level::markSourceEntities()
 	this->sourceShapes.clear();
 	for(PoolId id : this->entityIds)
 	{
+		/* A gone entity (an entry of the saved source that could not be made) keeps its index with empty values. */
+		if(!entityExists(id))
+		{
+			this->sourcePositions.push_back(glm::vec3(0.0f));
+			this->sourceRotations.push_back(glm::mat4(1.0f));
+			this->sourceScales.push_back(glm::vec3(1.0f));
+			this->sourceBehaviors.emplace_back();
+			this->sourceShapes.emplace_back();
+			continue;
+		}
 		const Entity& rEntity = getEntity(id);
 		this->sourcePositions.push_back(rEntity.position);
 		this->sourceRotations.push_back(rEntity.rotation);
@@ -384,6 +394,60 @@ int32_t Level::sourceIndexOf(PoolId entityId_) const
 	return -1;
 }
 
+int32_t Level::editIndexOf(PoolId entityId_) const
+{
+	if(entityId_ == UninitializedPoolId) return -1;
+	uint32_t added = this->sourceEntityCount;
+	for(uint32_t i = 0; i < this->entityIds.size(); i++)
+	{
+		bool own = i < this->sourceEntityCount;
+		if(this->entityIds[i] == entityId_)
+		{
+			if(own) return static_cast<int32_t>(i);
+			return entityExists(entityId_) && getEntity(entityId_).prefabId != UninitializedPoolId ? static_cast<int32_t>(added) : -1;
+		}
+		if(!own && entityExists(this->entityIds[i]) && getEntity(this->entityIds[i]).prefabId != UninitializedPoolId) added++;
+	}
+	return -1;
+}
+
+void Level::resolveExternalEntities()
+{
+	for(PoolId id : this->entityIds)
+	{
+		if(!entityExists(id)) continue;
+		for(auto& [behaviorName, rValues] : getEntity(id).externals)
+		{
+			for(auto& [fieldName, rValue] : rValues)
+			{
+				if(rValue.entityIndex < 0) continue;
+				bool found = static_cast<size_t>(rValue.entityIndex) < this->entityIds.size() && entityExists(this->entityIds[rValue.entityIndex]);
+				rValue.entity = found ? this->entityIds[rValue.entityIndex] : UninitializedPoolId;
+				rValue.entityIndex = -1;
+			}
+		}
+	}
+}
+
+std::vector<PoolId> Level::referencedPrefabs() const
+{
+	std::vector<PoolId> found;
+	for(PoolId id : this->entityIds)
+	{
+		if(!entityExists(id)) continue;
+		for(const auto& [behaviorName, rValues] : getEntity(id).externals)
+		{
+			for(const auto& [fieldName, rValue] : rValues)
+			{
+				PoolId prefab = rValue.prefab;
+				if(prefab.id >= Globals::Game::prefabs.objects.size() || !Globals::Game::prefabs.alive[prefab.id] || Globals::Game::prefabs.generation[prefab.id] != prefab.generation) continue;
+				if(std::find(found.begin(), found.end(), prefab) == found.end()) found.push_back(prefab);
+			}
+		}
+	}
+	return found;
+}
+
 void Level::revertSourceEntity(uint32_t index_)
 {
 	if(index_ >= this->sourceEntityCount || !entityExists(this->entityIds[index_])) return;
@@ -400,6 +464,9 @@ void Level::restoreSource()
 	{
 		this->revertSourceEntity(i);
 		if(!entityExists(this->entityIds[i])) continue;
+		getEntity(this->entityIds[i]).externals.clear();
+		getEntity(this->entityIds[i]).externalsApplied.clear();
+		getEntity(this->entityIds[i]).externalsKept.clear();
 		setEntityBehaviors(this->entityIds[i], this->sourceBehaviors[i]);
 		setEntityShapes(this->entityIds[i], this->sourceShapes[i]);
 		if(entityMesh(this->entityIds[i]).kind != MeshChoiceKind::Default) setEntityMesh(this->entityIds[i], MeshChoice{});

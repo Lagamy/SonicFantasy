@@ -318,7 +318,7 @@ static void addShapeLines(AddLine addLine_, const Physics::CollisionShape& rShap
 
 void CollisionView::draw(const Camera& rCamera_)
 {
-	if(!editor.active || (!this->enabled && this->markers.empty())) return;
+	if(!editor.active || (!this->enabled && !this->boundAreaTabActive && this->markers.empty())) return;
 
 	std::vector<PoolId> levelCollisions;
 	if(this->enabled)
@@ -341,7 +341,8 @@ void CollisionView::draw(const Camera& rCamera_)
 	float distance = std::min(this->drawDistance, rCamera_.farPlane);
 	std::array<glm::vec4, 6> entityPlanes = rCamera_.frustumPlanes();
 	std::map<uint32_t, std::pair<uint32_t, PoolId>> shapeValues;
-	for(uint32_t i = 0; this->enabled && i < Globals::Game::entities.objects.size(); i++)
+	bool drawEntities = this->enabled || this->boundAreaTabActive;
+	for(uint32_t i = 0; drawEntities && i < Globals::Game::entities.objects.size(); i++)
 	{
 		if(!Globals::Game::entities.alive[i]) continue;
 		const Entity& rEntity = Globals::Game::entities.objects[i];

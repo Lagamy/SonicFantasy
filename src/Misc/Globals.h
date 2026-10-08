@@ -43,6 +43,7 @@ namespace Globals {
 		/*
 		The cameras (Camera.h), each the module of an entity (Entity::cameraId; addCamera in API.h makes both) and each rendering to the screen or to a render target (Camera::setRenderTarget). mainCamera is the one
 		the player looks through: the mouse look, the follow camera, the debug flying, the scripts' camera calls, the labels, and what the gameplay takes as "the camera" for culling and activation all use it.
+		A camera and its entity are always at one position: Camera::set / move move the entity and Entity::setPosition / moveTo move the camera.
 		*/
 		inline Pool<Camera> cameras = ("Cameras");
 		inline PoolId mainCamera = UninitializedPoolId;

@@ -30,7 +30,7 @@ std::vector<std::string>& foldersOf(ExternalScope scope_)
 /* The scope's file under a root: the game's copy ("Assets/...") and the source tree's (what the next build copies back). */
 fs::path fileOf(ExternalScope scope_, bool inSource_)
 {
-	if(scope_ == ExternalScope::Project) return (inSource_ ? fs::path(SF_SOURCE_DIR) / "External" : fs::path("Assets/External")) / "prefabs.json";
+	if(scope_ == ExternalScope::Project) return (inSource_ ? fs::path(SF_SOURCE_DIR) / "External" : fs::path("Assets/External")) / "Prefabs" / "Global" / "prefabs.json";
 	return (inSource_ ? fs::path(SF_SOURCE_DIR) / "Levels" : fs::path("Assets/Levels")) / levelName / "prefabs.json";
 }
 
@@ -82,8 +82,8 @@ void saveExternalPrefabs(ExternalScope scope_)
 	for(const Prefab* pPrefab : prefabs)
 	{
 		OrderedJson entry = {{"name", pPrefab->name}, {"folder", pPrefab->folder}};
-		if(pPrefab->mesh.kind == MeshChoiceKind::External) entry["mesh"] = writeChoice(pPrefab->mesh.name);
-		if(pPrefab->texture.kind == TextureChoiceKind::External) entry["texture"] = writeChoice(pPrefab->texture.name);
+		if(pPrefab->level.mesh.kind == MeshChoiceKind::External) entry["mesh"] = writeChoice(pPrefab->level.mesh.name);
+		if(pPrefab->level.texture.kind == TextureChoiceKind::External) entry["texture"] = writeChoice(pPrefab->level.texture.name);
 		file["prefabs"].push_back(entry);
 	}
 

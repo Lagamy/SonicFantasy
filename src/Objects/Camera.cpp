@@ -1,5 +1,6 @@
 #include "Camera.h"
 #include "Globals.h"
+#include "API.h"
 
 Camera::Camera(glm::vec3 position_) { 
 	this->position = position_; 
@@ -119,12 +120,21 @@ void Camera::move(glm::vec3 by_) {
 	this->position += by_; 
 	this->updateView(); 
 	this->updateUBO(); 
+	this->moveEntity();
+}
+
+/* The camera's entity (if it has one) goes to the camera's position; Entity::moveCameraModule does the reverse, and each stops when the other is already there. */
+void Camera::moveEntity() {
+	if(!entityExists(this->entityId)) return;
+	Entity& rEntity = getEntity(this->entityId);
+	if(rEntity.position != this->position) rEntity.setPosition(this->position);
 }
 
 void Camera::set(glm::vec3 position_) { 
 	this->position = position_; 
 	this->updateView();
 	this->updateUBO(); 
+	this->moveEntity();
 }; 
 
 void Camera::destroy() { 

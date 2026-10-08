@@ -16,9 +16,15 @@ The transform handles of the editor (Editor::gizmo) on the selected entity (Enti
 The handles keep one size on the screen (a number of pixels at the entity's distance from the camera). They are picked by a ray from the cursor against the handle shapes in the world (a segment for an arrow, a ring as a polyline, a box for a box), the one the ray passes closest to
 within a few pixels; the picked one is drawn yellow. Drawing is ImGui's background draw list (like Text), inside DebugUI::draw's frame: no depth test, so the handles show through the scene, and the colors are x red, y green, z blue.
 update runs before the editor camera's button hold (Editor::processInputs): a left press on a handle starts a drag that wantsMouse() reports until the button is released, and the camera does not take that press; a press anywhere else is left to the camera and to the UI, and nothing is
-deselected by it (the selection only changes in the panels). A press that began on the camera or on the UI never grabs a handle it is moved over. When a drag ends the spatial index is marked dirty (a moved or turned entity changes its sphere).
-Not undoable. Rotation and scale are kept over Play / Stop (Editor::KeptEntity) and saved with the level (Loading::saveLevelEdits: "transforms", "added"[].rotation / scale).
+deselected by it (the selection changes in the panels and by a click on an entity, pickEntity). A press that began on the camera or on the UI never grabs a handle it is moved over. When a drag ends the spatial index is marked dirty (a moved or turned entity changes its sphere).
+Undo (Ctrl+Z) is Editor's: it notices a finished change of the selected entity's transform, from any source. Rotation and scale are kept over Play / Stop (Editor::KeptEntity) and saved with the level (Loading::saveLevelEdits: "transforms", "added"[].rotation / scale).
 */
+/* The entity under the window position (x_, y_) in pixels as the camera sees it (UninitializedPoolId if none), for click to select (Editor::processInputs). Entities are picked by the exact box of their model, else by their bounding sphere, see the definition. */
+PoolId pickEntity(GLFWwindow* pWindow_, const Camera& rCamera_, double x_, double y_);
+
+/* Where the ray under the window position (x_, y_) crosses the horizontal plane at height_ (world y), within the camera's far plane. False if the ray is level with the plane, points away from it or the window has no size. Used by Editor's paste. */
+bool pickPlanePoint(GLFWwindow* pWindow_, const Camera& rCamera_, double x_, double y_, float height_, glm::vec3& rPoint_);
+
 struct Gizmo
 {
 	enum Mode

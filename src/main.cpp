@@ -16,6 +16,7 @@
 #include "GCDisc.h"
 #include "ResourceKeys.h"
 #include "DebugSetup.h"
+#include "LevelLoader.h"
 #ifdef EDITOR
 #include "Editor.h"
 #include "ExternalPrefabs.h"
@@ -33,7 +34,11 @@ constexpr float FollowHeight = 18.0f;
 void updateFollowCamera(PoolId targetId_)
 {
 	Camera& cam = getMainCamera();
-	cam.set(getEntity(targetId_).renderPosition() + glm::vec3(0.0f, FollowHeight, 0.0f) - cam.front * FollowDistance);
+	glm::vec3 position = getEntity(targetId_).renderPosition() + glm::vec3(0.0f, FollowHeight, 0.0f) - cam.front * FollowDistance;
+
+	/* Through the camera's entity, which carries the camera along (Entity::moveTo); a camera made by hand has none. */
+	if(entityExists(cam.entityId)) getEntity(cam.entityId).moveTo(position);
+	else cam.set(position);
 }
 
 void processInputs() {
@@ -85,10 +90,14 @@ int main() {
 	/* The gameplay is the Lua scripts of Assets/Scripts (main.lua loads sadx/main.lua for Sonic and shadow/main.lua for Shadow, J switches the player, see Scripting.h; game.lua, run once the discs are open, loads the level and the players); a script that fails to load is reported on stderr and the game runs without it. */
 	Scripting::init();
 	Scripting::loadFile("main.lua");
+	/* The project's own scripts (Assets/External/Scripts/main.lua, if there is one): after the games', before registerPrefabs reads the behaviours. */
+	Scripting::loadExternalScripts();
 	/* After main.lua: a prefab reads the behaviours the scripts registered for it. Before any level or entity is made. */
 	registerPrefabs();
+	/* The prefabs' Changed files (Assets/External/Prefabs/<game>/<KEY>/Changed/prefab.json) name behaviours, so after the scripts. */
+	Loading::loadChangedPrefabs();
 #ifdef EDITOR
-	/* The editor's Global External prefabs (Assets/External/prefabs.json); the level's own are read when it opens. */
+	/* The editor's Global External prefabs (Assets/External/Prefabs/Global/prefabs.json); the level's own are read when it opens. */
 	Loading::loadExternalPrefabs(Loading::ExternalScope::Project);
 #endif
 	addCamera("MainCamera", {0.0f, 0.0f, 0.0f});

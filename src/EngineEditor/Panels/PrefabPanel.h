@@ -42,7 +42,7 @@ struct PrefabPanel
 
 private:
 	/* The game indices of the top-level folders of the Prefabs tab (the first two are the games, as in Prefab::game order SADX, Shadow). */
-	static constexpr int Global = 2;
+	static constexpr int Global = ScopeNav::Global;
 
 	PrefabThumbnails thumbnails;
 
@@ -65,9 +65,8 @@ private:
 	std::string shownFor;
 	bool shownStale = true;
 
-	/* Where the Prefabs tab is: openScope -1 = Global / Level, then 0 = Global, 1 = Level; game -1 = the games and External (External is game Global + openScope); then for a game group -1 = the groups; for External openFolder is the path inside ("" = the top, "a/b"). */
-	int openScope = -1;
-	int openGame = -1;
+	/* Where the Prefabs tab is: nav (scope, then game; see ScopeNav); then for a game group -1 = the groups; for External openFolder is the path inside ("" = the top, "a/b"). */
+	ScopeNav nav;
 	int openGroup = -1;
 	std::string openFolder;
 

@@ -100,50 +100,91 @@ static void eraseId(std::vector<PoolId>& rList_, PoolId id_)
 	rList_.erase(std::remove(rList_.begin(), rList_.end(), id_), rList_.end());
 }
 
-void addPrefabBehavior(PoolId prefabId_, PoolId behaviorId_)
+static bool hasId(const std::vector<PoolId>& rList_, PoolId id_)
 {
-	Prefab& rPrefab = Globals::Game::prefabs[prefabId_];
-	eraseId(rPrefab.removedBehaviors, behaviorId_);
-	if(std::find(rPrefab.addedBehaviors.begin(), rPrefab.addedBehaviors.end(), behaviorId_) == rPrefab.addedBehaviors.end()) rPrefab.addedBehaviors.push_back(behaviorId_);
-	forEachEntityOfPrefab(prefabId_, [&](PoolId entityId_)
-	{
-		if(!entityHasBehavior(Globals::Game::entities[entityId_], behaviorId_)) giveEntityBehavior(entityId_, behaviorId_);
-	});
+	return std::find(rList_.begin(), rList_.end(), id_) != rList_.end();
 }
 
-void removePrefabBehavior(PoolId prefabId_, PoolId behaviorId_)
+/* The set of the scope; Global is refused for an External prefab (its definition and level edits are saved with the level, not in a Changed file). */
+static PrefabEdits& editsOf(Prefab& rPrefab_, PrefabScope scope_)
 {
-	Prefab& rPrefab = Globals::Game::prefabs[prefabId_];
-	eraseId(rPrefab.addedBehaviors, behaviorId_);
-	if(std::find(rPrefab.removedBehaviors.begin(), rPrefab.removedBehaviors.end(), behaviorId_) == rPrefab.removedBehaviors.end()) rPrefab.removedBehaviors.push_back(behaviorId_);
-	forEachEntityOfPrefab(prefabId_, [&](PoolId entityId_)
-	{
-		while(removeEntityBehavior(entityId_, behaviorId_)) {}
-	});
+	if(scope_ == PrefabScope::Level) return rPrefab_.level;
+	if(rPrefab_.kind == PrefabKind::External) throw std::runtime_error(std::format("{} is an External prefab: it has no Changed file.", rPrefab_.name));
+	return rPrefab_.changed;
 }
 
-void addPrefabShape(PoolId prefabId_, const Physics::CollisionShape& rShape_)
+/* A Global edit was made: the prefab's Changed file is written (the editor only; the game never edits). */
+static void changedEdited(PoolId prefabId_, PrefabScope scope_)
+{
+#ifdef EDITOR
+	if(scope_ == PrefabScope::Global) Loading::saveChangedPrefab(prefabId_);
+#endif
+}
+
+void addPrefabBehavior(PoolId prefabId_, PoolId behaviorId_, PrefabScope scope_)
 {
 	Prefab& rPrefab = Globals::Game::prefabs[prefabId_];
-	auto removed = std::find(rPrefab.removedShapes.begin(), rPrefab.removedShapes.end(), rShape_);
-	bool cancelsRemoval = removed != rPrefab.removedShapes.end();
-	if(cancelsRemoval) rPrefab.removedShapes.erase(removed);
-	else rPrefab.addedShapes.push_back(rShape_);
+	PrefabEdits& rEdits = editsOf(rPrefab, scope_);
+	eraseId(rEdits.removedBehaviors, behaviorId_);
+	if(!hasId(rEdits.addedBehaviors, behaviorId_)) rEdits.addedBehaviors.push_back(behaviorId_);
+	bool levelDecides = scope_ == PrefabScope::Global && (hasId(rPrefab.level.removedBehaviors, behaviorId_) || hasId(rPrefab.source.removedBehaviors, behaviorId_));
+	if(!levelDecides)
+	{
+		forEachEntityOfPrefab(prefabId_, [&](PoolId entityId_)
+		{
+			if(!entityHasBehavior(Globals::Game::entities[entityId_], behaviorId_)) giveEntityBehavior(entityId_, behaviorId_);
+		});
+	}
+	changedEdited(prefabId_, scope_);
+}
+
+void removePrefabBehavior(PoolId prefabId_, PoolId behaviorId_, PrefabScope scope_)
+{
+	Prefab& rPrefab = Globals::Game::prefabs[prefabId_];
+	PrefabEdits& rEdits = editsOf(rPrefab, scope_);
+	eraseId(rEdits.addedBehaviors, behaviorId_);
+	if(!hasId(rEdits.removedBehaviors, behaviorId_)) rEdits.removedBehaviors.push_back(behaviorId_);
+	bool levelDecides = scope_ == PrefabScope::Global && (hasId(rPrefab.level.addedBehaviors, behaviorId_) || hasId(rPrefab.source.addedBehaviors, behaviorId_));
+	if(!levelDecides)
+	{
+		forEachEntityOfPrefab(prefabId_, [&](PoolId entityId_)
+		{
+			while(removeEntityBehavior(entityId_, behaviorId_)) {}
+		});
+	}
+	changedEdited(prefabId_, scope_);
+}
+
+void addPrefabShape(PoolId prefabId_, const Physics::CollisionShape& rShape_, PrefabScope scope_)
+{
+	Prefab& rPrefab = Globals::Game::prefabs[prefabId_];
+	PrefabEdits& rEdits = editsOf(rPrefab, scope_);
+	auto removed = std::find(rEdits.removedShapes.begin(), rEdits.removedShapes.end(), rShape_);
+	bool cancelsRemoval = removed != rEdits.removedShapes.end();
+	if(cancelsRemoval) rEdits.removedShapes.erase(removed);
+	else rEdits.addedShapes.push_back(rShape_);
 	forEachEntityOfPrefab(prefabId_, [&](PoolId entityId_)
 	{
 		std::vector<Physics::CollisionShape> shapes = entityShapes(entityId_);
 		if(cancelsRemoval && std::find(shapes.begin(), shapes.end(), rShape_) != shapes.end()) return;
-		shapes.push_back(rShape_);
+		/* A shape of the Changed file goes before the level's added ones, the order a level load gives (applyPrefabShapesTo), so the entity does not look edited. */
+		std::vector<Physics::CollisionShape> laterAdded = rPrefab.source.addedShapes;
+		laterAdded.insert(laterAdded.end(), rPrefab.level.addedShapes.begin(), rPrefab.level.addedShapes.end());
+		size_t levelAdded = laterAdded.size();
+		bool endsWithLevelAdded = scope_ == PrefabScope::Global && shapes.size() >= levelAdded && std::equal(laterAdded.begin(), laterAdded.end(), shapes.end() - levelAdded);
+		shapes.insert(endsWithLevelAdded ? shapes.end() - levelAdded : shapes.end(), rShape_);
 		setEntityShapes(entityId_, shapes);
 	});
+	changedEdited(prefabId_, scope_);
 }
 
-void removePrefabShape(PoolId prefabId_, const Physics::CollisionShape& rShape_)
+void removePrefabShape(PoolId prefabId_, const Physics::CollisionShape& rShape_, PrefabScope scope_)
 {
 	Prefab& rPrefab = Globals::Game::prefabs[prefabId_];
-	auto added = std::find(rPrefab.addedShapes.begin(), rPrefab.addedShapes.end(), rShape_);
-	if(added != rPrefab.addedShapes.end()) rPrefab.addedShapes.erase(added);
-	else rPrefab.removedShapes.push_back(rShape_);
+	PrefabEdits& rEdits = editsOf(rPrefab, scope_);
+	auto added = std::find(rEdits.addedShapes.begin(), rEdits.addedShapes.end(), rShape_);
+	if(added != rEdits.addedShapes.end()) rEdits.addedShapes.erase(added);
+	else rEdits.removedShapes.push_back(rShape_);
 	forEachEntityOfPrefab(prefabId_, [&](PoolId entityId_)
 	{
 		std::vector<Physics::CollisionShape> shapes = entityShapes(entityId_);
@@ -152,16 +193,52 @@ void removePrefabShape(PoolId prefabId_, const Physics::CollisionShape& rShape_)
 		shapes.erase(found);
 		setEntityShapes(entityId_, shapes);
 	});
+	changedEdited(prefabId_, scope_);
 }
 
-void applyPrefabShapesTo(const Prefab& rPrefab_, std::vector<Physics::CollisionShape>& rShapes_)
+static void applyShapeEdits(const PrefabEdits& rEdits_, std::vector<Physics::CollisionShape>& rShapes_)
 {
-	for(const Physics::CollisionShape& rShape : rPrefab_.removedShapes)
+	for(const Physics::CollisionShape& rShape : rEdits_.removedShapes)
 	{
 		auto found = std::find(rShapes_.begin(), rShapes_.end(), rShape);
 		if(found != rShapes_.end()) rShapes_.erase(found);
 	}
-	rShapes_.insert(rShapes_.end(), rPrefab_.addedShapes.begin(), rPrefab_.addedShapes.end());
+	rShapes_.insert(rShapes_.end(), rEdits_.addedShapes.begin(), rEdits_.addedShapes.end());
+}
+
+void applyPrefabShapesTo(const Prefab& rPrefab_, std::vector<Physics::CollisionShape>& rShapes_)
+{
+	applyShapeEdits(rPrefab_.changed, rShapes_);
+	applyShapeEdits(rPrefab_.source, rShapes_);
+	applyShapeEdits(rPrefab_.level, rShapes_);
+}
+
+static void applyBehaviorEdits(const PrefabEdits& rEdits_, std::vector<PoolId>& rBehaviors_)
+{
+	for(PoolId behaviorId : rEdits_.addedBehaviors)
+	{
+		if(!hasId(rBehaviors_, behaviorId)) rBehaviors_.push_back(behaviorId);
+	}
+	for(PoolId behaviorId : rEdits_.removedBehaviors) eraseId(rBehaviors_, behaviorId);
+}
+
+void applyPrefabBehaviorsTo(const Prefab& rPrefab_, std::vector<PoolId>& rBehaviors_)
+{
+	applyBehaviorEdits(rPrefab_.changed, rBehaviors_);
+	applyBehaviorEdits(rPrefab_.source, rBehaviors_);
+	applyBehaviorEdits(rPrefab_.level, rBehaviors_);
+}
+
+MeshChoice prefabMesh(const Prefab& rPrefab_)
+{
+	if(rPrefab_.level.mesh.kind != MeshChoiceKind::Default) return rPrefab_.level.mesh;
+	return rPrefab_.source.mesh.kind != MeshChoiceKind::Default ? rPrefab_.source.mesh : rPrefab_.changed.mesh;
+}
+
+TextureChoice prefabTexture(const Prefab& rPrefab_)
+{
+	if(rPrefab_.level.texture.kind != TextureChoiceKind::Default) return rPrefab_.level.texture;
+	return rPrefab_.source.texture.kind != TextureChoiceKind::Default ? rPrefab_.source.texture : rPrefab_.changed.texture;
 }
 
 void clearPrefabEdits()
@@ -170,34 +247,68 @@ void clearPrefabEdits()
 	for(uint32_t i = 0; i < rPrefabs.objects.size(); i++)
 	{
 		if(!rPrefabs.alive[i]) continue;
-		rPrefabs.objects[i].addedBehaviors.clear();
-		rPrefabs.objects[i].removedBehaviors.clear();
-		rPrefabs.objects[i].addedShapes.clear();
-		rPrefabs.objects[i].removedShapes.clear();
+		PrefabEdits& rLevel = rPrefabs.objects[i].level;
+		rLevel.addedBehaviors.clear();
+		rLevel.removedBehaviors.clear();
+		rLevel.addedShapes.clear();
+		rLevel.removedShapes.clear();
 		/* An External prefab's model and texture are its definition, not an edit of the level. */
 		if(rPrefabs.objects[i].kind == PrefabKind::External) continue;
-		rPrefabs.objects[i].texture = TextureChoice{};
-		rPrefabs.objects[i].mesh = MeshChoice{};
+		rLevel.texture = TextureChoice{};
+		rLevel.mesh = MeshChoice{};
 	}
+}
+
+PrefabEdits mergePrefabEdits(const PrefabEdits& rSource_, const PrefabEdits& rLevel_)
+{
+	PrefabEdits merged = rSource_;
+	for(PoolId behaviorId : rLevel_.removedBehaviors)
+	{
+		if(hasId(merged.addedBehaviors, behaviorId)) eraseId(merged.addedBehaviors, behaviorId);
+		else if(!hasId(merged.removedBehaviors, behaviorId)) merged.removedBehaviors.push_back(behaviorId);
+	}
+	for(PoolId behaviorId : rLevel_.addedBehaviors)
+	{
+		if(hasId(merged.removedBehaviors, behaviorId)) eraseId(merged.removedBehaviors, behaviorId);
+		else if(!hasId(merged.addedBehaviors, behaviorId)) merged.addedBehaviors.push_back(behaviorId);
+	}
+	for(const Physics::CollisionShape& rShape : rLevel_.removedShapes)
+	{
+		auto added = std::find(merged.addedShapes.begin(), merged.addedShapes.end(), rShape);
+		if(added != merged.addedShapes.end()) merged.addedShapes.erase(added);
+		else merged.removedShapes.push_back(rShape);
+	}
+	for(const Physics::CollisionShape& rShape : rLevel_.addedShapes)
+	{
+		auto removed = std::find(merged.removedShapes.begin(), merged.removedShapes.end(), rShape);
+		if(removed != merged.removedShapes.end()) merged.removedShapes.erase(removed);
+		else merged.addedShapes.push_back(rShape);
+	}
+	if(rLevel_.mesh.kind != MeshChoiceKind::Default) merged.mesh = rLevel_.mesh;
+	if(rLevel_.texture.kind != TextureChoiceKind::Default) merged.texture = rLevel_.texture;
+	return merged;
 }
 
 void applyPrefabBehaviors(PoolId prefabId_, PoolId entityId_)
 {
 	const Prefab& rPrefab = Globals::Game::prefabs[prefabId_];
-	for(PoolId behaviorId : rPrefab.addedBehaviors)
+	for(const PrefabEdits* pEdits : {&rPrefab.changed, &rPrefab.source, &rPrefab.level})
 	{
-		if(!entityHasBehavior(Globals::Game::entities[entityId_], behaviorId)) giveEntityBehavior(entityId_, behaviorId);
-	}
-	for(PoolId behaviorId : rPrefab.removedBehaviors)
-	{
-		while(removeEntityBehavior(entityId_, behaviorId)) {}
+		for(PoolId behaviorId : pEdits->addedBehaviors)
+		{
+			if(!entityHasBehavior(Globals::Game::entities[entityId_], behaviorId)) giveEntityBehavior(entityId_, behaviorId);
+		}
+		for(PoolId behaviorId : pEdits->removedBehaviors)
+		{
+			while(removeEntityBehavior(entityId_, behaviorId)) {}
+		}
 	}
 }
 
 void applyPrefabShapes(PoolId prefabId_, PoolId entityId_)
 {
 	const Prefab& rPrefab = Globals::Game::prefabs[prefabId_];
-	if(rPrefab.addedShapes.empty() && rPrefab.removedShapes.empty()) return;
+	if(rPrefab.changed.addedShapes.empty() && rPrefab.changed.removedShapes.empty() && rPrefab.source.addedShapes.empty() && rPrefab.source.removedShapes.empty() && rPrefab.level.addedShapes.empty() && rPrefab.level.removedShapes.empty()) return;
 	std::vector<Physics::CollisionShape> shapes = entityShapes(entityId_);
 	applyPrefabShapesTo(rPrefab, shapes);
 	setEntityShapes(entityId_, shapes);
@@ -207,41 +318,49 @@ void applyPrefabShapes(PoolId prefabId_, PoolId entityId_)
 static void externalPrefabChanged(PoolId prefabId_)
 {
 	Prefab& rPrefab = Globals::Game::prefabs[prefabId_];
-	rPrefab.hasModel = rPrefab.mesh.kind != MeshChoiceKind::Default;
+	rPrefab.hasModel = rPrefab.level.mesh.kind != MeshChoiceKind::Default;
 	prefabRevisionCounter++;
 #ifdef EDITOR
 	Loading::saveExternalPrefabs(rPrefab.inLevel ? Loading::ExternalScope::Level : Loading::ExternalScope::Project);
 #endif
 }
 
-uint32_t setPrefabTexture(PoolId prefabId_, const TextureChoice& rChoice_)
+uint32_t setPrefabTexture(PoolId prefabId_, const TextureChoice& rChoice_, PrefabScope scope_)
 {
-	Globals::Game::prefabs[prefabId_].texture = rChoice_;
+	Prefab& rPrefab = Globals::Game::prefabs[prefabId_];
+	editsOf(rPrefab, scope_).texture = rChoice_;
 	uint32_t failed = 0;
-	forEachEntityOfPrefab(prefabId_, [&](PoolId entityId_)
+	bool levelDecides = scope_ == PrefabScope::Global && (rPrefab.level.texture.kind != TextureChoiceKind::Default || rPrefab.source.texture.kind != TextureChoiceKind::Default);
+	TextureChoice choice = prefabTexture(rPrefab);
+	if(!levelDecides)
 	{
-		if(!Globals::Game::entities[entityId_].hasModelSlot()) return;
-		try
+		forEachEntityOfPrefab(prefabId_, [&](PoolId entityId_)
 		{
-			setEntityTexture(entityId_, rChoice_);
-		}
-		catch(const std::runtime_error& rError)
-		{
-			if(failed == 0) std::fprintf(stderr, "Texture: %s %s: %s\n", Globals::Game::prefabs[prefabId_].name.c_str(), Globals::Game::entities.getName(entityId_).c_str(), rError.what());
-			failed++;
-		}
-	});
-	if(Globals::Game::prefabs[prefabId_].kind == PrefabKind::External) externalPrefabChanged(prefabId_);
+			if(!Globals::Game::entities[entityId_].hasModelSlot()) return;
+			try
+			{
+				setEntityTexture(entityId_, choice);
+			}
+			catch(const std::runtime_error& rError)
+			{
+				if(failed == 0) std::fprintf(stderr, "Texture: %s %s: %s\n", Globals::Game::prefabs[prefabId_].name.c_str(), Globals::Game::entities.getName(entityId_).c_str(), rError.what());
+				failed++;
+			}
+		});
+	}
+	if(rPrefab.kind == PrefabKind::External) externalPrefabChanged(prefabId_);
+	changedEdited(prefabId_, scope_);
 	return failed;
 }
 
 void applyPrefabTexture(PoolId prefabId_, PoolId entityId_)
 {
 	const Prefab& rPrefab = Globals::Game::prefabs[prefabId_];
-	if(rPrefab.texture.kind == TextureChoiceKind::Default) return;
+	TextureChoice choice = prefabTexture(rPrefab);
+	if(choice.kind == TextureChoiceKind::Default) return;
 	try
 	{
-		setEntityTexture(entityId_, rPrefab.texture);
+		setEntityTexture(entityId_, choice);
 	}
 	catch(const std::runtime_error& rError)
 	{
@@ -249,34 +368,42 @@ void applyPrefabTexture(PoolId prefabId_, PoolId entityId_)
 	}
 }
 
-uint32_t setPrefabMesh(PoolId prefabId_, const MeshChoice& rChoice_)
+uint32_t setPrefabMesh(PoolId prefabId_, const MeshChoice& rChoice_, PrefabScope scope_)
 {
-	Globals::Game::prefabs[prefabId_].mesh = rChoice_;
+	Prefab& rPrefab = Globals::Game::prefabs[prefabId_];
+	editsOf(rPrefab, scope_).mesh = rChoice_;
 	uint32_t failed = 0;
-	forEachEntityOfPrefab(prefabId_, [&](PoolId entityId_)
+	bool levelDecides = scope_ == PrefabScope::Global && (rPrefab.level.mesh.kind != MeshChoiceKind::Default || rPrefab.source.mesh.kind != MeshChoiceKind::Default);
+	MeshChoice choice = prefabMesh(rPrefab);
+	if(!levelDecides)
 	{
-		if(!Globals::Game::entities[entityId_].hasModelSlot()) return;
-		try
+		forEachEntityOfPrefab(prefabId_, [&](PoolId entityId_)
 		{
-			setEntityMesh(entityId_, rChoice_);
-		}
-		catch(const std::runtime_error& rError)
-		{
-			if(failed == 0) std::fprintf(stderr, "Model: %s %s: %s\n", Globals::Game::prefabs[prefabId_].name.c_str(), Globals::Game::entities.getName(entityId_).c_str(), rError.what());
-			failed++;
-		}
-	});
-	if(Globals::Game::prefabs[prefabId_].kind == PrefabKind::External) externalPrefabChanged(prefabId_);
+			if(!Globals::Game::entities[entityId_].hasModelSlot()) return;
+			try
+			{
+				setEntityMesh(entityId_, choice);
+			}
+			catch(const std::runtime_error& rError)
+			{
+				if(failed == 0) std::fprintf(stderr, "Model: %s %s: %s\n", Globals::Game::prefabs[prefabId_].name.c_str(), Globals::Game::entities.getName(entityId_).c_str(), rError.what());
+				failed++;
+			}
+		});
+	}
+	if(rPrefab.kind == PrefabKind::External) externalPrefabChanged(prefabId_);
+	changedEdited(prefabId_, scope_);
 	return failed;
 }
 
 void applyPrefabMesh(PoolId prefabId_, PoolId entityId_)
 {
 	const Prefab& rPrefab = Globals::Game::prefabs[prefabId_];
-	if(rPrefab.mesh.kind == MeshChoiceKind::Default) return;
+	MeshChoice choice = prefabMesh(rPrefab);
+	if(choice.kind == MeshChoiceKind::Default) return;
 	try
 	{
-		setEntityMesh(entityId_, rPrefab.mesh);
+		setEntityMesh(entityId_, choice);
 	}
 	catch(const std::runtime_error& rError)
 	{
@@ -304,8 +431,8 @@ PoolId addExternalPrefab(bool inLevel_, const std::string& name_, const std::str
 	prefab.kind = PrefabKind::External;
 	prefab.hasModel = rMesh_.kind != MeshChoiceKind::Default;
 	prefab.hasBehaviour = Scripting::hasPrefabBehavior(poolName.c_str());
-	prefab.mesh = rMesh_;
-	prefab.texture = rTexture_;
+	prefab.level.mesh = rMesh_;
+	prefab.level.texture = rTexture_;
 	prefab.inLevel = inLevel_;
 	prefab.folder = folder_;
 	PoolId id = Globals::Game::prefabs.add(poolName.c_str(), std::move(prefab));

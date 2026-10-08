@@ -2,11 +2,17 @@
 #include "ScriptInternal.h"
 #include "ScriptLog.h"
 #include "SASet.h"
+#include "Globals.h"
+#include "API.h"
+#include "EntityBehavior.h"
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
+#include <algorithm>
 #include <cstdio>
+#include <map>
 #include <cstring>
+#include <filesystem>
 #include <format>
 #include <string>
 #include <unordered_map>
@@ -110,10 +116,10 @@ void destroy()
 	prefabBehaviors.clear();
 }
 
-bool loadFile(const char* path_)
+bool loadFile(const char* path_, const char* root_)
 {
 	if(pState == nullptr) return false;
-	std::string path = std::string("Assets/Scripts/") + path_;
+	std::string path = std::string(root_) + path_;
 	if(luaL_loadfile(pState, path.c_str()) != LUA_OK)
 	{
 		reportError(lua_tostring(pState, -1));
@@ -123,9 +129,82 @@ bool loadFile(const char* path_)
 	return protectedCall(0, 0);
 }
 
-void callBehavior(int scriptFunction_, PoolId entityId_)
+void loadExternalScripts()
+{
+	if(!std::filesystem::exists(std::string(ExternalScriptsRoot) + "main.lua")) return;
+	loadFile("main.lua", ExternalScriptsRoot);
+}
+
+/* A vector of three numbers as a table {x, y, z}. */
+static void pushVector(float x_, float y_, float z_);
+
+/*
+Writes the declared fields (EntityBehavior::fields) of a behaviour into the entity's sf.state table, once per entity and behaviour: the value the editor set (Entity::externals) or the declared default. An entity that is gone (a reference
+to it was kept) or a prefab that is gone reads as sf.none (-1) / nil. An entity's state table is made here if it has none yet, as sf.state does.
+*/
+static void applyFields(PoolId entityId_, PoolId behaviorId_)
+{
+	Entity& rEntity = Globals::Game::entities[entityId_];
+	const EntityBehavior& rBehavior = Globals::Game::entityBehaviorTypes[behaviorId_];
+	if(rBehavior.fields.empty() || std::find(rEntity.externalsApplied.begin(), rEntity.externalsApplied.end(), behaviorId_) != rEntity.externalsApplied.end()) return;
+	rEntity.externalsApplied.push_back(behaviorId_);
+
+	if(rEntity.scriptStateRef == 0)
+	{
+		lua_newtable(pState);
+		lua_pushvalue(pState, -1);
+		rEntity.scriptStateRef = luaL_ref(pState, LUA_REGISTRYINDEX);
+	}
+	else
+	{
+		lua_rawgeti(pState, LUA_REGISTRYINDEX, rEntity.scriptStateRef);
+	}
+	const std::map<std::string, ExternalValue>* pSet = nullptr;
+	auto set = rEntity.externals.find(Globals::Game::entityBehaviorTypes.names[behaviorId_.id]);
+	if(set != rEntity.externals.end()) pSet = &set->second;
+
+	for(const ExternalField& rField : rBehavior.fields)
+	{
+		const ExternalValue* pValue = &rField.defaultValue;
+		if(pSet != nullptr)
+		{
+			auto found = pSet->find(rField.name);
+			if(found != pSet->end()) pValue = &found->second;
+		}
+		switch(rField.type)
+		{
+		case ExternalType::Number:
+			lua_pushnumber(pState, pValue->number);
+			break;
+		case ExternalType::Bool:
+			lua_pushboolean(pState, pValue->flag);
+			break;
+		case ExternalType::String:
+			lua_pushstring(pState, pValue->text.c_str());
+			break;
+		case ExternalType::Vec3:
+			pushVector(pValue->vector.x, pValue->vector.y, pValue->vector.z);
+			break;
+		case ExternalType::Entity:
+			lua_pushinteger(pState, entityExists(pValue->entity) ? toHandle(pValue->entity) : toHandle(UninitializedPoolId));
+			break;
+		case ExternalType::Prefab:
+		{
+			PoolId prefabId = pValue->prefab;
+			if(prefabId.id < Globals::Game::prefabs.objects.size() && Globals::Game::prefabs.alive[prefabId.id] && Globals::Game::prefabs.generation[prefabId.id] == prefabId.generation) lua_pushstring(pState, Globals::Game::prefabs.names[prefabId.id].c_str());
+			else lua_pushnil(pState);
+			break;
+		}
+		}
+		lua_setfield(pState, -2, rField.name.c_str());
+	}
+	lua_pop(pState, 1);
+}
+
+void callBehavior(int scriptFunction_, PoolId entityId_, PoolId behaviorId_)
 {
 	if(pState == nullptr || failed.contains(scriptFunction_)) return;
+	applyFields(entityId_, behaviorId_);
 	lua_rawgeti(pState, LUA_REGISTRYINDEX, scriptFunction_);
 	lua_pushinteger(pState, toHandle(entityId_));
 	if(!protectedCall(1, 0))

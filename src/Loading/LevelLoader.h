@@ -18,11 +18,24 @@ namespace Loading
 
 #ifdef EDITOR
     /*
+    Writes the prefab's Changed file (Assets/External/Prefabs/<prefab name>/Changed/prefab.json, and External/Prefabs/... of the source tree) from Prefab::changed, or removes it when that is empty. Called by the prefab edit functions (Prefab.h) after a Global edit.
+    Throws std::runtime_error if a file can't be written.
+    */
+    void saveChangedPrefab(PoolId prefabId_);
+
+    /*
     Writes the level's edits into its file (Assets/Levels/<name>/<name>.json, and Levels/<name>/<name>.json of the source tree) under the file name given (a name other than the level's copies the level's whole folder to the new name first), copying the rest of the level's file as it is: an "edits" object with
     "moved" (a level's own entity by index, its "position" and the "source" position the game's data gives) and "added" (an entity of "prefab" at "position"). loadLevel applies them after it has made the level's
     own entities; no edits removes the object. Throws std::runtime_error if a file can't be read or written.
     */
     void saveLevelEdits(PoolId levelId_, const std::string& fileName_);
+
+    /*
+    File > Save Source Game Level: makes the level as it is now (the level file's source with its edits and the prefab edits of the level on top) the level's source, in the level's own folder. The file gets a "source" object (the format of "edits" without "prefabs", with the "added"
+    entities included) and loses its "edits"; each prefab's edits go to Assets/Levels/<name>/SourceGamePrefabs/<prefab name>/prefab.json (and Levels/ of the source tree), the file removed when the prefab has none. loadLevel applies the source before it marks the level's
+    entities as the source, so Restore Source Game Level and later edits are from it. The loaded level is not changed (the caller loads it again). Throws std::runtime_error if a file can't be read or written.
+    */
+    void saveSourceLevel(PoolId levelId_);
 
     /*
     What the editor's File > New level asks for; a field left empty is not written. "sadx" needs landTableRel, landTableOffset and textures (the .gvm); "sth2005" needs sections (comma separated) and textures (the texture .one) with txd; "gltf" needs model (a .gltf/.glb) and may have collisions (comma separated .gltf/.glb files); both are imported into the level's folder (GLTFImport.h), the files are not needed afterwards,
@@ -63,6 +76,18 @@ namespace Loading
     std::vector<std::string> activeGLTFCollisions(PoolId levelId_);
     bool isGLTFLevel(PoolId levelId_);
 #endif
+
+    /*
+    Reads the Changed file of every prefab built from a key (Assets/External/Prefabs/<game>/<KEY>/Changed/prefab.json, e.g. SADX/SPRING) into Prefab::changed: the same object as a level file's edits.prefabs entry (see ENGINE_USAGE.md). A missing file is no changes; a bad one is
+    printed to stderr and skipped. Once, after registerPrefabs and the scripts (a behaviour is named); before any level or entity is made.
+    */
+    void loadChangedPrefabs();
+
+    /*
+    Reads the level's Source Game Level prefab files (Assets/Levels/<level>/SourceGamePrefabs/<prefab name>/prefab.json, e.g. .../SADX/SPRING/prefab.json: the same object as a Changed file) into Prefab::source of every prefab (all others are emptied). A missing file is no edits; a bad one is printed
+    to stderr and skipped. loadLevel calls it before the level's entities are made (after the level's External prefabs exist).
+    */
+    void loadSourcePrefabs(const std::string& levelName_);
 
     /* Calls the function for every entity key of the generated entity tables the registry names (and of the stage entities), each table in turn: the source of the prefabs (Prefab.h). The keys live for the whole run. */
     void forEachSAEntityKey(const std::function<void(const SAEntityKey&)>& rFunction_);

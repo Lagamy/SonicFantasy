@@ -2,6 +2,7 @@
 #include "PoolId.h"
 #include "TextureChoice.h"
 #include "MeshChoice.h"
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,11 @@ private:
 	bool openPick = false;
 	std::string message;
 
+	/* The switch of the "Every entity of <prefab>" boxes (all four tabs): false = the open level's edits (Prefab::level, saved with the level), true = every level's (Prefab::changed, the prefab's Changed file, saved at once). Not for an External prefab. */
+	bool allLevels = false;
+
+	void drawScopeSwitch(PoolId prefabId_);
+	void tryEdit(const std::function<void()>& rEdit_);
 	PoolId pickBehaviour(const char* id_);
 	void giveBehaviour(PoolId entityId_, bool forPrefab_, PoolId behaviorId_);
 	void acceptScript(PoolId entityId_, bool forPrefab_);
@@ -37,6 +43,7 @@ private:
 	void drawBoundArea(PoolId entityId_);
 	void drawPhysics(PoolId entityId_);
 	void drawBehaviour(PoolId entityId_);
+	void drawFields(PoolId entityId_, PoolId behaviorId_);
 	void drawMesh(PoolId entityId_);
 	void giveMesh(PoolId entityId_, bool forPrefab_, const MeshChoice& rChoice_);
 	void acceptMesh(PoolId entityId_, bool forPrefab_);

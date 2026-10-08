@@ -12,5 +12,10 @@ struct BoundingSphere
 	glm::vec3 center = glm::vec3(0.0f);
 	float radius = 0.0f;
 	bool valid = false;
+
+	/* The exact box around the rest pose vertices (no margin), as a cheap reject before picking in the editor tests triangles (Entity::rayHitsModel); boxValid is false for models that only have the sphere (external ones). */
+	glm::vec3 boxLow = glm::vec3(0.0f);
+	glm::vec3 boxHigh = glm::vec3(0.0f);
+	bool boxValid = false;
 };
 }

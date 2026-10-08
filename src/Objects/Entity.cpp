@@ -254,6 +254,7 @@ void Entity::setPosition(const glm::vec3& rPosition_)
 	this->previousPosition = rPosition_;
 	this->stagingPosition = rPosition_;
 	this->transformDirty = true;
+	this->moveCameraModule();
 	/* A teleport has no motion before it: the next move by the mean velocity (PhysicsBody::moveByMeanVelocity) starts from rest. */
 	if(this->physicsId != UninitializedPoolId) Globals::Physics::bodies[this->physicsId].tickStartVelocity = glm::vec3(0.0f);
 }
@@ -263,6 +264,14 @@ void Entity::moveTo(const glm::vec3& rPosition_)
 	this->position = rPosition_;
 	this->stagingPosition = rPosition_;
 	this->transformDirty = true;
+	this->moveCameraModule();
+}
+
+void Entity::moveCameraModule()
+{
+	if(this->cameraId == UninitializedPoolId) return;
+	Camera& rCamera = Globals::Game::cameras[this->cameraId];
+	if(rCamera.position != this->position) rCamera.set(this->position);
 }
 
 glm::vec3 Entity::renderPosition() const
@@ -397,6 +406,137 @@ Graphics::BoundingSphere Entity::localBounds()
 		bounds.center = glm::vec3(glm::rotate(glm::mat4(1.0f), glm::radians(Graphics::RenderWareYawDegrees), glm::vec3(0.0f, 1.0f, 0.0f)) * glm::vec4(bounds.center, 1.0f));
 	}
 	return bounds;
+}
+
+/* Whether the ray (mesh space; the direction is not renormalized, so t is the same parameter as in the world) crosses a triangle of the mesh placed by rWorld_, nearest t in rDistance_. A mesh not in the standard layout has no readable positions and counts as empty. */
+static bool rayHitsMesh(const Graphics::BasicMesh& rMesh_, const glm::mat4& rWorld_, const glm::vec3& rOrigin_, const glm::vec3& rDirection_, float& rDistance_, bool& rAny_)
+{
+	if(rMesh_.verticies.pLayout != &Graphics::VertexLayout::standard() || rMesh_.verticies.empty()) return false;
+	glm::mat4 inverse = glm::inverse(rWorld_);
+	glm::vec3 origin = glm::vec3(inverse * glm::vec4(rOrigin_, 1.0f));
+	glm::vec3 direction = glm::vec3(inverse * glm::vec4(rDirection_, 0.0f));
+	const Graphics::Vertex* pVertices = rMesh_.verticies.begin();
+	size_t count = rMesh_.indicies.empty() ? rMesh_.verticies.size() : rMesh_.indicies.size();
+	bool hit = false;
+	rAny_ = true;
+
+	/* Moller-Trumbore, both sides (the editor selects what it sees from behind too). */
+	for(size_t i = 0; i + 2 < count; i += 3)
+	{
+		const glm::vec3& rA = pVertices[rMesh_.indicies.empty() ? i : rMesh_.indicies[i]].position;
+		const glm::vec3& rB = pVertices[rMesh_.indicies.empty() ? i + 1 : rMesh_.indicies[i + 1]].position;
+		const glm::vec3& rC = pVertices[rMesh_.indicies.empty() ? i + 2 : rMesh_.indicies[i + 2]].position;
+		glm::vec3 edge1 = rB - rA;
+		glm::vec3 edge2 = rC - rA;
+		glm::vec3 p = glm::cross(direction, edge2);
+		float determinant = glm::dot(edge1, p);
+		if(std::abs(determinant) < 1e-12f) continue;
+		float inverseDeterminant = 1.0f / determinant;
+		glm::vec3 toOrigin = origin - rA;
+		float u = glm::dot(toOrigin, p) * inverseDeterminant;
+		if(u < 0.0f || u > 1.0f) continue;
+		glm::vec3 q = glm::cross(toOrigin, edge1);
+		float v = glm::dot(direction, q) * inverseDeterminant;
+		if(v < 0.0f || u + v > 1.0f) continue;
+		float t = glm::dot(edge2, q) * inverseDeterminant;
+		if(t <= 0.0f) continue;
+		if(!hit || t < rDistance_)
+		{
+			rDistance_ = t;
+			hit = true;
+		}
+	}
+	return hit;
+}
+
+bool Entity::rayHitsModel(const glm::vec3& rOrigin_, const glm::vec3& rDirection_, float& rDistance_, bool& rHasTriangles_)
+{
+	rHasTriangles_ = false;
+	if(this->scale.x == 0.0f || this->scale.y == 0.0f || this->scale.z == 0.0f) return false;
+	if(!this->isExternalOnly() && this->instanceId == UninitializedPoolId) return false;
+
+	/* The ray is taken into the model's own space by the inverse of the draw transform (a ONE model also has the RenderWareYawDegrees turn); the direction is not renormalized, so the distances stay world distances. */
+	bool isONE = !this->isExternalOnly() && this->pOverrideModel == nullptr && this->sourceEngine == STH2005_ONE;
+	glm::mat4 model = glm::translate(glm::mat4(1.0f), this->renderPosition()) * this->renderRotation() * glm::scale(glm::mat4(1.0f), this->scale);
+	if(isONE) model = model * glm::rotate(glm::mat4(1.0f), glm::radians(Graphics::RenderWareYawDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
+	glm::mat4 inverse = glm::inverse(model);
+	glm::vec3 origin = glm::vec3(inverse * glm::vec4(rOrigin_, 1.0f));
+	glm::vec3 direction = glm::vec3(inverse * glm::vec4(rDirection_, 0.0f));
+
+	/* A rest pose box rejects cheaply before the triangles; an SA model with a pose built (it is animated) can reach out of its rest pose box, so it skips this. */
+	bool posed = !this->isExternalOnly() && this->pOverrideModel == nullptr && this->sourceEngine == SA_NINJA && !Graphics::getSAInstance(this->instanceId).nodePose.empty();
+	Graphics::BoundingSphere local = this->localBounds();
+	if(local.boxValid && !posed)
+	{
+		/* Slab test: the ray is inside the box between the latest entry and the earliest exit of the three axis slabs. */
+		float entry = 0.0f;
+		float exit = 1e30f;
+		for(int axis = 0; axis < 3; axis++)
+		{
+			if(std::abs(direction[axis]) < 1e-9f)
+			{
+				if(origin[axis] < local.boxLow[axis] || origin[axis] > local.boxHigh[axis]) { exit = -1.0f; break; }
+				continue;
+			}
+			float t0 = (local.boxLow[axis] - origin[axis]) / direction[axis];
+			float t1 = (local.boxHigh[axis] - origin[axis]) / direction[axis];
+			entry = std::max(entry, std::min(t0, t1));
+			exit = std::min(exit, std::max(t0, t1));
+		}
+		if(entry > exit)
+		{
+			/* A model with a box has triangles, so a miss of the box is a miss of the model (no sphere fallback). */
+			rHasTriangles_ = true;
+			return false;
+		}
+	}
+
+	bool hit = false;
+	float best = 0.0f;
+	auto test = [&](const Graphics::BasicMesh& rMesh_, const glm::mat4& rWorld_)
+	{
+		float distance = 0.0f;
+		if(rayHitsMesh(rMesh_, rWorld_, origin, direction, distance, rHasTriangles_) && (!hit || distance < best))
+		{
+			best = distance;
+			hit = true;
+		}
+	};
+	if(this->pOverrideModel != nullptr)
+	{
+		Graphics::ExternalPools& rPools = this->pOverrideModel->inProject ? Graphics::externalProject : Graphics::externalLevel;
+		for(const Graphics::ExternalSubmesh& rSubmesh : this->pOverrideModel->submeshes) test(rPools.meshes[rSubmesh.meshId], glm::mat4(1.0f));
+	}
+	else if(this->sourceEngine == SA_NINJA)
+	{
+		const Graphics::SAInstance& rInstance = Graphics::getSAInstance(this->instanceId);
+		const Graphics::SAMesh& rMesh = Graphics::saMeshes[rInstance.saMeshId];
+
+		/* The pose of the last drawn frame places the nodes when there is one (it overrides each node's localTransform). */
+		bool usePose = rInstance.nodePose.size() == rMesh.nodes.size();
+		std::vector<glm::mat4> world(rMesh.nodes.size());
+		for(size_t i = 0; i < rMesh.nodes.size(); i++)
+		{
+			const Graphics::SANode& rNode = rMesh.nodes[i];
+			world[i] = (rNode.parent < 0 ? glm::mat4(1.0f) : world[rNode.parent]) * (usePose ? rInstance.nodePose[i] : rNode.localTransform);
+			for(const Graphics::SASubmesh& rSubmesh : rNode.submeshes) test(rSubmesh.mesh, world[i]);
+		}
+	}
+	else if(this->sourceEngine == STH2005_ONE)
+	{
+		const Graphics::ONEInstance& rInstance = Graphics::getONEInstance(this->instanceId);
+		const Graphics::RenderWareMesh& rMesh = Graphics::oneArchives[rInstance.archiveId].meshes[rInstance.meshIndex];
+
+		/* The rest pose, like the bounds (a skinned atomic as if on its frame). */
+		std::vector<glm::mat4> world(rMesh.frames.size());
+		for(size_t i = 0; i < rMesh.frames.size(); i++) world[i] = (rMesh.frames[i].parent < 0 ? glm::mat4(1.0f) : world[rMesh.frames[i].parent]) * rMesh.frames[i].localTransform;
+		for(const Graphics::RenderWareAtomic& rAtomic : rMesh.atomics)
+		{
+			for(const Graphics::RenderWareSubmesh& rSubmesh : rAtomic.submeshes) test(rSubmesh.mesh, world[rAtomic.frame]);
+		}
+	}
+	if(hit) rDistance_ = best;
+	return hit;
 }
 
 /* The smallest sphere around both (one inside the other gives the bigger). */

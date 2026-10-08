@@ -16,6 +16,7 @@
 #include <GLFW/glfw3.h>
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <algorithm>
 #include <exception>
 #include <string>
 #include <unordered_map>
@@ -29,9 +30,9 @@ error if the handle is of an entity that is gone. Vectors are three numbers (x, 
 - animation: animate(e, name [, framesPerGameFrame]) (Sonic's motions by name: stand, walk, speedwalk, jog, run, sprint, brake, turnAround, springFall, fall, landing, damage, jump (curled model), ball (jumpball model); for a Shadow entity: stand, walk, run, jump, jumpB (play once), jumpC, fall, brake, damage, skate, highSkate; it loops), pose(e, {{name, frame, weight}, ...}), setAnimationScaleMode(n), setAnimationEulerOrder(n), motionRange(e, name) and bone(e, name) (a Shadow entity's mixed pose, see below), lowestPoint(e) (the lowest y of a Shadow entity's vertices, posed and at rest), blink(e, name | false) (draws that animation in place of the animate one while it is on; the animate one keeps its own clock)
 - entities: exists(e), name(e), position(e), setPosition(e, x, y, z), moveTo(e, x, y, z), turnY(e, radians), orient(e, yaw, nx, ny, nz), destroy(e), state(e), axis(e, x, y, z), setUncullable(e, bool), postEvent(name, e [, x, y, z]), setDashTrail(e, bool) (the jump dash ribbon, Graphics::DashTrail), setEffectBall(e, kind, bool) (Shadow's effect balls, Graphics::EffectBalls; kind "jumpA", "dashB" or "fallB")
 - bodies (an entity with a physics): hasBody(e), velocity(e), setVelocity(e, x, y, z), setGroundSnap(e, distance), setGroundSnapMode(e, {ray, radius, minNormalY, blockedByWall}), setMeanVelocityMove(e, on), setWeight(e, w), grounded(e), groundNormal(e), groundSurface(e), groundGap(e, maxGap), touchingWall(e), wallNormal(e)
-- behaviours: behavior(name, fn), give(e, name), prefabBehavior(prefabName, fn) (fn(entity, placement) is called for every entity made from that prefab, prefabName like "SADX/SPRING"; placement is the SET record {type, rotation, position, scale} or nil)
+- behaviours: behavior(name, fn [, fields]) (fields = {name = {type = "number" | "bool" | "string" | "vec3" | "entity" | "prefab", default = v, external = bool}}: written into sf.state(e) before the first call; the external ones are set per entity in the editor's Inspector; a prefab field holds the prefab's name, an entity field a handle or sf.none, a vec3 {x, y, z}), give(e, name), prefabBehavior(prefabName, fn) (fn(entity, placement) is called for every entity made from that prefab, prefabName like "SADX/SPRING"; placement is the SET record {type, rotation, position, scale} or nil)
 - collision: tag(name), collisionBehavior(name, {tags, collidesWith, interactions}), setShapeBehavior(e, behavior)
-- setup: loadLevel(name) (the name of a Levels/<name>/ folder: "EmeraldCoast", "Stg0100", "Stg0000"; returns the level), unloadLevel(level) (done at the start of the next tick), levelExists(level), spawnPlayer(character, x, y, z) ("sonic", "shadow"; returns the entity, which the script then attaches), setCamera(x, y, z)
+- setup: spawn(prefabName, x, y, z) (makes an entity from a prefab by its name, "SADX/SPRING", "Global/Bullet"; returns it), loadLevel(name) (the name of a Levels/<name>/ folder: "EmeraldCoast", "Stg0100", "Stg0000"; returns the level), unloadLevel(level) (done at the start of the next tick), levelExists(level), spawnPlayer(character, x, y, z) ("sonic", "shadow"; returns the entity, which the script then attaches), setCamera(x, y, z)
 - scripts: include(path), rotateBamsZXY(x, y, z, az, ax, ay), none
 */
 namespace Scripting
@@ -522,11 +523,82 @@ static int wallNormal(lua_State* pLua_)
 
 /* ---- behaviours ---- */
 
-/* Registers a behaviour under a name: fn(entity) is called once a tick for every entity that was given it. The same name again replaces the function. */
+/*
+Reads the fields table of sf.behavior (the table at index tableIndex_): {name = {type = "number" | "bool" | "string" | "vec3" | "entity" | "prefab", default = value, external = bool}, ...}. The default of a vec3 is {x, y, z} (or x =, y =, z =);
+an entity or prefab has none. The fields are sorted by name (a Lua table has no order), which is the order the inspector lists them in.
+*/
+static std::vector<ExternalField> readFields(lua_State* pLua_, int tableIndex_)
+{
+	static const std::unordered_map<std::string, ExternalType> types = {{"number", ExternalType::Number}, {"bool", ExternalType::Bool}, {"string", ExternalType::String}, {"vec3", ExternalType::Vec3}, {"entity", ExternalType::Entity}, {"prefab", ExternalType::Prefab}};
+	std::vector<ExternalField> fields;
+	tableIndex_ = lua_absindex(pLua_, tableIndex_);
+	lua_pushnil(pLua_);
+	while(lua_next(pLua_, tableIndex_) != 0)
+	{
+		if(lua_type(pLua_, -2) != LUA_TSTRING || !lua_istable(pLua_, -1)) luaL_error(pLua_, "sf.behavior: the fields are {name = {type = ..., default = ..., external = ...}}.");
+		ExternalField field;
+		field.name = lua_tostring(pLua_, -2);
+		if(lua_getfield(pLua_, -1, "type") != LUA_TSTRING) luaL_error(pLua_, "sf.behavior: the field '%s' needs a type.", field.name.c_str());
+		auto type = types.find(lua_tostring(pLua_, -1));
+		if(type == types.end()) luaL_error(pLua_, "sf.behavior: the field '%s' has the unknown type '%s' (number, bool, string, vec3, entity or prefab).", field.name.c_str(), lua_tostring(pLua_, -1));
+		field.type = type->second;
+		lua_pop(pLua_, 1);
+		if(lua_getfield(pLua_, -1, "external") != LUA_TNIL) field.external = lua_toboolean(pLua_, -1) != 0;
+		lua_pop(pLua_, 1);
+
+		if(lua_getfield(pLua_, -1, "default") != LUA_TNIL)
+		{
+			switch(field.type)
+			{
+			case ExternalType::Number:
+				field.defaultValue.number = luaL_checknumber(pLua_, -1);
+				break;
+			case ExternalType::Bool:
+				field.defaultValue.flag = lua_toboolean(pLua_, -1) != 0;
+				break;
+			case ExternalType::String:
+				field.defaultValue.text = luaL_checkstring(pLua_, -1);
+				break;
+			case ExternalType::Vec3:
+			{
+				luaL_checktype(pLua_, -1, LUA_TTABLE);
+				const char* pAxes[3] = {"x", "y", "z"};
+				float components[3];
+				for(int i = 0; i < 3; i++)
+				{
+					if(lua_getfield(pLua_, -1, pAxes[i]) == LUA_TNIL)
+					{
+						lua_pop(pLua_, 1);
+						lua_geti(pLua_, -1, i + 1);
+					}
+					components[i] = static_cast<float>(luaL_checknumber(pLua_, -1));
+					lua_pop(pLua_, 1);
+				}
+				field.defaultValue.vector = glm::vec3(components[0], components[1], components[2]);
+				break;
+			}
+			default:
+				luaL_error(pLua_, "sf.behavior: the field '%s' is an entity or prefab and has no default.", field.name.c_str());
+			}
+		}
+		lua_pop(pLua_, 2);
+		fields.push_back(field);
+	}
+	std::sort(fields.begin(), fields.end(), [](const ExternalField& a_, const ExternalField& b_) { return a_.name < b_.name; });
+	return fields;
+}
+
+/* Registers a behaviour under a name: fn(entity) is called once a tick for every entity that was given it. The same name again replaces the function. The optional third argument declares its fields (readFields): each is written into the entity's sf.state before the first call. */
 static int behavior(lua_State* pLua_)
 {
 	const char* pName = luaL_checkstring(pLua_, 1);
 	luaL_checktype(pLua_, 2, LUA_TFUNCTION);
+	std::vector<ExternalField> fields;
+	if(!lua_isnoneornil(pLua_, 3))
+	{
+		luaL_checktype(pLua_, 3, LUA_TTABLE);
+		fields = readFields(pLua_, 3);
+	}
 	lua_pushvalue(pLua_, 2);
 	int reference = luaL_ref(pLua_, LUA_REGISTRYINDEX);
 
@@ -541,6 +613,7 @@ static int behavior(lua_State* pLua_)
 		PoolId id = addEntityBehavior(pName, nullptr);
 		Globals::Game::entityBehaviorTypes[id].scriptFunction = reference;
 		Globals::Game::entityBehaviorTypes[id].sourceFile = sourceFile;
+		Globals::Game::entityBehaviorTypes[id].fields = fields;
 	}
 	else
 	{
@@ -548,6 +621,7 @@ static int behavior(lua_State* pLua_)
 		if(rBehavior.scriptFunction != 0) luaL_unref(pLua_, LUA_REGISTRYINDEX, rBehavior.scriptFunction);
 		rBehavior.scriptFunction = reference;
 		rBehavior.sourceFile = sourceFile;
+		rBehavior.fields = fields;
 	}
 	return 0;
 }
@@ -686,6 +760,9 @@ static int levelExists(lua_State* pLua_)
 	return 1;
 }
 
+/* Every entity spawnPlayer and spawn made that still exists (Scripting::spawnedEntities). */
+static std::vector<PoolId> spawnedList;
+
 /* Makes a player entity from the character's prefab (spawnPrefab: model, idle motions, hand-made collision shape and physics of weight 1) and returns it; the script attaches it (attachPlayer). */
 static int spawnPlayer(lua_State* pLua_)
 {
@@ -707,6 +784,25 @@ static int spawnPlayer(lua_State* pLua_)
 	}
 	else return luaL_error(pLua_, "unknown character '%s'", character.c_str());
 	if(id == UninitializedPoolId) return luaL_error(pLua_, "could not spawn '%s'", character.c_str());
+	std::erase_if(spawnedList, [](PoolId old_) { return !entityExists(old_); });
+	spawnedList.push_back(id);
+	lua_pushinteger(pLua_, toHandle(id));
+	return 1;
+}
+
+/* spawn(prefabName, x, y, z): an entity made from the prefab of that name (Globals::Game::prefabs, e.g. a prefab field of a behaviour), with the shader its game uses as the editor's Prefabs tab does; returns it. */
+static int spawn(lua_State* pLua_)
+{
+	const char* pName = luaL_checkstring(pLua_, 1);
+	auto found = Globals::Game::prefabs.nameToId.find(pName);
+	if(found == Globals::Game::prefabs.nameToId.end()) return luaL_error(pLua_, "there is no prefab named '%s'", pName);
+	SpawnParams params;
+	params.position = checkVector(pLua_, 2);
+	params.what = "(script)";
+	PoolId id = spawnPrefab(found->second, shaderByName(Globals::Game::prefabs[found->second].game == SA_NINJA ? "SA" : "STH2005"), params);
+	if(id == UninitializedPoolId) return luaL_error(pLua_, "could not spawn '%s'", pName);
+	std::erase_if(spawnedList, [](PoolId old_) { return !entityExists(old_); });
+	spawnedList.push_back(id);
 	lua_pushinteger(pLua_, toHandle(id));
 	return 1;
 }
@@ -722,7 +818,12 @@ static int setCamera(lua_State* pLua_)
 static int include(lua_State* pLua_)
 {
 	const char* pPath = luaL_checkstring(pLua_, 1);
-	if(!loadFile(pPath)) return luaL_error(pLua_, "could not run script '%s'", pPath);
+
+	/* A script of Assets/External/Scripts includes relative to that folder (its chunk is named "@<path>"), any other relative to Assets/Scripts. */
+	const char* pRoot = ScriptsRoot;
+	lua_Debug caller;
+	if(lua_getstack(pLua_, 1, &caller) && lua_getinfo(pLua_, "S", &caller) && caller.source != nullptr && std::string(caller.source).starts_with(std::string("@") + ExternalScriptsRoot)) pRoot = ExternalScriptsRoot;
+	if(!loadFile(pPath, pRoot)) return luaL_error(pLua_, "could not run script '%s'", pPath);
 	return 0;
 }
 
@@ -738,6 +839,11 @@ static int rotateBamsZXY(lua_State* pLua_)
 	rotation = glm::rotate(rotation, x, glm::vec3(1.0f, 0.0f, 0.0f));
 	rotation = glm::rotate(rotation, y, glm::vec3(0.0f, 1.0f, 0.0f));
 	return pushVector(pLua_, glm::vec3(rotation * glm::vec4(vector, 0.0f)));
+}
+
+const std::vector<PoolId>& spawnedEntities()
+{
+	return spawnedList;
 }
 
 void processPendingUnloads()
@@ -763,7 +869,7 @@ void registerAPI(lua_State* pLua_)
 		{"groundNormal", guarded<groundNormal>}, {"groundSurface", guarded<groundSurface>}, {"groundGap", guarded<groundGap>}, {"touchingWall", guarded<touchingWall>}, {"wallNormal", guarded<wallNormal>},
 		{"behavior", guarded<behavior>}, {"give", guarded<give>}, {"prefabBehavior", guarded<prefabBehavior>},
 		{"tag", guarded<tag>}, {"collisionBehavior", guarded<collisionBehavior>}, {"setShapeBehavior", guarded<setShapeBehavior>},
-		{"loadLevel", guarded<loadLevel>}, {"unloadLevel", guarded<unloadLevel>}, {"levelExists", guarded<levelExists>}, {"spawnPlayer", guarded<spawnPlayer>}, {"setCamera", guarded<setCamera>},
+		{"loadLevel", guarded<loadLevel>}, {"unloadLevel", guarded<unloadLevel>}, {"levelExists", guarded<levelExists>}, {"spawnPlayer", guarded<spawnPlayer>}, {"spawn", guarded<spawn>},{"setCamera", guarded<setCamera>},
 		{"include", guarded<include>}, {"rotateBamsZXY", guarded<rotateBamsZXY>},
 		{nullptr, nullptr}
 	};

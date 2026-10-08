@@ -23,7 +23,7 @@ visible part as a dark fringe. Alpha stays 0, so the texel is still transparent.
 static void bleedTransparentColor(std::vector<unsigned char>& rPixels_, uint32_t width_, uint32_t height_)
 {
 	size_t count = static_cast<size_t>(width_) * height_;
-	std::vector<bool> known(count);
+	std::vector<char> known(count);
 	size_t unknown = 0;
 	for(size_t i = 0; i < count; i++)
 	{
@@ -32,38 +32,68 @@ static void bleedTransparentColor(std::vector<unsigned char>& rPixels_, uint32_t
 	}
 	if(unknown == 0 || unknown == count) return;
 
-	while(unknown > 0)
+	/*
+	Only the texels next to a texel that became known in the last pass can get a color in this one, so each pass looks at that frontier instead of the whole image; a texel gets the
+	average of the neighbors known when the pass started, as a full scan would give. queued marks the texels already in the next frontier.
+	*/
+	auto forNeighbors = [&](size_t index_, auto&& rAction_)
 	{
-		std::vector<std::pair<size_t, std::array<unsigned char, 3>>> resolved;
-		for(uint32_t y = 0; y < height_; y++)
+		int x = static_cast<int>(index_ % width_);
+		int y = static_cast<int>(index_ / width_);
+		for(int dy = -1; dy <= 1; dy++)
 		{
-			for(uint32_t x = 0; x < width_; x++)
+			for(int dx = -1; dx <= 1; dx++)
 			{
-				if(known[y * width_ + x]) continue;
-				unsigned sum[3] = {0, 0, 0};
-				unsigned neighbors = 0;
-				for(int dy = -1; dy <= 1; dy++)
-				{
-					for(int dx = -1; dx <= 1; dx++)
-					{
-						int nx = static_cast<int>(x) + dx;
-						int ny = static_cast<int>(y) + dy;
-						if(nx < 0 || ny < 0 || nx >= static_cast<int>(width_) || ny >= static_cast<int>(height_)) continue;
-						size_t n = static_cast<size_t>(ny) * width_ + nx;
-						if(!known[n]) continue;
-						for(int c = 0; c < 3; c++) sum[c] += rPixels_[n * 4 + c];
-						neighbors++;
-					}
-				}
-				if(neighbors == 0) continue;
-				resolved.push_back({static_cast<size_t>(y) * width_ + x, {static_cast<unsigned char>(sum[0] / neighbors), static_cast<unsigned char>(sum[1] / neighbors), static_cast<unsigned char>(sum[2] / neighbors)}});
+				int nx = x + dx;
+				int ny = y + dy;
+				if(nx < 0 || ny < 0 || nx >= static_cast<int>(width_) || ny >= static_cast<int>(height_)) continue;
+				rAction_(static_cast<size_t>(ny) * width_ + nx);
 			}
 		}
+	};
+	std::vector<char> queued(count, 0);
+	std::vector<size_t> frontier;
+	for(size_t i = 0; i < count; i++)
+	{
+		if(known[i]) continue;
+		bool touches = false;
+		forNeighbors(i, [&](size_t n_) { touches = touches || known[n_]; });
+		if(touches)
+		{
+			frontier.push_back(i);
+			queued[i] = 1;
+		}
+	}
+
+	while(!frontier.empty())
+	{
+		std::vector<std::pair<size_t, std::array<unsigned char, 3>>> resolved;
+		for(size_t index : frontier)
+		{
+			unsigned sum[3] = {0, 0, 0};
+			unsigned neighbors = 0;
+			forNeighbors(index, [&](size_t n_)
+			{
+				if(!known[n_]) return;
+				for(int c = 0; c < 3; c++) sum[c] += rPixels_[n_ * 4 + c];
+				neighbors++;
+			});
+			resolved.push_back({index, {static_cast<unsigned char>(sum[0] / neighbors), static_cast<unsigned char>(sum[1] / neighbors), static_cast<unsigned char>(sum[2] / neighbors)}});
+		}
+		frontier.clear();
 		for(const auto& rPixel : resolved)
 		{
 			std::copy(rPixel.second.begin(), rPixel.second.end(), rPixels_.begin() + rPixel.first * 4);
-			known[rPixel.first] = true;
-			unknown--;
+			known[rPixel.first] = 1;
+		}
+		for(const auto& rPixel : resolved)
+		{
+			forNeighbors(rPixel.first, [&](size_t n_)
+			{
+				if(known[n_] || queued[n_]) return;
+				queued[n_] = 1;
+				frontier.push_back(n_);
+			});
 		}
 	}
 }

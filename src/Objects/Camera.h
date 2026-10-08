@@ -86,8 +86,10 @@ struct Camera {
 	*/
 	std::array<glm::vec4, 6> frustumPlanes() const;
 
+	/* move and set put the camera's entity (entityId) at the new position too, so the two never differ (Entity::setPosition / moveTo move the camera the same way). */
 	void move(glm::vec3 by_);
 	void set(glm::vec3 position_); 
+	void moveEntity();
 	void destroy(); 
 	
 	Camera(glm::vec3 position_);  

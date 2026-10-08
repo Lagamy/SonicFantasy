@@ -51,6 +51,9 @@ void RenderWareMesh::computeBounds()
 		}
 	}
 	if(low.x > high.x) low = high = glm::vec3(0.0f);
+	this->bounds.boxLow = low;
+	this->bounds.boxHigh = high;
+	this->bounds.boxValid = true;
 	this->bounds.center = (low + high) * 0.5f;
 	this->bounds.radius = glm::length(high - low) * 0.5f * 1.5f + 5.0f;
 	this->bounds.valid = true;

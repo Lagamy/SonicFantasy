@@ -37,6 +37,7 @@ void DebugUI::draw(Editor& rEditor_)
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
 	collisionView.entityTabActive = false;
+	collisionView.boundAreaTabActive = false;
 
 	/*
 	The entity list (left), the inspector (right) and the prefab panel (bottom, between them) are windows of their own along the edges of the window. The rest is one window with a tab per panel. The cursor is captured by the camera until the free-cursor key is pressed (Editor::processInputs), so the controls can only be used then.
@@ -44,7 +45,7 @@ void DebugUI::draw(Editor& rEditor_)
 	if(rEditor_.active)
 	{
 		/*
-		The File menu: Save writes the current level's edits into its file, Save as into a file of another name (the level's own file is not changed), Restore puts the level back as the game's data has it (not
+		The File menu: Save writes the current level's edits into its file, Save as into a file of another name (the level's own file is not changed), Save Source Game Level makes the level as it is now its source (written at once, the level is loaded again), Restore Source Game Level puts the level back as that source has it (not
 		written until Save). The level's name is the file name Save writes to.
 		*/
 		bool openSaveAs = false;
@@ -99,7 +100,8 @@ void DebugUI::draw(Editor& rEditor_)
 					}
 					ImGui::EndMenu();
 				}
-				if(ImGui::MenuItem("Restore Source Game values", nullptr, false, levelId != UninitializedPoolId)) rEditor_.restoreSourceValues();
+				if(ImGui::MenuItem("Save Source Game Level", nullptr, false, levelId != UninitializedPoolId)) rEditor_.saveSourceLevel();
+				if(ImGui::MenuItem("Restore Source Game Level", nullptr, false, levelId != UninitializedPoolId)) rEditor_.restoreSourceValues();
 				ImGui::EndMenu();
 			}
 			if(ImGui::BeginMenu("Import"))

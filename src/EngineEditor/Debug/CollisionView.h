@@ -69,6 +69,9 @@ struct CollisionView
 	uint32_t selectedEntityValue = 0;
 	bool entityTabActive = false;
 
+	/* Set by the inspector while its BoundArea tab is shown (like entityTabActive, read by the next frame's draw): the entities' shapes are drawn then even with `enabled` off (the level's lines stay off), the selected entity's in white. */
+	bool boundAreaTabActive = false;
+
 	void init();
 	void draw(const Camera& rCamera_);
 

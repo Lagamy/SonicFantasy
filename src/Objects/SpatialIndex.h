@@ -72,6 +72,9 @@ struct SpatialIndex
 	/* Appends to rOut_ the slots of the static entities whose sphere is within maxDistance_ of the camera and not outside the frustum (planes as Camera::frustumPlanes), that are still alive. */
 	void queryVisible(const std::array<glm::vec4, 6>& rPlanes_, const glm::vec3& rCameraPosition_, float maxDistance_, std::vector<uint32_t>& rOut_) const;
 
+	/* The distance from rPoint_ to the nearest entity's bounding sphere (0 inside one), or maxDistance_ if none is closer; static and dynamic entities both count. Does not rebuild a dirty index. */
+	float nearestDistance(const glm::vec3& rPoint_, float maxDistance_) const;
+
 private:
 	int32_t buildNode(uint32_t begin_, uint32_t end_);
 };

@@ -61,6 +61,16 @@ struct Level
 	/* The index of the entity among the level's own entities, -1 if it is not one of them (added, or not the level's). */
 	int32_t sourceIndexOf(PoolId entityId_) const;
 
+	/*
+	The number a level file (and Editor::KeptEntity) refers to an entity of the level by in its external field values: a level's own entity is its index in entityIds; an added one is sourceEntityCount plus the number of added entities (those with a prefab) before it,
+	the order the file's "added" list makes them again. -1 if it is none of the level's. resolveExternalEntities turns the entityIndex of the entity references of the level's entities (ExternalValue) into the entities, none if the index is past the end or its entity is gone.
+	*/
+	int32_t editIndexOf(PoolId entityId_) const;
+	void resolveExternalEntities();
+
+	/* The prefabs (Globals::Game::prefabs) the level's entities hold in prefab fields (ExternalValue::prefab) that still exist, each once: they belong to the level for the editor's Level folders although no entity is made from them yet. */
+	std::vector<PoolId> referencedPrefabs() const;
+
 	/* Puts a level's own entity back where the game's data has it. */
 	void revertSourceEntity(uint32_t index_);
 

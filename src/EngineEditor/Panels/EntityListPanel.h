@@ -21,6 +21,9 @@ The window is titled "Level". A second tab, "Collision", is the collision view's
 struct EntityListPanel
 {
 	PoolId selected = UninitializedPoolId;
+
+	/* The user folder New folder makes its folder in (-1 = at the top); set by clicking a user folder, cleared by clicking anything else (the editor clears it when a click in the scene picks an entity). */
+	int selectedFolder = -1;
 	char filter[64] = "";
 
 	/* The panel's width in pixels: the user drags its right edge, draw() reads the result back, and Editor saves it (editor_settings.json). The other panels are laid out around it. */
@@ -49,8 +52,6 @@ private:
 	/* The keys of the folders that are open (a folder's key is its path, e.g. "a/SADX/Enemies" for a built-in one, "u3" for the user folder 3). */
 	std::unordered_set<std::string> openFolders;
 
-	/* The user folder New folder makes its folder in (-1 = at the top); set by clicking a user folder, cleared by clicking anything else. */
-	int selectedFolder = -1;
 	char newFolderName[48] = "Folder";
 };
 }

@@ -111,7 +111,7 @@ void GameplaySystem::tick()
 			if(!behaviorTypeExists(behaviorId)) continue;
 			const EntityBehavior& rBehavior = Globals::Game::entityBehaviorTypes[behaviorId];
 			if(rBehavior.pBehave != nullptr) rBehavior.pBehave(rSet.first);
-			else if(rBehavior.scriptFunction != 0) Scripting::callBehavior(rBehavior.scriptFunction, rSet.first);
+			else if(rBehavior.scriptFunction != 0) Scripting::callBehavior(rBehavior.scriptFunction, rSet.first, behaviorId);
 		}
 	}
 

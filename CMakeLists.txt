@@ -227,7 +227,7 @@ add_custom_target(CopyCatalog ALL
 )
 add_dependencies(CopyCatalog SonicSunset)
 
-# The editor-wide ("Global") external assets (External/: Models, Textures, prefabs.json; the level's own are in its Levels/<name>/ folder; read by Loading::scanExternalAssets) are copied to Assets/External the same way.
+# The editor-wide ("Global") external assets (External/: Models, Textures, Prefabs/Global/prefabs.json; the level's own are in its Levels/<name>/ folder; read by Loading::scanExternalAssets) are copied to Assets/External the same way.
 add_custom_target(CopyExternal ALL
 	COMMAND ${CMAKE_COMMAND} -E copy_directory
 		${CMAKE_CURRENT_SOURCE_DIR}/External

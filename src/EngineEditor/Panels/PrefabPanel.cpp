@@ -10,6 +10,7 @@
 #include "GPU_API.h"
 #include "ExternalPrefabs.h"
 #include "ScriptLog.h"
+#include "Scripting.h"
 #include <unordered_set>
 #include "imgui.h"
 #include <algorithm>
@@ -129,7 +130,22 @@ void PrefabPanel::drawTile(PoolId prefabId_, float cellWidth_)
 	float areaHeight = ImGui::GetWindowSize().y;
 	bool near = visible || (top + TileSize >= areaTop - areaHeight * PrefetchMargin && top <= areaTop + areaHeight * (1.0f + PrefetchMargin));
 	GLuint texture = near ? this->thumbnails.get(prefabId_, !visible) : 0;
-	ImVec4 background = prefabId_ == this->selected ? ImVec4(0.2f, 0.4f, 0.8f, 0.7f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+	/* Under Level, a prefab a script spawned an entity from (the players) is orange, as in the Assets tab, unless selected; the Button colors show through the picture's background, so they are pushed too. */
+	bool orange = false;
+	if(this->nav.openScope == 1 && prefabId_ != this->selected)
+	{
+		for(PoolId id : Scripting::spawnedEntities())
+		{
+			if(id.id < Globals::Game::entities.objects.size() && Globals::Game::entities.alive[id.id] && Globals::Game::entities[id].prefabId == prefabId_) orange = true;
+		}
+	}
+	ImVec4 background = prefabId_ == this->selected ? ImVec4(0.2f, 0.4f, 0.8f, 0.7f) : orange ? ImVec4(1.0f, 0.5f, 0.0f, 0.7f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+	if(orange)
+	{
+		ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.7f, 0.25f, 1.0f));
+		ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.85f, 0.5f, 1.0f));
+	}
 	bool clicked;
 	if(texture != 0)
 	{
@@ -140,11 +156,13 @@ void PrefabPanel::drawTile(PoolId prefabId_, float cellWidth_)
 	{
 		clicked = ImGui::Button("...", ImVec2(TileSize + 2.0f * ImGui::GetStyle().FramePadding.x, TileSize + 2.0f * ImGui::GetStyle().FramePadding.y));
 	}
+	if(orange) ImGui::PopStyleColor(3);
 	if(clicked) this->selected = prefabId_;
 
 	if(ImGui::BeginDragDropSource())
 	{
 		ImGui::SetDragDropPayload("PREFAB", &prefabId_, sizeof(PoolId));
+		if(texture != 0) ImGui::Image(static_cast<ImTextureID>(texture), ImVec2(TileSize, TileSize), ImVec2(0.0f, 1.0f), ImVec2(1.0f, 0.0f));
 		ImGui::TextUnformatted(rPrefab.name.c_str());
 		ImGui::EndDragDropSource();
 	}
@@ -177,6 +195,7 @@ void PrefabPanel::spawn(PoolId prefabId_, PoolId& rSelectedEntity_, const Editor
 	/* The level owns it from now on, so it is saved with the level's edits and removed with the level. */
 	PoolId levelId = editor.currentLevel();
 	if(levelId != UninitializedPoolId) getLevel(levelId).entityIds.push_back(id);
+	editor.recordCreated(id);
 }
 
 /* The tiles of a list as a wrapped grid. */
@@ -194,22 +213,13 @@ void PrefabPanel::drawGrid(const std::vector<PoolId>& rList_)
 /* The path bar: "Prefabs" > Global / Level > the open game > its group, or External > the folders of openFolder; a click goes back to that level. */
 void PrefabPanel::drawPath()
 {
-	const SourceEngineEnum games[2] = {SA_NINJA, STH2005_ONE};
 	std::vector<std::string> names = {"Prefabs"};
-	if(this->openScope >= 0) names.push_back(this->openScope == 0 ? "Global" : "Level");
-	if(this->openGame >= 0) names.push_back(this->openGame >= Global ? "External" : prefabGameFolder(games[this->openGame]));
-	if(this->openGame >= 0 && this->openGame < Global && this->openGroup >= 0) names.push_back(prefabGroupFolder(static_cast<PrefabGroup>(this->openGroup)));
+	this->nav.addPathNames(names);
+	if(this->nav.openGame >= 0 && this->nav.openGame < Global && this->openGroup >= 0) names.push_back(prefabGroupFolder(static_cast<PrefabGroup>(this->openGroup)));
 	size_t folderStart = names.size();
-	if(this->openGame >= Global)
+	if(this->nav.openGame >= Global)
 	{
-		size_t from = 0;
-		while(from < this->openFolder.size())
-		{
-			size_t slash = this->openFolder.find('/', from);
-			if(slash == std::string::npos) slash = this->openFolder.size();
-			names.push_back(this->openFolder.substr(from, slash - from));
-			from = slash + 1;
-		}
+		for(const std::string& rName : splitFolderPath(this->openFolder)) names.push_back(rName);
 	}
 	for(size_t i = 0; i < names.size(); i++)
 	{
@@ -224,8 +234,7 @@ void PrefabPanel::drawPath()
 		{
 			if(i <= 1)
 			{
-				if(i == 0) this->openScope = -1;
-				this->openGame = -1;
+				this->nav.goBack(static_cast<int>(i));
 				this->openGroup = -1;
 				this->openFolder.clear();
 			}
@@ -249,7 +258,7 @@ void PrefabPanel::drawPath()
 /* "New folder" and "New prefab" for Global / Level: the button opens a popup asking for the name, Enter or Create makes it in the open folder. A failure is shown in the panel's message. */
 void PrefabPanel::drawNewMenu()
 {
-	Loading::ExternalScope scope = this->openGame == Global ? Loading::ExternalScope::Project : Loading::ExternalScope::Level;
+	Loading::ExternalScope scope = this->nav.openGame == Global ? Loading::ExternalScope::Project : Loading::ExternalScope::Level;
 	if(ImGui::Button("New folder"))
 	{
 		this->creating = 1;
@@ -289,26 +298,21 @@ void PrefabPanel::drawNewMenu()
 /* The Prefabs tab's content for the open place. */
 void PrefabPanel::drawBrowser()
 {
-	const SourceEngineEnum games[2] = {SA_NINJA, STH2005_ONE};
-	if(this->openScope < 0)
+	if(this->nav.openScope < 0)
 	{
-		std::vector<std::string> labels = {"Global", "Level"};
-		int clicked = this->assets.drawFolders(labels);
-		if(clicked >= 0) this->openScope = clicked;
+		this->nav.pickScope(this->assets.drawFolders(ScopeNav::scopeLabels()));
 		return;
 	}
-	if(this->openGame < 0)
+	if(this->nav.openGame < 0)
 	{
-		std::vector<std::string> labels = {prefabGameFolder(games[0]), prefabGameFolder(games[1]), "External"};
-		int clicked = this->assets.drawFolders(labels);
-		if(clicked >= 0) this->openGame = clicked < 2 ? clicked : Global + this->openScope;
+		this->nav.pickGame(this->assets.drawFolders(ScopeNav::gameLabels()));
 		return;
 	}
-	if(this->openGame < Global)
+	if(this->nav.openGame < Global)
 	{
-		/* Under Level only the prefabs of the open level's entities (read every frame: entities are added and removed). */
+		/* Under Level only the prefabs of the open level's entities and those in its prefab fields (read every frame: entities are added and removed). */
 		std::array<std::vector<PoolId>, 5> levelTiles;
-		if(this->openScope == 1)
+		if(this->nav.openScope == 1)
 		{
 			std::unordered_set<uint32_t> used;
 			const Level* pLevel = AssetPanel::openLevel();
@@ -318,16 +322,23 @@ void PrefabPanel::drawBrowser()
 				{
 					if(id.id < Globals::Game::entities.objects.size() && Globals::Game::entities.alive[id.id]) used.insert(Globals::Game::entities[id].prefabId.id);
 				}
+				/* Entities scripts spawned (the players) are not in entityIds; their prefabs belong to the level too. */
+				for(PoolId id : Scripting::spawnedEntities())
+				{
+					if(id.id < Globals::Game::entities.objects.size() && Globals::Game::entities.alive[id.id]) used.insert(Globals::Game::entities[id].prefabId.id);
+				}
+				/* A prefab dropped on a prefab field of an entity's behaviour belongs to the level too, before anything is spawned from it. */
+				for(PoolId id : pLevel->referencedPrefabs()) used.insert(id.id);
 			}
 			for(int group = 0; group < 5; group++)
 			{
-				for(PoolId id : this->tiles[this->openGame][group])
+				for(PoolId id : this->tiles[this->nav.openGame][group])
 				{
 					if(used.contains(id.id)) levelTiles[group].push_back(id);
 				}
 			}
 		}
-		const auto& rShown = this->openScope == 1 ? levelTiles : this->tiles[this->openGame];
+		const auto& rShown = this->nav.openScope == 1 ? levelTiles : this->tiles[this->nav.openGame];
 		if(this->openGroup < 0)
 		{
 			std::vector<std::string> labels;
@@ -350,7 +361,7 @@ void PrefabPanel::drawBrowser()
 	}
 
 	this->drawNewMenu();
-	int scopeIndex = this->openGame == Global ? 0 : 1;
+	int scopeIndex = this->nav.openGame == Global ? 0 : 1;
 	Loading::ExternalScope scope = scopeIndex == 0 ? Loading::ExternalScope::Project : Loading::ExternalScope::Level;
 	const auto& rPrefabs = Globals::Game::prefabs;
 
@@ -458,9 +469,9 @@ void PrefabPanel::draw(PoolId& rSelectedEntity_, const EditorCamera& rCamera_)
 	auto& rPrefabs = Globals::Game::prefabs;
 	if(this->selected != UninitializedPoolId && (this->selected.id >= rPrefabs.objects.size() || !rPrefabs.alive[this->selected.id] || rPrefabs.generation[this->selected.id] != this->selected.generation)) this->selected = UninitializedPoolId;
 	/* A folder that is gone (the level it was in was replaced) leaves the browser at the top of its scope. */
-	if(this->openGame >= Global && !this->openFolder.empty())
+	if(this->nav.openGame >= Global && !this->openFolder.empty())
 	{
-		const std::vector<std::string>& rFolders = Loading::externalPrefabFolders(this->openGame == Global ? Loading::ExternalScope::Project : Loading::ExternalScope::Level);
+		const std::vector<std::string>& rFolders = Loading::externalPrefabFolders(this->nav.openGame == Global ? Loading::ExternalScope::Project : Loading::ExternalScope::Level);
 		if(std::find(rFolders.begin(), rFolders.end(), this->openFolder) == rFolders.end()) this->openFolder.clear();
 	}
 

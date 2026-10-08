@@ -133,6 +133,39 @@ void SpatialIndex::queryVisible(const std::array<glm::vec4, 6>& rPlanes_, const 
 	}
 }
 
+float SpatialIndex::nearestDistance(const glm::vec3& rPoint_, float maxDistance_) const
+{
+	float best = maxDistance_;
+	std::vector<int32_t> stack;
+	if(!this->nodes.empty()) stack.push_back(0);
+	while(!stack.empty())
+	{
+		const Node& rNode = this->nodes[stack.back()];
+		stack.pop_back();
+		if(glm::distance(rNode.center, rPoint_) - rNode.radius >= best) continue;
+		if(rNode.left >= 0)
+		{
+			stack.push_back(rNode.left);
+			stack.push_back(rNode.right);
+			continue;
+		}
+		for(uint32_t i = rNode.first; i < rNode.first + rNode.count; i++)
+		{
+			const Item& rItem = this->items[i];
+			if(!Globals::Game::entities.alive[rItem.entityIndex] || Globals::Game::entities.generation[rItem.entityIndex] != rItem.generation) continue;
+			best = std::min(best, std::max(0.0f, glm::distance(rItem.center, rPoint_) - rItem.radius));
+		}
+	}
+	for(PoolId entityId : this->dynamicEntities)
+	{
+		if(entityId.id >= Globals::Game::entities.alive.size() || !Globals::Game::entities.alive[entityId.id] || Globals::Game::entities.generation[entityId.id] != entityId.generation) continue;
+		Entity& rEntity = Globals::Game::entities.objects[entityId.id];
+		glm::vec3 center = rEntity.position + glm::mat3(rEntity.rotation) * rEntity.bounds.center;
+		best = std::min(best, std::max(0.0f, glm::distance(center, rPoint_) - rEntity.bounds.radius));
+	}
+	return best;
+}
+
 void SpatialIndex::updateActive(bool cull_, const glm::vec3& rCameraPosition_, float maxDistance_)
 {
 	this->rebuildIfDirty();

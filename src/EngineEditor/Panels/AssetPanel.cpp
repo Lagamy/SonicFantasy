@@ -5,6 +5,7 @@
 #include "Globals.h"
 #include "Level.h"
 #include "API.h"
+#include "Scripting.h"
 #include "EntityBehavior.h"
 #include "imgui.h"
 #include <stb_image.h>
@@ -81,6 +82,13 @@ std::string fitText(const std::string& text_, float width_)
 	}
 	return first + "\n" + second;
 }
+
+/* The contents of a drag's floating preview: the tile's picture (when it has one; flipped like the tile's) over the name. */
+void dragPreview(GLuint texture_, bool flipped_, const std::string& name_)
+{
+	if(texture_ != 0) ImGui::Image(static_cast<ImTextureID>(texture_), ImVec2(TileSize, TileSize), ImVec2(0.0f, flipped_ ? 1.0f : 0.0f), ImVec2(1.0f, flipped_ ? 0.0f : 1.0f));
+	ImGui::TextUnformatted(name_.c_str());
+}
 }
 
 void AssetPanel::load()
@@ -120,36 +128,58 @@ const Level* AssetPanel::openLevel()
 
 void AssetPanel::refreshLevel()
 {
-	const Level* pLevel = openLevel();
-	uint64_t seen = pLevel == nullptr ? 0 : reinterpret_cast<uintptr_t>(pLevel) * 31 + pLevel->entityIds.size();
+	const ::Level* pLevel = openLevel();
+	const std::vector<PoolId>& rSpawned = Scripting::spawnedEntities();
+	std::vector<PoolId> referenced;
+	if(pLevel != nullptr) referenced = pLevel->referencedPrefabs();
+	uint64_t seen = pLevel == nullptr ? 0 : (reinterpret_cast<uintptr_t>(pLevel) * 31 + pLevel->entityIds.size()) * 31 + rSpawned.size();
+	for(PoolId id : referenced) seen = seen * 31 + id.id + 1;
 	if(seen == this->levelSeen) return;
 	this->levelSeen = seen;
 	this->searchStale = true;
 
-	/* Per game the keys of the meshes and textures the level's entities draw, and the script files of their behaviours. */
-	std::array<std::unordered_set<std::string>, 2> meshes;
-	std::array<std::unordered_set<std::string>, 2> textures;
-	std::unordered_set<std::string> scripts;
+	/* Per game the keys of the meshes and textures the entities draw, and the script files of their behaviours: those of the level's own entities, and apart those of the entities a script spawned (Scripting::spawnedEntities, the players), which the tiles show in another colour. */
+	struct Used
+	{
+		std::array<std::unordered_set<std::string>, 2> meshes;
+		std::array<std::unordered_set<std::string>, 2> textures;
+		std::unordered_set<std::string> scripts;
+	};
+	Used level;
+	Used spawned;
+	auto collect = [](Used& rUsed_, PoolId id_)
+	{
+		if(!entityExists(id_)) return;
+		const Entity& rEntity = Globals::Game::entities[id_];
+		if(rEntity.behaviorSetId != UninitializedPoolId)
+		{
+			for(PoolId behaviorId : Globals::Game::entityBehaviors[rEntity.behaviorSetId].behaviorIds) rUsed_.scripts.insert(lowerCase(Globals::Game::entityBehaviorTypes[behaviorId].sourceFile));
+		}
+		int game = rEntity.sourceEngine == SA_NINJA ? 0 : rEntity.sourceEngine == STH2005_ONE ? 1 : -1;
+		if(game < 0 || rEntity.instanceId == UninitializedPoolId) return;
+		try
+		{
+			rUsed_.meshes[game].insert(matchKey(game, Model, rEntity.discMesh()));
+			std::string texture = rEntity.discTexture();
+			if(!texture.empty()) rUsed_.textures[game].insert(matchKey(game, Texture, texture));
+		}
+		catch(const std::exception&)
+		{
+		}
+	};
 	if(pLevel != nullptr)
 	{
-		for(PoolId id : pLevel->entityIds)
+		for(PoolId id : pLevel->entityIds) collect(level, id);
+		for(PoolId id : rSpawned) collect(spawned, id);
+
+		/* A prefab in a prefab field has no entity of its own to read its model from: one that exists (placed in the level, or live now) stands for it. */
+		for(PoolId prefab : referenced)
 		{
-			if(id.id >= Globals::Game::entities.objects.size() || !Globals::Game::entities.alive[id.id]) continue;
-			const Entity& rEntity = Globals::Game::entities[id];
-			if(rEntity.behaviorSetId != UninitializedPoolId)
+			for(uint32_t i = 0; i < Globals::Game::entities.objects.size(); i++)
 			{
-				for(PoolId behaviorId : Globals::Game::entityBehaviors[rEntity.behaviorSetId].behaviorIds) scripts.insert(lowerCase(Globals::Game::entityBehaviorTypes[behaviorId].sourceFile));
-			}
-			int game = rEntity.sourceEngine == SA_NINJA ? 0 : rEntity.sourceEngine == STH2005_ONE ? 1 : -1;
-			if(game < 0 || rEntity.instanceId == UninitializedPoolId) continue;
-			try
-			{
-				meshes[game].insert(matchKey(game, Model, rEntity.discMesh()));
-				std::string texture = rEntity.discTexture();
-				if(!texture.empty()) textures[game].insert(matchKey(game, Texture, texture));
-			}
-			catch(const std::exception&)
-			{
+				if(!Globals::Game::entities.alive[i] || Globals::Game::entities.objects[i].prefabId != prefab) continue;
+				collect(level, Globals::Game::entities.objects[i].selfId);
+				break;
 			}
 		}
 	}
@@ -162,8 +192,13 @@ void AssetPanel::refreshLevel()
 			{
 				for(Asset& rAsset : rList)
 				{
-					if(kind == Script) rAsset.inLevel = scripts.contains(lowerCase(rAsset.source));
-					else rAsset.inLevel = (kind == Model ? meshes : textures)[game].contains(matchKey(game, kind, rAsset.source));
+					auto has = [&](const Used& rUsed_)
+					{
+						if(kind == Script) return rUsed_.scripts.contains(lowerCase(rAsset.source));
+						return (kind == Model ? rUsed_.meshes : rUsed_.textures)[game].contains(matchKey(game, kind, rAsset.source));
+					};
+					rAsset.spawned = has(spawned);
+					rAsset.inLevel = rAsset.spawned || has(level);
 					if(rAsset.inLevel) this->levelCounts[game][kind]++;
 				}
 			}
@@ -189,7 +224,7 @@ void AssetPanel::loadExternal()
 	this->searchStale = true;
 	for(int game = Global; game < GameCount; game++)
 	{
-		for(auto& rList : this->assets[game]) rList[0].clear();
+		for(int kind = 0; kind < Script; kind++) this->assets[game][kind][0].clear();
 	}
 	if(this->selectedGame >= Global) this->selectedGame = -1;
 	for(int game = Global; game < GameCount; game++)
@@ -202,7 +237,7 @@ void AssetPanel::loadExternal()
 		}
 		for(uint32_t i = 0; i < rPools.textures.allocatedSize(); i++)
 		{
-			if(rPools.textures.alive[i]) this->assets[game][Texture][0].push_back({rPools.textures.names[i], source, "", rPools.textures.getInternal(i).textureId});
+			if(rPools.textures.alive[i]) this->assets[game][Texture][0].push_back({rPools.textures.names[i], source, "", false, false, rPools.textures.getInternal(i).textureId});
 		}
 		this->sortAndCount(game);
 	}
@@ -233,21 +268,22 @@ void AssetPanel::loadCatalog()
 	}
 }
 
-/* Every .lua file below Scripts/<game folder>, named by its file name, with its folder inside that folder in Asset::folder ("replays"). */
+/* Every .lua file below Scripts/<game folder>, named by its file name, with its folder inside that folder in Asset::folder ("replays"); and, under Global's External, every one below Assets/External/Scripts (the project's own, Scripting.h). */
 void AssetPanel::loadScripts()
 {
 	namespace fs = std::filesystem;
-	for(int game = 0; game < 2; game++)
+	auto scan = [&](const fs::path& rRoot_, int game_)
 	{
-		fs::path root = fs::path(ScriptsPath) / ScriptFolders[game];
 		std::error_code error;
-		for(fs::recursive_directory_iterator it(root, error), end; !error && it != end; it.increment(error))
+		for(fs::recursive_directory_iterator it(rRoot_, error), end; !error && it != end; it.increment(error))
 		{
 			if(!it->is_regular_file() || it->path().extension() != ".lua") continue;
-			fs::path relative = fs::relative(it->path(), root);
-			this->assets[game][Script][0].push_back({relative.filename().generic_string(), it->path().generic_string(), relative.parent_path().generic_string()});
+			fs::path relative = fs::relative(it->path(), rRoot_);
+			this->assets[game_][Script][0].push_back({relative.filename().generic_string(), it->path().generic_string(), relative.parent_path().generic_string()});
 		}
-	}
+	};
+	for(int game = 0; game < 2; game++) scan(fs::path(ScriptsPath) / ScriptFolders[game], game);
+	scan(fs::path(Scripting::ExternalScriptsRoot), Global);
 }
 
 /* The tiles of one list as a grid of rows; only the rows on screen are drawn (the lists have thousands of tiles). Each tile: a flat picture of the kind's colour with its short label, the name under it, a tooltip with the source. */
@@ -282,15 +318,24 @@ void AssetPanel::drawTiles(int game_, int kind_, int group_, const std::vector<i
 				ImGui::BeginGroup();
 				bool selected = this->selectedGame == game_ && this->selectedKind == kind_ && this->selectedGroup == group_ && this->selectedIndex == i;
 				ImVec4 color = kindColor(kind_);
+				if(rList[i].spawned) color = ImVec4(1.0f, 0.5f, 0.0f, 1.0f);
 				if(selected) color = ImVec4(0.2f, 0.4f, 0.8f, 1.0f);
 				GLuint texture = 0;
-				if(game_ >= Global) texture = kind_ == Texture ? rList[i].glTexture : 0;
-				else if(kind_ == Script) texture = this->folderTexture;
+				if(kind_ == Script) texture = this->folderTexture;
+				else if(game_ >= Global) texture = kind_ == Texture ? rList[i].glTexture : 0;
 				else if(kind_ != Script && ImGui::IsRectVisible(ImVec2(TileSize, TileSize))) texture = this->thumbnails.get(game_, rList[i].source, kind_ == Model);
+				/* A tile of a script-spawned entity's asset has orange button, hover and press colors (blue by default; a thumbnail's frame shows through its background, so the button color matters at rest too), unless selected. */
+				bool orange = rList[i].spawned && !selected;
+				if(orange)
+				{
+					ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
+					ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.0f, 0.7f, 0.25f, 1.0f));
+					ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(1.0f, 0.85f, 0.5f, 1.0f));
+				}
 				bool clicked;
 				if(texture != 0)
 				{
-					ImVec4 background = selected ? ImVec4(0.2f, 0.4f, 0.8f, 0.7f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+					ImVec4 background = selected ? ImVec4(0.2f, 0.4f, 0.8f, 0.7f) : rList[i].spawned ? ImVec4(1.0f, 0.5f, 0.0f, 0.7f) : ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
 					clicked = ImGui::ImageButton("##tile", static_cast<ImTextureID>(texture), ImVec2(TileSize, TileSize), ImVec2(0.0f, kind_ == Model ? 1.0f : 0.0f), ImVec2(1.0f, kind_ == Model ? 0.0f : 1.0f), background);
 				}
 				else
@@ -298,6 +343,10 @@ void AssetPanel::drawTiles(int game_, int kind_, int group_, const std::vector<i
 					ImGui::PushStyleColor(ImGuiCol_Button, color);
 					clicked = ImGui::Button(KindLabels[kind_], ImVec2(cell, TileSize + 2.0f * rStyle.FramePadding.y));
 					ImGui::PopStyleColor();
+				}
+				if(orange)
+				{
+					ImGui::PopStyleColor(3);
 				}
 				if(clicked)
 				{
@@ -316,7 +365,7 @@ void AssetPanel::drawTiles(int game_, int kind_, int group_, const std::vector<i
 				if(kind_ == Script && ImGui::BeginDragDropSource())
 				{
 					ImGui::SetDragDropPayload("SCRIPT", rList[i].source.c_str(), rList[i].source.size() + 1);
-					ImGui::TextUnformatted(rList[i].name.c_str());
+					dragPreview(texture, false, rList[i].name);
 					ImGui::EndDragDropSource();
 				}
 				/* A texture tile can be dropped on the inspector's Texture tab: "external" or "disc", a tab, then the name (an external texture's; a SADX .GVM's path; a Shadow .TXD's entry name, the part after " > " of the source), with the '\0'. */
@@ -330,7 +379,7 @@ void AssetPanel::drawTiles(int game_, int kind_, int group_, const std::vector<i
 						payload = "disc\t" + (game_ == 1 && arrow != std::string::npos ? rList[i].source.substr(arrow + 3) : rList[i].source);
 					}
 					ImGui::SetDragDropPayload("TEXTURE", payload.c_str(), payload.size() + 1);
-					ImGui::TextUnformatted(rList[i].name.c_str());
+					dragPreview(texture, false, rList[i].name);
 					ImGui::EndDragDropSource();
 				}
 				/* A model tile can be dropped on the inspector's Mesh tab: "external" or "disc", a tab, then the name (an external model's; a SADX model's "<rel>@0x<offset in hex>", the name of its SAMesh, made from the source "<rel> @ 0x<offset>"; a Shadow .DFF's entry name, the part after " > "), with the '\0'. A land table has no mesh to give: it drags nothing. */
@@ -344,7 +393,7 @@ void AssetPanel::drawTiles(int game_, int kind_, int group_, const std::vector<i
 					else if(game_ == 1 && arrow != std::string::npos) payload = "disc\t" + rList[i].source.substr(arrow + 3);
 					else payload = "disc\t" + rList[i].source;
 					ImGui::SetDragDropPayload("MESH", payload.c_str(), payload.size() + 1);
-					ImGui::TextUnformatted(rList[i].name.c_str());
+					dragPreview(texture, kind_ == Model, rList[i].name);
 					ImGui::EndDragDropSource();
 				}
 				else if(ImGui::IsItemHovered()) ImGui::SetTooltip("%s\n%s", rList[i].name.c_str(), rList[i].source.c_str());
@@ -522,23 +571,16 @@ void AssetPanel::drawPath(const std::vector<std::string>& names_, const std::vec
 		{
 			int level = levels_[i];
 			this->scriptFile.clear();
-			if(level <= 0) this->openScope = -1;
-			if(level <= 1) this->openGame = -1;
+			this->nav.goBack(level);
 			if(level <= 2) this->openKind = -1;
 			if(level <= 3) this->openGroup = -1;
 			if(level <= 3) this->scriptFolder.clear();
 			if(level > 3)
 			{
 				/* A script folder level: keep the first (level - 3) folders of the path. */
+				std::vector<std::string> parts = splitFolderPath(this->scriptFolder);
 				std::string kept;
-				size_t from = 0;
-				for(int n = 0; n < level - 3; n++)
-				{
-					size_t slash = this->scriptFolder.find('/', from);
-					if(slash == std::string::npos) slash = this->scriptFolder.size();
-					kept = this->scriptFolder.substr(0, slash);
-					from = slash + 1;
-				}
+				for(int n = 0; n < level - 3 && n < static_cast<int>(parts.size()); n++) kept += (kept.empty() ? "" : "/") + parts[n];
 				this->scriptFolder = kept;
 			}
 		}
@@ -598,7 +640,7 @@ void AssetPanel::draw(const std::string& filter_)
 	if(!this->loaded) this->load();
 	else if(this->externalSeen != Loading::externalRevision()) this->loadExternal();
 	this->loadFolderIcon();
-	if(this->openScope == 1 && this->openGame >= 0 && this->openGame < Global) this->refreshLevel();
+	if(this->nav.inLevel()) this->refreshLevel();
 	if(this->selectedGame >= 0)
 	{
 		const Asset& rSelected = this->assets[this->selectedGame][this->selectedKind][this->selectedGroup][this->selectedIndex];
@@ -615,41 +657,28 @@ void AssetPanel::draw(const std::string& filter_)
 	}
 
 	/* The path bar's names and the level each returns to. */
-	const SourceEngineEnum games[2] = {SA_NINJA, STH2005_ONE};
 	std::vector<std::string> names = {"Assets"};
-	std::vector<int> levels = {0};
-	if(this->openScope >= 0)
-	{
-		names.push_back(externalLabel(Global + this->openScope));
-		levels.push_back(1);
-	}
-	if(this->openGame >= 0)
-	{
-		names.push_back(this->openGame >= Global ? "External" : prefabGameFolder(games[this->openGame]));
-		levels.push_back(2);
-	}
+	this->nav.addPathNames(names);
+	std::vector<int> levels;
+	for(size_t i = 0; i < names.size(); i++) levels.push_back(static_cast<int>(i));
 	if(this->openKind >= 0)
 	{
 		names.push_back(KindFolders[this->openKind]);
 		levels.push_back(3);
 	}
-	if(this->openGroup >= 0 && this->openGame < Global)
+	if(this->openGroup >= 0 && this->nav.openGame < Global)
 	{
 		names.push_back(prefabGroupFolder(static_cast<PrefabGroup>(this->openGroup)));
 		levels.push_back(4);
 	}
 	if(this->openKind == Script)
 	{
-		size_t from = 0;
 		int depth = 0;
-		while(from < this->scriptFolder.size())
+		for(const std::string& rName : splitFolderPath(this->scriptFolder))
 		{
-			size_t slash = this->scriptFolder.find('/', from);
-			if(slash == std::string::npos) slash = this->scriptFolder.size();
-			names.push_back(this->scriptFolder.substr(from, slash - from));
+			names.push_back(rName);
 			levels.push_back(4 + depth);
 			depth++;
-			from = slash + 1;
 		}
 		if(!this->scriptFile.empty())
 		{
@@ -660,28 +689,24 @@ void AssetPanel::draw(const std::string& filter_)
 	this->drawPath(names, levels);
 
 	ImGui::BeginChild("AssetTiles", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders);
-	if(this->openScope < 0)
+	if(this->nav.openScope < 0)
 	{
-		std::vector<std::string> labels = {externalLabel(Global), externalLabel(Level)};
-		int clicked = this->drawFolders(labels);
-		if(clicked >= 0) this->openScope = clicked;
+		this->nav.pickScope(this->drawFolders(ScopeNav::scopeLabels()));
 	}
-	else if(this->openGame < 0)
+	else if(this->nav.openGame < 0)
 	{
-		std::vector<std::string> labels = {prefabGameFolder(games[0]), prefabGameFolder(games[1]), "External"};
-		int clicked = this->drawFolders(labels);
-		if(clicked >= 0) this->openGame = clicked < 2 ? clicked : Global + this->openScope;
+		this->nav.pickGame(this->drawFolders(ScopeNav::gameLabels()));
 	}
 	else if(this->openKind < 0)
 	{
 		std::vector<std::string> labels;
-		bool inLevel = this->openScope == 1 && this->openGame < Global;
-		for(int kind = 0; kind < (this->openGame >= Global ? Script : KindCount); kind++) labels.push_back(std::format("{} ({})", KindFolders[kind], inLevel ? this->levelCounts[this->openGame][kind] : this->counts[this->openGame][kind]));
+		bool inLevel = this->nav.inLevel();
+		for(int kind = 0; kind < (this->nav.openGame == Level ? Script : KindCount); kind++) labels.push_back(std::format("{} ({})", KindFolders[kind], inLevel ? this->levelCounts[this->nav.openGame][kind] : this->counts[this->nav.openGame][kind]));
 		int clicked = this->drawFolders(labels);
 		if(clicked >= 0)
 		{
 			this->openKind = clicked;
-			if(this->openGame >= Global) this->openGroup = 0;
+			if(this->nav.openGame >= Global) this->openGroup = 0;
 		}
 	}
 	else if(this->openKind == Script && !this->scriptFile.empty())
@@ -690,12 +715,12 @@ void AssetPanel::draw(const std::string& filter_)
 	}
 	else if(this->openKind == Script)
 	{
-		const std::vector<Asset>& rList = this->assets[this->openGame][Script][0];
+		const std::vector<Asset>& rList = this->assets[this->nav.openGame][Script][0];
 		/* The folders directly inside the open folder (once each, in name order) and the files in it. */
 		std::vector<std::string> folders;
 		std::vector<int> files;
 		std::string prefix = this->scriptFolder.empty() ? "" : this->scriptFolder + "/";
-		bool inLevel = this->openScope == 1 && this->openGame < Global;
+		bool inLevel = this->nav.inLevel();
 		for(int i = 0; i < static_cast<int>(rList.size()); i++)
 		{
 			if(inLevel && !rList[i].inLevel) continue;
@@ -713,7 +738,7 @@ void AssetPanel::draw(const std::string& filter_)
 		std::sort(folders.begin(), folders.end());
 		int clicked = this->drawFolders(folders);
 		if(clicked >= 0) this->scriptFolder = prefix + folders[clicked];
-		else this->drawTiles(this->openGame, Script, 0, &files);
+		else this->drawTiles(this->nav.openGame, Script, 0, &files);
 	}
 	else if(this->openGroup < 0)
 	{
@@ -721,7 +746,7 @@ void AssetPanel::draw(const std::string& filter_)
 		std::vector<int> groups;
 		for(int group = 0; group < 5; group++)
 		{
-			size_t size = this->openScope == 1 && this->openGame < Global ? this->levelIndices(this->openGame, this->openKind, group).size() : this->assets[this->openGame][this->openKind][group].size();
+			size_t size = this->nav.inLevel() ? this->levelIndices(this->nav.openGame, this->openKind, group).size() : this->assets[this->nav.openGame][this->openKind][group].size();
 			if(size == 0) continue;
 			labels.push_back(std::format("{} ({})", prefabGroupFolder(static_cast<PrefabGroup>(group)), size));
 			groups.push_back(group);
@@ -729,14 +754,14 @@ void AssetPanel::draw(const std::string& filter_)
 		int clicked = this->drawFolders(labels);
 		if(clicked >= 0) this->openGroup = groups[clicked];
 	}
-	else if(this->openScope == 1 && this->openGame < Global)
+	else if(this->nav.inLevel())
 	{
-		std::vector<int> indices = this->levelIndices(this->openGame, this->openKind, this->openGroup);
-		this->drawTiles(this->openGame, this->openKind, this->openGroup, &indices);
+		std::vector<int> indices = this->levelIndices(this->nav.openGame, this->openKind, this->openGroup);
+		this->drawTiles(this->nav.openGame, this->openKind, this->openGroup, &indices);
 	}
 	else
 	{
-		this->drawTiles(this->openGame, this->openKind, this->openGroup);
+		this->drawTiles(this->nav.openGame, this->openKind, this->openGroup);
 	}
 	ImGui::EndChild();
 }

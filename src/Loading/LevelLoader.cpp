@@ -296,16 +296,235 @@ PoolId findBehavior(const std::string& rName_, const std::string& rLevel_)
 }
 
 /*
-Applies the "edits" of the level's file (see saveLevelEdits) to the level just made, once its own entities are marked as the source: the moved ones are put at their position, the added ones are made from their prefab and
-owned by the level. The file is read again (not the recipe's copy): a saved edit is in the file the next time the level is loaded. An edit that does not fit (an index past the entities, an unknown prefab) is reported on stderr and skipped.
+A prefab's edits as a level file's "prefabs" entry and a Changed file have them: {"added": [behaviour names], "removed": [...], "shapesAdded": [shapes], "shapesRemoved": [...], "mesh": choice, "texture": choice}. The model and texture are
+written only when withModel_ (an External prefab's are its definition, saved with the prefab).
 */
-void applyEdits(Level& rLevel_, const std::string& name_, PoolId shaderId_)
+nlohmann::ordered_json writePrefabEdits(const PrefabEdits& rEdits_, bool withModel_)
 {
-	std::ifstream stream(levelFilePath("Assets/Levels/", name_));
-	if(!stream) return;
-	Json file = Json::parse(stream);
-	if(!file.contains("edits")) return;
-	const Json& rEdits = file.at("edits");
+	auto& rTypes = Globals::Game::entityBehaviorTypes;
+	nlohmann::ordered_json lists;
+	lists["added"] = nlohmann::ordered_json::array();
+	lists["removed"] = nlohmann::ordered_json::array();
+	for(PoolId behaviorId : rEdits_.addedBehaviors) lists["added"].push_back(rTypes.names[behaviorId.id]);
+	for(PoolId behaviorId : rEdits_.removedBehaviors) lists["removed"].push_back(rTypes.names[behaviorId.id]);
+	lists["shapesAdded"] = nlohmann::ordered_json::array();
+	lists["shapesRemoved"] = nlohmann::ordered_json::array();
+	for(const Physics::CollisionShape& rShape : rEdits_.addedShapes) lists["shapesAdded"].push_back(writeShape(rShape));
+	for(const Physics::CollisionShape& rShape : rEdits_.removedShapes) lists["shapesRemoved"].push_back(writeShape(rShape));
+	if(withModel_ && rEdits_.mesh.kind != MeshChoiceKind::Default) lists["mesh"] = writeMeshChoice(rEdits_.mesh);
+	if(withModel_ && rEdits_.texture.kind != TextureChoiceKind::Default) lists["texture"] = writeTextureChoice(rEdits_.texture);
+	return lists;
+}
+
+bool prefabEditsEmpty(const PrefabEdits& rEdits_, bool withModel_)
+{
+	bool lists = rEdits_.addedBehaviors.empty() && rEdits_.removedBehaviors.empty() && rEdits_.addedShapes.empty() && rEdits_.removedShapes.empty();
+	return lists && (!withModel_ || (rEdits_.texture.kind == TextureChoiceKind::Default && rEdits_.mesh.kind == MeshChoiceKind::Default));
+}
+
+/* Fills the set from what writePrefabEdits wrote, without touching any entity (Changed files are read before any exists). A name nothing registered is reported (rWhere_ names the file) and skipped. */
+void readPrefabEdits(PrefabEdits& rEdits_, const Json& rJson_, const std::string& rWhere_)
+{
+	for(const Json& rName : rJson_.value("added", Json::array()))
+	{
+		PoolId behaviorId = findBehavior(rName.get<std::string>(), rWhere_);
+		if(behaviorId != UninitializedPoolId) rEdits_.addedBehaviors.push_back(behaviorId);
+	}
+	for(const Json& rName : rJson_.value("removed", Json::array()))
+	{
+		PoolId behaviorId = findBehavior(rName.get<std::string>(), rWhere_);
+		if(behaviorId != UninitializedPoolId) rEdits_.removedBehaviors.push_back(behaviorId);
+	}
+	for(const Json& rShape : rJson_.value("shapesAdded", Json::array())) rEdits_.addedShapes.push_back(readShape(rShape, rWhere_));
+	for(const Json& rShape : rJson_.value("shapesRemoved", Json::array())) rEdits_.removedShapes.push_back(readShape(rShape, rWhere_));
+	if(rJson_.contains("mesh")) rEdits_.mesh = readMeshChoice(rJson_.at("mesh"));
+	if(rJson_.contains("texture")) rEdits_.texture = readTextureChoice(rJson_.at("texture"));
+}
+
+/*
+The external field values of an entity (Entity::externals) as the level file has them: {"<behaviour>": {"<field>": value}}, a number, bool or string as itself, a vec3 as [x, y, z], an entity as its index in the level (Level::editIndexOf; null if it is not
+one of the level's) and a prefab as its name (null: none). A value of a declared field is written from its type; one the file had that no declared field took is written back from Entity::externalsKept.
+*/
+nlohmann::ordered_json writeExternals(const Entity& rEntity_, const Level& rLevel_)
+{
+	nlohmann::ordered_json json = nlohmann::ordered_json::object();
+	for(const auto& [behaviorName, rValues] : rEntity_.externals)
+	{
+		auto behavior = Globals::Game::entityBehaviorTypes.nameToId.find(behaviorName);
+		if(behavior == Globals::Game::entityBehaviorTypes.nameToId.end()) continue;
+		nlohmann::ordered_json fields = nlohmann::ordered_json::object();
+		for(const ExternalField& rField : Globals::Game::entityBehaviorTypes[behavior->second].fields)
+		{
+			auto found = rValues.find(rField.name);
+			if(found == rValues.end()) continue;
+			const ExternalValue& rValue = found->second;
+			switch(rField.type)
+			{
+			case ExternalType::Number:
+				fields[rField.name] = rValue.number;
+				break;
+			case ExternalType::Bool:
+				fields[rField.name] = rValue.flag;
+				break;
+			case ExternalType::String:
+				fields[rField.name] = rValue.text;
+				break;
+			case ExternalType::Vec3:
+				fields[rField.name] = nlohmann::ordered_json::array({rValue.vector.x, rValue.vector.y, rValue.vector.z});
+				break;
+			case ExternalType::Entity:
+			{
+				int32_t index = rLevel_.editIndexOf(rValue.entity);
+				fields[rField.name] = index >= 0 ? nlohmann::ordered_json(index) : nlohmann::ordered_json(nullptr);
+				break;
+			}
+			case ExternalType::Prefab:
+			{
+				auto& rPrefabs = Globals::Game::prefabs;
+				bool exists = rValue.prefab.id < rPrefabs.objects.size() && rPrefabs.alive[rValue.prefab.id] && rPrefabs.generation[rValue.prefab.id] == rValue.prefab.generation;
+				fields[rField.name] = exists ? nlohmann::ordered_json(rPrefabs.names[rValue.prefab.id]) : nlohmann::ordered_json(nullptr);
+				break;
+			}
+			}
+		}
+		if(!fields.empty()) json[behaviorName] = fields;
+	}
+
+	/* What no declared field took when the file was read (Entity::externalsKept) is written back as it was, unless a declared value of the same field was written above. */
+	for(const auto& [behaviorName, rValues] : rEntity_.externalsKept)
+	{
+		for(const auto& [fieldName, rText] : rValues)
+		{
+			if(json.contains(behaviorName) && json[behaviorName].contains(fieldName)) continue;
+			json[behaviorName][fieldName] = nlohmann::ordered_json::parse(rText);
+		}
+	}
+	return json;
+}
+
+/* The values of writeExternals onto an entity. An entity value is left as entityIndex (Level::resolveExternalEntities turns it into the entity once all of them exist). What does not fit (an undeclared behaviour or field, a wrong type, an unknown prefab) is reported on stderr and kept as JSON text (Entity::externalsKept) so a save writes it back. */
+void readExternals(const Json& rJson_, Entity& rEntity_, const std::string& rLevel_)
+{
+	for(const auto& [behaviorName, rFields] : rJson_.items())
+	{
+		auto behavior = Globals::Game::entityBehaviorTypes.nameToId.find(behaviorName);
+		if(behavior == Globals::Game::entityBehaviorTypes.nameToId.end())
+		{
+			fprintf(stderr, "Level '%s': an edit sets fields of the unknown behaviour '%s'; kept as they are.\n", rLevel_.c_str(), behaviorName.c_str());
+			for(const auto& [fieldName, rJson] : rFields.items()) rEntity_.externalsKept[behaviorName][fieldName] = rJson.dump();
+			continue;
+		}
+		const std::vector<ExternalField>& rDeclared = Globals::Game::entityBehaviorTypes[behavior->second].fields;
+		for(const auto& [fieldName, rJson] : rFields.items())
+		{
+			auto field = std::find_if(rDeclared.begin(), rDeclared.end(), [&](const ExternalField& rField_) { return rField_.name == fieldName; });
+			if(field == rDeclared.end())
+			{
+				fprintf(stderr, "Level '%s': an edit sets the undeclared field '%s' of behaviour '%s'; kept as it is.\n", rLevel_.c_str(), fieldName.c_str(), behaviorName.c_str());
+				rEntity_.externalsKept[behaviorName][fieldName] = rJson.dump();
+				continue;
+			}
+			ExternalValue value;
+			try
+			{
+				switch(field->type)
+				{
+				case ExternalType::Number:
+					value.number = rJson.get<double>();
+					break;
+				case ExternalType::Bool:
+					value.flag = rJson.get<bool>();
+					break;
+				case ExternalType::String:
+					value.text = rJson.get<std::string>();
+					break;
+				case ExternalType::Vec3:
+					value.vector = readPosition(rJson);
+					break;
+				case ExternalType::Entity:
+					if(!rJson.is_null()) value.entityIndex = rJson.get<int32_t>();
+					break;
+				case ExternalType::Prefab:
+					if(!rJson.is_null())
+					{
+						auto prefab = Globals::Game::prefabs.nameToId.find(rJson.get<std::string>());
+						if(prefab == Globals::Game::prefabs.nameToId.end()) throw std::runtime_error("unknown prefab " + rJson.get<std::string>());
+						value.prefab = prefab->second;
+					}
+					break;
+				}
+			}
+			catch(const std::exception& rError)
+			{
+				fprintf(stderr, "Level '%s': the field '%s' of behaviour '%s' does not fit: %s; kept as it is.\n", rLevel_.c_str(), fieldName.c_str(), behaviorName.c_str(), rError.what());
+				rEntity_.externalsKept[behaviorName][fieldName] = rJson.dump();
+				continue;
+			}
+			rEntity_.externals[behaviorName][fieldName] = value;
+		}
+	}
+}
+
+/* A prefab's file in the level's Source Game Level under a root ("Assets/Levels/": the game's copy; the source tree's Levels/: what the next build copies back), by its pool name ("SADX/SPRING", "Level/<name>"). */
+std::string sourcePrefabFile(const std::string& rRoot_, const std::string& rLevel_, const std::string& rPoolName_)
+{
+	return rRoot_ + rLevel_ + "/SourceGamePrefabs/" + rPoolName_ + "/prefab.json";
+}
+
+/* "added": [{"prefab", "position", ...}], the entities of a prefab the file adds to the level, after the ones it has; they are owned by the level. With keepIndices_ (the source set) an entry that can't be made leaves a gone entity in entityIds, so the entities after it keep the index the file counts them by. */
+void addEditedEntities(Level& rLevel_, const Json& rEdits, const std::string& name_, PoolId shaderId_, bool keepIndices_)
+{
+	if(!rEdits.contains("added")) return;
+	for(const Json& rAdded : rEdits.at("added"))
+	{
+		std::string prefabName = rAdded.at("prefab").get<std::string>();
+		auto prefab = Globals::Game::prefabs.nameToId.find(prefabName);
+		if(prefab == Globals::Game::prefabs.nameToId.end())
+		{
+			fprintf(stderr, "Level '%s': an edit adds the unknown prefab '%s'.\n", name_.c_str(), prefabName.c_str());
+			if(keepIndices_) rLevel_.entityIds.push_back(UninitializedPoolId);
+			continue;
+		}
+		SpawnParams params;
+		params.position = readPosition(rAdded.at("position"));
+		params.what = "(level file edit)";
+		PoolId id = spawnPrefab(prefab->second, shaderId_, params);
+		if(keepIndices_ || id != UninitializedPoolId) rLevel_.entityIds.push_back(id);
+		if(id == UninitializedPoolId) continue;
+
+		/* An added entity keeps its whole list: there is no source to take a difference from. */
+		if(rAdded.contains("behaviors"))
+		{
+			std::vector<PoolId> behaviorIds;
+			for(const Json& rName : rAdded.at("behaviors"))
+			{
+				PoolId behaviorId = findBehavior(rName.get<std::string>(), name_);
+				if(behaviorId != UninitializedPoolId) behaviorIds.push_back(behaviorId);
+			}
+			setEntityBehaviors(id, behaviorIds);
+		}
+		if(rAdded.contains("shapes"))
+		{
+			std::vector<Physics::CollisionShape> shapes;
+			for(const Json& rShape : rAdded.at("shapes")) shapes.push_back(readShape(rShape, name_));
+			setEntityShapes(id, shapes);
+		}
+		if(rAdded.contains("rotation")) getEntity(id).setRotation(readRotation(rAdded.at("rotation")));
+		if(rAdded.contains("scale")) getEntity(id).setScale(readPosition(rAdded.at("scale")));
+		if(rAdded.contains("mesh")) applyMeshChoice(id, readMeshChoice(rAdded.at("mesh")), name_);
+		if(rAdded.contains("texture")) applyTextureChoice(id, readTextureChoice(rAdded.at("texture")), name_);
+		if(rAdded.contains("externals")) readExternals(rAdded.at("externals"), getEntity(id), name_);
+	}
+}
+
+/*
+Applies one set of edits (the "edits" of the level's file, see saveLevelEdits, or its "source", the same format without "prefabs") to the level just made: the moved ones are put at their position, the added ones are made from their prefab and
+owned by the level. An edit that does not fit (an index past the entities, an unknown prefab) is reported on stderr and skipped.
+*/
+void applyEditSet(Level& rLevel_, const Json& rEdits, const std::string& name_, PoolId shaderId_, bool asSource_)
+{
+	/* The source set (Save Source Game Level) makes its added entities first, so its per-entity edits can name them (their index follows the level's own entities); the edits set names only entities that exist before it. */
+	if(asSource_) addEditedEntities(rLevel_, rEdits, name_, shaderId_, true);
 
 	/* "prefabs": {"<prefab>": {"added": [behaviour names], "removed": [...], "shapesAdded": [shapes], "shapesRemoved": [...], "mesh": choice, "texture": choice}}, the behaviours and bound area shapes given to or taken from every entity of a prefab and the model and texture all of them get; applied first, so the per-entity ones below are differences from the result. */
 	if(rEdits.contains("prefabs"))
@@ -351,7 +570,7 @@ void applyEdits(Level& rLevel_, const std::string& name_, PoolId shaderId_)
 		for(const Json& rEntry : rEdits.at("behaviors"))
 		{
 			uint32_t index = rEntry.at("index").get<uint32_t>();
-			if(index >= rLevel_.sourceEntityCount || !entityExists(rLevel_.entityIds[index]))
+			if(index >= rLevel_.entityIds.size() || !entityExists(rLevel_.entityIds[index]))
 			{
 				fprintf(stderr, "Level '%s': an edit changes the behaviours of entity %u, which is not one of its own.\n", name_.c_str(), index);
 				continue;
@@ -375,7 +594,7 @@ void applyEdits(Level& rLevel_, const std::string& name_, PoolId shaderId_)
 		for(const Json& rEntry : rEdits.at("shapes"))
 		{
 			uint32_t index = rEntry.at("index").get<uint32_t>();
-			if(index >= rLevel_.sourceEntityCount || !entityExists(rLevel_.entityIds[index]))
+			if(index >= rLevel_.entityIds.size() || !entityExists(rLevel_.entityIds[index]))
 			{
 				fprintf(stderr, "Level '%s': an edit changes the bound area of entity %u, which is not one of its own.\n", name_.c_str(), index);
 				continue;
@@ -391,7 +610,7 @@ void applyEdits(Level& rLevel_, const std::string& name_, PoolId shaderId_)
 		for(const Json& rEntry : rEdits.at("meshes"))
 		{
 			uint32_t index = rEntry.at("index").get<uint32_t>();
-			if(index >= rLevel_.sourceEntityCount || !entityExists(rLevel_.entityIds[index]))
+			if(index >= rLevel_.entityIds.size() || !entityExists(rLevel_.entityIds[index]))
 			{
 				fprintf(stderr, "Level '%s': an edit changes the model of entity %u, which is not one of its own.\n", name_.c_str(), index);
 				continue;
@@ -405,7 +624,7 @@ void applyEdits(Level& rLevel_, const std::string& name_, PoolId shaderId_)
 		for(const Json& rEntry : rEdits.at("textures"))
 		{
 			uint32_t index = rEntry.at("index").get<uint32_t>();
-			if(index >= rLevel_.sourceEntityCount || !entityExists(rLevel_.entityIds[index]))
+			if(index >= rLevel_.entityIds.size() || !entityExists(rLevel_.entityIds[index]))
 			{
 				fprintf(stderr, "Level '%s': an edit changes the texture of entity %u, which is not one of its own.\n", name_.c_str(), index);
 				continue;
@@ -418,7 +637,7 @@ void applyEdits(Level& rLevel_, const std::string& name_, PoolId shaderId_)
 		for(const Json& rMoved : rEdits.at("moved"))
 		{
 			uint32_t index = rMoved.at("index").get<uint32_t>();
-			if(index >= rLevel_.sourceEntityCount || !entityExists(rLevel_.entityIds[index]))
+			if(index >= rLevel_.entityIds.size() || !entityExists(rLevel_.entityIds[index]))
 			{
 				fprintf(stderr, "Level '%s': an edit moves entity %u, which is not one of its own.\n", name_.c_str(), index);
 				continue;
@@ -432,7 +651,7 @@ void applyEdits(Level& rLevel_, const std::string& name_, PoolId shaderId_)
 		for(const Json& rEntry : rEdits.at("transforms"))
 		{
 			uint32_t index = rEntry.at("index").get<uint32_t>();
-			if(index >= rLevel_.sourceEntityCount || !entityExists(rLevel_.entityIds[index]))
+			if(index >= rLevel_.entityIds.size() || !entityExists(rLevel_.entityIds[index]))
 			{
 				fprintf(stderr, "Level '%s': an edit turns or scales entity %u, which is not one of its own.\n", name_.c_str(), index);
 				continue;
@@ -442,47 +661,75 @@ void applyEdits(Level& rLevel_, const std::string& name_, PoolId shaderId_)
 			rEntity.setScale(readPosition(rEntry.at("scale")));
 		}
 	}
-	if(rEdits.contains("added"))
+	/* "externals": [{"index", "values"}], the external field values of one of the level's own entities (writeExternals); an added entity keeps its own under "added". Entity references are resolved at the end, once the added entities exist. */
+	if(rEdits.contains("externals"))
 	{
-		for(const Json& rAdded : rEdits.at("added"))
+		for(const Json& rEntry : rEdits.at("externals"))
 		{
-			std::string prefabName = rAdded.at("prefab").get<std::string>();
-			auto prefab = Globals::Game::prefabs.nameToId.find(prefabName);
-			if(prefab == Globals::Game::prefabs.nameToId.end())
+			uint32_t index = rEntry.at("index").get<uint32_t>();
+			if(index >= rLevel_.entityIds.size() || !entityExists(rLevel_.entityIds[index]))
 			{
-				fprintf(stderr, "Level '%s': an edit adds the unknown prefab '%s'.\n", name_.c_str(), prefabName.c_str());
+				fprintf(stderr, "Level '%s': an edit sets fields of entity %u, which is not one of its own.\n", name_.c_str(), index);
 				continue;
 			}
-			SpawnParams params;
-			params.position = readPosition(rAdded.at("position"));
-			params.what = "(level file edit)";
-			PoolId id = spawnPrefab(prefab->second, shaderId_, params);
-			if(id == UninitializedPoolId) continue;
-			rLevel_.entityIds.push_back(id);
-
-			/* An added entity keeps its whole list: there is no source to take a difference from. */
-			if(rAdded.contains("behaviors"))
-			{
-				std::vector<PoolId> behaviorIds;
-				for(const Json& rName : rAdded.at("behaviors"))
-				{
-					PoolId behaviorId = findBehavior(rName.get<std::string>(), name_);
-					if(behaviorId != UninitializedPoolId) behaviorIds.push_back(behaviorId);
-				}
-				setEntityBehaviors(id, behaviorIds);
-			}
-			if(rAdded.contains("shapes"))
-			{
-				std::vector<Physics::CollisionShape> shapes;
-				for(const Json& rShape : rAdded.at("shapes")) shapes.push_back(readShape(rShape, name_));
-				setEntityShapes(id, shapes);
-			}
-			if(rAdded.contains("rotation")) getEntity(id).setRotation(readRotation(rAdded.at("rotation")));
-			if(rAdded.contains("scale")) getEntity(id).setScale(readPosition(rAdded.at("scale")));
-			if(rAdded.contains("mesh")) applyMeshChoice(id, readMeshChoice(rAdded.at("mesh")), name_);
-			if(rAdded.contains("texture")) applyTextureChoice(id, readTextureChoice(rAdded.at("texture")), name_);
+			readExternals(rEntry.at("values"), getEntity(rLevel_.entityIds[index]), name_);
 		}
 	}
+	if(!asSource_) addEditedEntities(rLevel_, rEdits, name_, shaderId_, false);
+	rLevel_.resolveExternalEntities();
+}
+
+/*
+Applies the "source" (if any) and then the "edits" (if any) of the level's file to the level just made. The source is the level as saved by File > Save Source Game Level: applied first, then the level's entities are marked as the source (markSourceEntities), so Restore Source Game Level and the edits' differences are from it.
+The file is read again (not the recipe's copy): a saved edit is in the file the next time the level is loaded.
+*/
+/*
+"cameras" (top level of the level file, written by File > Save and Save Source Game Level): [{"name", "position", "front", "yaw", "pitch", "fov", "near", "far", "enabled", "main", "renderTarget": {"width", "height"}}], the camera entities the editor added to the level. Each is made after
+the edits as a camera entity (addCamera) that the level owns, so it is removed with the level and by Restore Source Game Level. "main" makes it the main camera; "renderTarget" makes a new render target of that size for it (absent: the screen). A broken entry is reported on stderr and skipped.
+*/
+void addLevelCameras(Level& rLevel_, const Json& rCameras_, const std::string& name_)
+{
+	for(const Json& rEntry : rCameras_)
+	{
+		try
+		{
+			glm::vec3 position = readPosition(rEntry.at("position"));
+			PoolId id = addCamera(rEntry.value("name", std::string("Camera")).c_str(), position);
+			rLevel_.entityIds.push_back(id);
+			PoolId cameraId = getEntity(id).cameraId;
+			Camera& rCamera = Globals::Game::cameras[cameraId];
+			if(rEntry.contains("front")) rCamera.front = readPosition(rEntry.at("front"));
+			rCamera.yaw = rEntry.value("yaw", rCamera.yaw);
+			rCamera.pitch = rEntry.value("pitch", rCamera.pitch);
+			rCamera.fov = rEntry.value("fov", rCamera.fov);
+			rCamera.nearPlane = rEntry.value("near", rCamera.nearPlane);
+			rCamera.farPlane = rEntry.value("far", rCamera.farPlane);
+			rCamera.enabled = rEntry.value("enabled", rCamera.enabled);
+			if(rEntry.contains("renderTarget"))
+			{
+				const Json& rTarget = rEntry.at("renderTarget");
+				rCamera.setRenderTarget(addRenderTarget(rTarget.at("width").get<uint32_t>(), rTarget.at("height").get<uint32_t>()));
+			}
+			rCamera.refreshProjection();
+			rCamera.set(position);
+			if(rEntry.value("main", false)) Globals::Game::mainCamera = cameraId;
+		}
+		catch(const std::exception& rError)
+		{
+			fprintf(stderr, "Level '%s': a camera of the file can't be made: %s\n", name_.c_str(), rError.what());
+		}
+	}
+}
+
+void applyEdits(Level& rLevel_, const std::string& name_, PoolId shaderId_)
+{
+	Json file;
+	std::ifstream stream(levelFilePath("Assets/Levels/", name_));
+	if(stream) file = Json::parse(stream);
+	if(file.contains("source")) applyEditSet(rLevel_, file.at("source"), name_, shaderId_, true);
+	rLevel_.markSourceEntities();
+	if(file.contains("edits")) applyEditSet(rLevel_, file.at("edits"), name_, shaderId_, false);
+	if(file.contains("cameras")) addLevelCameras(rLevel_, file.at("cameras"), name_);
 }
 }
 
@@ -519,6 +766,7 @@ PoolId loadLevel(const std::string& name_)
 		/* Before the edits: they may name the level's own External prefabs. */
 		loadExternalPrefabs(ExternalScope::Level, name_);
 #endif
+		loadSourcePrefabs(name_);
 		if(rRecipe.saLandTable != nullptr)
 		{
 			rLevel.setSAGPUInstance(rRecipe.shaderId, *rRecipe.saLandTable, *rRecipe.saTextures);
@@ -536,7 +784,6 @@ PoolId loadLevel(const std::string& name_)
 			rLevel.setONECollision(*rRecipe.oneLevel);
 			rLevel.setONEEntities(rRecipe.shaderId, *rRecipe.oneLevel);
 		}
-		rLevel.markSourceEntities();
 		applyEdits(rLevel, name_, rRecipe.shaderId);
 	}
 	catch(...)
@@ -546,6 +793,28 @@ PoolId loadLevel(const std::string& name_)
 	}
 	Globals::Game::spatialIndex.rebuild();
 	return id;
+}
+
+void loadSourcePrefabs(const std::string& levelName_)
+{
+	for(uint32_t i = 0; i < Globals::Game::prefabs.objects.size(); i++)
+	{
+		if(!Globals::Game::prefabs.alive[i]) continue;
+		PrefabEdits& rSource = Globals::Game::prefabs.objects[i].source;
+		rSource = PrefabEdits{};
+		const std::string& rName = Globals::Game::prefabs.names[i];
+		std::string path = sourcePrefabFile("Assets/Levels/", levelName_, rName);
+		std::ifstream stream(path);
+		if(!stream) continue;
+		try
+		{
+			readPrefabEdits(rSource, Json::parse(stream), "Source Game Level " + rName);
+		}
+		catch(const std::exception& rError)
+		{
+			fprintf(stderr, "Source Game Level prefab not read (%s): %s\n", path.c_str(), rError.what());
+		}
+	}
 }
 
 void forEachSAEntityKey(const std::function<void(const SAEntityKey&)>& rFunction_)
@@ -568,18 +837,61 @@ void forEachONEEntityKey(const std::function<void(const STH2005::EntityKey&)>& r
 	}
 }
 
-#ifdef EDITOR
-void saveLevelEdits(PoolId levelId_, const std::string& fileName_)
+namespace
 {
-	const Level& rLevel = getLevel(levelId_);
-	std::string levelName = Globals::Game::levels.names[levelId_.id];
-	std::ifstream stream(levelFilePath("Assets/Levels/", levelName));
-	if(!stream) throw std::runtime_error(std::format("{} not found.", levelFilePath("Assets/Levels/", levelName)));
+/* A prefab's Changed file under a root ("Assets/External/": the game's copy; the source tree's External/: what the next build copies back), by its pool name ("SADX/SPRING"; a key name has no character a path can't have). */
+std::string changedPrefabFile(const std::string& rRoot_, const std::string& rPoolName_)
+{
+	return rRoot_ + "Prefabs/" + rPoolName_ + "/Changed/prefab.json";
+}
+}
 
-	/* ordered_json keeps the file's key order, so a save only changes the edits. */
-	nlohmann::ordered_json file = nlohmann::ordered_json::parse(stream);
-	stream.close();
-	file.erase("edits");
+void loadChangedPrefabs()
+{
+	for(uint32_t i = 0; i < Globals::Game::prefabs.objects.size(); i++)
+	{
+		if(!Globals::Game::prefabs.alive[i] || Globals::Game::prefabs.objects[i].kind == PrefabKind::External) continue;
+		const std::string& rName = Globals::Game::prefabs.names[i];
+		std::string path = changedPrefabFile("Assets/External/", rName);
+		std::ifstream stream(path);
+		if(!stream) continue;
+		try
+		{
+			readPrefabEdits(Globals::Game::prefabs.objects[i].changed, Json::parse(stream), "Changed " + rName);
+		}
+		catch(const std::exception& rError)
+		{
+			fprintf(stderr, "Changed prefab not read (%s): %s\n", path.c_str(), rError.what());
+		}
+	}
+}
+
+#ifdef EDITOR
+void saveChangedPrefab(PoolId prefabId_)
+{
+	namespace fs = std::filesystem;
+	const Prefab& rPrefab = Globals::Game::prefabs[prefabId_];
+	const std::string& rName = Globals::Game::prefabs.names[prefabId_.id];
+	bool empty = prefabEditsEmpty(rPrefab.changed, true);
+	std::string text = empty ? std::string() : writePrefabEdits(rPrefab.changed, true).dump(2);
+	for(const std::string& rRoot : {std::string("Assets/External/"), std::string(SF_SOURCE_DIR "/External/")})
+	{
+		fs::path path = changedPrefabFile(rRoot, rName);
+		if(empty)
+		{
+			fs::remove(path);
+			continue;
+		}
+		fs::create_directories(path.parent_path());
+		std::ofstream out(path);
+		if(!out) throw std::runtime_error(std::format("can't write {}.", path.string()));
+		out << text;
+	}
+}
+
+/* The "edits" object of the level as it is now, from its source (the game's data plus the level file's "source"): the differences only; an empty object when there are none. */
+static nlohmann::ordered_json buildLevelEdits(const Level& rLevel)
+{
 	auto position = [](const glm::vec3& rPosition_) { return nlohmann::ordered_json::array({rPosition_.x, rPosition_.y, rPosition_.z}); };
 	auto rotation = [](const glm::mat4& rRotation_)
 	{
@@ -589,6 +901,7 @@ void saveLevelEdits(PoolId levelId_, const std::string& fileName_)
 	nlohmann::ordered_json moved = nlohmann::ordered_json::array();
 	nlohmann::ordered_json transforms = nlohmann::ordered_json::array();
 	nlohmann::ordered_json added = nlohmann::ordered_json::array();
+	nlohmann::ordered_json externals = nlohmann::ordered_json::array();
 	for(uint32_t i = 0; i < rLevel.entityIds.size(); i++)
 	{
 		if(!entityExists(rLevel.entityIds[i])) continue;
@@ -597,6 +910,8 @@ void saveLevelEdits(PoolId levelId_, const std::string& fileName_)
 		{
 			if(rEntity.position != rLevel.sourcePositions[i]) moved.push_back({{"index", i}, {"position", position(rEntity.position)}, {"source", position(rLevel.sourcePositions[i])}});
 			if(rEntity.rotation != rLevel.sourceRotations[i] || rEntity.scale != rLevel.sourceScales[i]) transforms.push_back({{"index", i}, {"rotation", rotation(rEntity.rotation)}, {"scale", position(rEntity.scale)}});
+			nlohmann::ordered_json values = writeExternals(rEntity, rLevel);
+			if(!values.empty()) externals.push_back({{"index", i}, {"values", values}});
 		}
 		else if(rEntity.prefabId != UninitializedPoolId)
 		{
@@ -610,8 +925,10 @@ void saveLevelEdits(PoolId levelId_, const std::string& fileName_)
 			added.push_back({{"prefab", Globals::Game::prefabs.names[rEntity.prefabId.id]}, {"position", position(rEntity.position)}, {"behaviors", names}, {"shapes", shapes}});
 			if(rEntity.rotation != glm::mat4(1.0f)) added.back()["rotation"] = rotation(rEntity.rotation);
 			if(rEntity.scale != glm::vec3(1.0f)) added.back()["scale"] = position(rEntity.scale);
-			if(rEntity.meshChoice != Globals::Game::prefabs[rEntity.prefabId].mesh) added.back()["mesh"] = writeMeshChoice(rEntity.meshChoice);
-			if(rEntity.textureChoice != Globals::Game::prefabs[rEntity.prefabId].texture) added.back()["texture"] = writeTextureChoice(rEntity.textureChoice);
+			if(rEntity.meshChoice != prefabMesh(Globals::Game::prefabs[rEntity.prefabId])) added.back()["mesh"] = writeMeshChoice(rEntity.meshChoice);
+			if(rEntity.textureChoice != prefabTexture(Globals::Game::prefabs[rEntity.prefabId])) added.back()["texture"] = writeTextureChoice(rEntity.textureChoice);
+			nlohmann::ordered_json values = writeExternals(rEntity, rLevel);
+			if(!values.empty()) added.back()["externals"] = values;
 		}
 	}
 
@@ -622,19 +939,9 @@ void saveLevelEdits(PoolId levelId_, const std::string& fileName_)
 	{
 		if(!Globals::Game::prefabs.alive[i]) continue;
 		const Prefab& rPrefab = Globals::Game::prefabs.objects[i];
-		bool ownFile = rPrefab.kind == PrefabKind::External;
-		if(rPrefab.addedBehaviors.empty() && rPrefab.removedBehaviors.empty() && rPrefab.addedShapes.empty() && rPrefab.removedShapes.empty() && (ownFile || (rPrefab.texture.kind == TextureChoiceKind::Default && rPrefab.mesh.kind == MeshChoiceKind::Default))) continue;
-		nlohmann::ordered_json lists;
-		lists["added"] = nlohmann::ordered_json::array();
-		lists["removed"] = nlohmann::ordered_json::array();
-		for(PoolId behaviorId : rPrefab.addedBehaviors) lists["added"].push_back(rTypes.names[behaviorId.id]);
-		for(PoolId behaviorId : rPrefab.removedBehaviors) lists["removed"].push_back(rTypes.names[behaviorId.id]);
-		lists["shapesAdded"] = nlohmann::ordered_json::array();
-		lists["shapesRemoved"] = nlohmann::ordered_json::array();
-		for(const Physics::CollisionShape& rShape : rPrefab.addedShapes) lists["shapesAdded"].push_back(writeShape(rShape));
-		for(const Physics::CollisionShape& rShape : rPrefab.removedShapes) lists["shapesRemoved"].push_back(writeShape(rShape));
-		if(!ownFile && rPrefab.mesh.kind != MeshChoiceKind::Default) lists["mesh"] = writeMeshChoice(rPrefab.mesh);
-		if(!ownFile && rPrefab.texture.kind != TextureChoiceKind::Default) lists["texture"] = writeTextureChoice(rPrefab.texture);
+		bool withModel = rPrefab.kind != PrefabKind::External;
+		if(prefabEditsEmpty(rPrefab.level, withModel)) continue;
+		nlohmann::ordered_json lists = writePrefabEdits(rPrefab.level, withModel);
 		prefabs[Globals::Game::prefabs.names[i]] = lists;
 	}
 	nlohmann::ordered_json behaviors = nlohmann::ordered_json::array();
@@ -648,12 +955,7 @@ void saveLevelEdits(PoolId levelId_, const std::string& fileName_)
 		std::vector<PoolId> expected = rLevel.sourceBehaviors[i];
 		if(rEntity.prefabId != UninitializedPoolId)
 		{
-			const Prefab& rPrefab = Globals::Game::prefabs[rEntity.prefabId];
-			for(PoolId behaviorId : rPrefab.addedBehaviors)
-			{
-				if(std::find(expected.begin(), expected.end(), behaviorId) == expected.end()) expected.push_back(behaviorId);
-			}
-			for(PoolId behaviorId : rPrefab.removedBehaviors) expected.erase(std::remove(expected.begin(), expected.end(), behaviorId), expected.end());
+			applyPrefabBehaviorsTo(Globals::Game::prefabs[rEntity.prefabId], expected);
 		}
 		std::vector<PoolId> current = rEntity.behaviorSetId == UninitializedPoolId ? std::vector<PoolId>() : Globals::Game::entityBehaviors[rEntity.behaviorSetId].behaviorIds;
 		nlohmann::ordered_json addedNames = nlohmann::ordered_json::array();
@@ -678,21 +980,62 @@ void saveLevelEdits(PoolId levelId_, const std::string& fileName_)
 			shapes.push_back({{"index", i}, {"shapes", shapeList}});
 		}
 
-		MeshChoice expectedMesh = rEntity.prefabId != UninitializedPoolId ? Globals::Game::prefabs[rEntity.prefabId].mesh : MeshChoice{};
+		MeshChoice expectedMesh = rEntity.prefabId != UninitializedPoolId ? prefabMesh(Globals::Game::prefabs[rEntity.prefabId]) : MeshChoice{};
 		if(rEntity.meshChoice != expectedMesh) meshes.push_back({{"index", i}, {"mesh", writeMeshChoice(rEntity.meshChoice)}});
-		TextureChoice expectedTexture = rEntity.prefabId != UninitializedPoolId ? Globals::Game::prefabs[rEntity.prefabId].texture : TextureChoice{};
+		TextureChoice expectedTexture = rEntity.prefabId != UninitializedPoolId ? prefabTexture(Globals::Game::prefabs[rEntity.prefabId]) : TextureChoice{};
 		if(rEntity.textureChoice != expectedTexture) textures.push_back({{"index", i}, {"texture", writeTextureChoice(rEntity.textureChoice)}});
 	}
-	if(!moved.empty() || !added.empty() || !prefabs.empty() || !behaviors.empty() || !shapes.empty() || !textures.empty() || !meshes.empty() || !transforms.empty())
+	nlohmann::ordered_json edits = nlohmann::ordered_json::object();
+	if(!moved.empty() || !added.empty() || !prefabs.empty() || !behaviors.empty() || !shapes.empty() || !textures.empty() || !meshes.empty() || !transforms.empty() || !externals.empty())
 	{
-		file["edits"] = {{"moved", moved}, {"added", added}};
-		if(!prefabs.empty()) file["edits"]["prefabs"] = prefabs;
-		if(!behaviors.empty()) file["edits"]["behaviors"] = behaviors;
-		if(!shapes.empty()) file["edits"]["shapes"] = shapes;
-		if(!transforms.empty()) file["edits"]["transforms"] = transforms;
-		if(!meshes.empty()) file["edits"]["meshes"] = meshes;
-		if(!textures.empty()) file["edits"]["textures"] = textures;
+		edits = {{"moved", moved}, {"added", added}};
+		if(!prefabs.empty()) edits["prefabs"] = prefabs;
+		if(!behaviors.empty()) edits["behaviors"] = behaviors;
+		if(!shapes.empty()) edits["shapes"] = shapes;
+		if(!transforms.empty()) edits["transforms"] = transforms;
+		if(!externals.empty()) edits["externals"] = externals;
+		if(!meshes.empty()) edits["meshes"] = meshes;
+		if(!textures.empty()) edits["textures"] = textures;
 	}
+	return edits;
+}
+
+/* The "cameras" list of the level as it is now: its camera entities after the source ones (the editor's Add camera and paste put them in Level::entityIds). The inverse of addLevelCameras; empty when there are none. */
+static nlohmann::ordered_json buildLevelCameras(const Level& rLevel)
+{
+	nlohmann::ordered_json cameras = nlohmann::ordered_json::array();
+	auto vector = [](const glm::vec3& rValue_) { return nlohmann::ordered_json::array({rValue_.x, rValue_.y, rValue_.z}); };
+	for(uint32_t i = rLevel.sourceEntityCount; i < rLevel.entityIds.size(); i++)
+	{
+		if(!entityExists(rLevel.entityIds[i])) continue;
+		const Entity& rEntity = getEntity(rLevel.entityIds[i]);
+		if(rEntity.cameraId == UninitializedPoolId) continue;
+		const Camera& rCamera = Globals::Game::cameras[rEntity.cameraId];
+		nlohmann::ordered_json entry = {{"name", Globals::Game::entities.names[rLevel.entityIds[i].id]}, {"position", vector(rCamera.position)}, {"front", vector(rCamera.front)}, {"yaw", rCamera.yaw}, {"pitch", rCamera.pitch},
+			{"fov", rCamera.fov}, {"near", rCamera.nearPlane}, {"far", rCamera.farPlane}, {"enabled", rCamera.enabled}};
+		if(Globals::Game::mainCamera == rEntity.cameraId) entry["main"] = true;
+		if(const Graphics::RenderTarget* pTarget = rCamera.renderTarget()) entry["renderTarget"] = {{"width", pTarget->width}, {"height", pTarget->height}};
+		cameras.push_back(entry);
+	}
+	return cameras;
+}
+
+void saveLevelEdits(PoolId levelId_, const std::string& fileName_)
+{
+	const Level& rLevel = getLevel(levelId_);
+	std::string levelName = Globals::Game::levels.names[levelId_.id];
+	std::ifstream stream(levelFilePath("Assets/Levels/", levelName));
+	if(!stream) throw std::runtime_error(std::format("{} not found.", levelFilePath("Assets/Levels/", levelName)));
+
+	/* ordered_json keeps the file's key order, so a save only changes the edits. */
+	nlohmann::ordered_json file = nlohmann::ordered_json::parse(stream);
+	stream.close();
+	file.erase("edits");
+	nlohmann::ordered_json edits = buildLevelEdits(rLevel);
+	if(!edits.empty()) file["edits"] = edits;
+	file.erase("cameras");
+	nlohmann::ordered_json cameras = buildLevelCameras(rLevel);
+	if(!cameras.empty()) file["cameras"] = cameras;
 
 	/*
 	Saving under another name copies the level's whole folder first (its Models, Textures, Collision and Prefabs go with it), then writes the file under the new name. The copy of the old file is removed. A glTF level's chunk files are named after the level, so
@@ -710,6 +1053,125 @@ void saveLevelEdits(PoolId levelId_, const std::string& fileName_)
 		fs::create_directories(rRoot + fileName_);
 		std::ofstream out(levelFilePath(rRoot, fileName_));
 		if(!out) throw std::runtime_error(std::format("can't write {}.", levelFilePath(rRoot, fileName_)));
+		out << text;
+	}
+}
+
+namespace
+{
+/*
+The file's "source" with the level's "edits" (buildLevelEdits: differences from that source) applied on top, as one "source" the next load gives the same level from. A per-entity entry of the edits replaces the source's entry of the same index, except "behaviors" (their added and
+removed names are composed: removing what the source added only cancels it) and "moved" (the "source" position stays the source's); "added" entries follow the source's, which is the order of the entity indices. The edits' "prefabs" are not here (saveSourceLevel merges them into Prefab::source).
+*/
+nlohmann::ordered_json composeSource(const nlohmann::ordered_json& rSource_, const nlohmann::ordered_json& rEdits_)
+{
+	using OJson = nlohmann::ordered_json;
+	OJson result = rSource_.is_object() ? rSource_ : OJson::object();
+	auto entryOf = [](OJson& rList_, uint32_t index_) -> OJson*
+	{
+		for(OJson& rEntry : rList_)
+		{
+			if(rEntry.at("index").get<uint32_t>() == index_) return &rEntry;
+		}
+		return nullptr;
+	};
+	for(const char* pKey : {"moved", "transforms", "shapes", "meshes", "textures", "externals", "behaviors"})
+	{
+		if(!rEdits_.contains(pKey)) continue;
+		if(!result.contains(pKey)) result[pKey] = OJson::array();
+		OJson& rList = result[pKey];
+		for(const OJson& rEntry : rEdits_.at(pKey))
+		{
+			OJson* pOld = entryOf(rList, rEntry.at("index").get<uint32_t>());
+			if(pOld == nullptr)
+			{
+				rList.push_back(rEntry);
+				continue;
+			}
+			std::string key = pKey;
+			if(key == "moved") (*pOld)["position"] = rEntry.at("position");
+			else if(key == "behaviors")
+			{
+				OJson& rAdded = (*pOld)["added"];
+				OJson& rRemoved = (*pOld)["removed"];
+				for(const OJson& rName : rEntry.value("removed", OJson::array()))
+				{
+					auto found = std::find(rAdded.begin(), rAdded.end(), rName);
+					if(found != rAdded.end()) rAdded.erase(found);
+					else if(std::find(rRemoved.begin(), rRemoved.end(), rName) == rRemoved.end()) rRemoved.push_back(rName);
+				}
+				for(const OJson& rName : rEntry.value("added", OJson::array()))
+				{
+					auto found = std::find(rRemoved.begin(), rRemoved.end(), rName);
+					if(found != rRemoved.end()) rRemoved.erase(found);
+					else if(std::find(rAdded.begin(), rAdded.end(), rName) == rAdded.end()) rAdded.push_back(rName);
+				}
+			}
+			else *pOld = rEntry;
+		}
+	}
+	if(rEdits_.contains("added") && !rEdits_.at("added").empty())
+	{
+		if(!result.contains("added")) result["added"] = OJson::array();
+		for(const OJson& rEntry : rEdits_.at("added")) result["added"].push_back(rEntry);
+	}
+	/* An empty "behaviors" entry (everything cancelled) is dropped. */
+	if(result.contains("behaviors"))
+	{
+		OJson kept = OJson::array();
+		for(const OJson& rEntry : result.at("behaviors"))
+		{
+			if(!rEntry.value("added", OJson::array()).empty() || !rEntry.value("removed", OJson::array()).empty()) kept.push_back(rEntry);
+		}
+		result["behaviors"] = kept;
+	}
+	return result;
+}
+}
+
+void saveSourceLevel(PoolId levelId_)
+{
+	namespace fs = std::filesystem;
+	const Level& rLevel = getLevel(levelId_);
+	std::string levelName = Globals::Game::levels.names[levelId_.id];
+	std::ifstream stream(levelFilePath("Assets/Levels/", levelName));
+	if(!stream) throw std::runtime_error(std::format("{} not found.", levelFilePath("Assets/Levels/", levelName)));
+	nlohmann::ordered_json file = nlohmann::ordered_json::parse(stream);
+	stream.close();
+
+	/* The level file: its source becomes what the level is now, so there are no edits left. */
+	nlohmann::ordered_json source = composeSource(file.value("source", nlohmann::ordered_json::object()), buildLevelEdits(rLevel));
+	source.erase("prefabs");
+	file.erase("edits");
+	file.erase("source");
+	if(!source.empty()) file["source"] = source;
+	file.erase("cameras");
+	nlohmann::ordered_json cameras = buildLevelCameras(rLevel);
+	if(!cameras.empty()) file["cameras"] = cameras;
+	std::string text = file.dump(2);
+
+	/* The prefabs' edits go to the level's SourceGamePrefabs folder, one file per prefab (removed when the prefab has none). */
+	for(const std::string& rRoot : {std::string("Assets/Levels/"), std::string(SF_SOURCE_DIR "/Levels/")})
+	{
+		for(uint32_t i = 0; i < Globals::Game::prefabs.objects.size(); i++)
+		{
+			if(!Globals::Game::prefabs.alive[i]) continue;
+			const Prefab& rPrefab = Globals::Game::prefabs.objects[i];
+			bool withModel = rPrefab.kind != PrefabKind::External;
+			PrefabEdits merged = mergePrefabEdits(rPrefab.source, rPrefab.level);
+			fs::path path = sourcePrefabFile(rRoot, levelName, Globals::Game::prefabs.names[i]);
+			if(prefabEditsEmpty(merged, withModel))
+			{
+				fs::remove(path);
+				continue;
+			}
+			fs::create_directories(path.parent_path());
+			std::ofstream out(path);
+			if(!out) throw std::runtime_error(std::format("can't write {}.", path.string()));
+			out << writePrefabEdits(merged, withModel).dump(2);
+		}
+		std::ofstream out(levelFilePath(rRoot, levelName));
+		if(!out) throw std::runtime_error(std::format("can't write {}.", levelFilePath(rRoot, levelName)));
 		out << text;
 	}
 }

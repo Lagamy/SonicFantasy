@@ -1,4 +1,5 @@
-#pragma once 
+#pragma once
+
 #include <cstdint>
 #include <glad/glad.h>
 #include <glm/ext/vector_float3.hpp>
@@ -31,6 +32,7 @@ struct Vertex
 The vertices of a mesh as bytes in the mesh's VertexLayout (the buffer BasicMesh::create uploads as it is). A mesh made of the standard layout (Vertex, what the games' importers write) is read and written
 as Vertex through push_back, operator[], begin/end and operator=; those throw for any other layout. A custom layout is read and written by member (setMember / getMember). The layout is set while the array is empty.
 */
+
 struct VertexArray
 {
 	const VertexLayout* pLayout = &VertexLayout::standard();
@@ -131,4 +133,4 @@ struct BasicMesh
 	// void addVertexBatch(void* data_, uint64_t vertexAmount_); 
 	// void addIndexBatch(void* data_, uint64_t indexAmount_); 
 };
-} 
+}

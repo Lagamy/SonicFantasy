@@ -5,8 +5,8 @@
 #include <vector>
 
 /*
-The External prefabs of the editor's Prefabs tab (PrefabKind::External, Prefab.h), in two scopes like the External assets: Project ("Global" in the editor; every level) in Assets/External/prefabs.json, and Level (the open level's) in
-Assets/Levels/<levelName>/prefabs.json, both mirrored into External/ and Levels/<levelName>/ of the source tree. A file is {"folders": ["a", "a/b"], "prefabs": [{"name": "Crate", "folder": "a", "mesh": choice, "texture": choice}]}; folders lists
+The External prefabs of the editor's Prefabs tab (PrefabKind::External, Prefab.h), in two scopes like the External assets: Project ("Global" in the editor; every level) in Assets/External/Prefabs/Global/prefabs.json, and Level (the open level's) in
+Assets/Levels/<levelName>/prefabs.json, both mirrored into External/Prefabs/Global/ and Levels/<levelName>/ of the source tree. A file is {"folders": ["a", "a/b"], "prefabs": [{"name": "Crate", "folder": "a", "mesh": choice, "texture": choice}]}; folders lists
 every folder (so an empty one is kept), a prefab's folder is "" at the top, mesh and texture are written only when set ({"kind": "external", "name": ...}, as in the level file; Disc has no meaning here). A missing file is an empty scope.
 A prefab name is unique over its scope (the pool name is "Global/<name>" or "Level/<name>"). EDITOR only: the game does not read or write them.
 */

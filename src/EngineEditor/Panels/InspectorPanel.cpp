@@ -4,10 +4,13 @@
 #include "Editor.h"
 #include "Level.h"
 #include "Prefab.h"
+#include "EntityBehavior.h"
 #include "GPU_Globals.h"
 #include "imgui.h"
+#include <glm/gtc/quaternion.hpp>
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <format>
 #include <stdexcept>
 #include <string>
@@ -43,6 +46,7 @@ void InspectorPanel::draw(PoolId selected_)
 		}
 		if(ImGui::BeginTabItem("BoundArea"))
 		{
+			editor.collisionView.boundAreaTabActive = true;
 			this->drawBoundArea(selected_);
 			ImGui::EndTabItem();
 		}
@@ -76,12 +80,32 @@ void InspectorPanel::draw(PoolId selected_)
 	ImGui::End();
 }
 
-/* The position is set with Entity::setPosition (a teleport, which also refreshes what depends on it). */
+/* A small button beside a transform row that makes the gizmo's mode the one for that row; the active mode's button is shown pressed. */
+static void gizmoButton(const char* label_, Gizmo::Mode mode_)
+{
+	bool active = editor.gizmo.mode == mode_;
+	if(active) ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+	ImGui::SameLine();
+	if(ImGui::SmallButton(label_)) editor.gizmo.mode = mode_;
+	if(active) ImGui::PopStyleColor();
+}
+
+/*
+The position is set with Entity::setPosition (a teleport, which also refreshes what depends on it). The rotation is shown as Euler angles in degrees (x, y, z: the quaternion's eulerAngles, converted from Entity::rotation each frame) and set with Entity::setRotation
+from the three angles; the scale is Entity::scale per axis of the entity's own space (Entity::setScale). Each row has a button that picks the gizmo mode for it.
+*/
 void InspectorPanel::drawTransform(PoolId entityId_)
 {
 	Entity& rEntity = getEntity(entityId_);
 	glm::vec3 position = rEntity.position;
 	if(ImGui::DragFloat3("Position", &position.x, 0.5f)) rEntity.setPosition(position);
+	gizmoButton("Move##position", Gizmo::Move);
+	glm::vec3 euler = glm::degrees(glm::eulerAngles(glm::quat_cast(rEntity.rotation)));
+	if(ImGui::DragFloat3("Rotation", &euler.x, 0.5f)) rEntity.setRotation(glm::mat4_cast(glm::quat(glm::radians(euler))));
+	gizmoButton("Rotate##rotation", Gizmo::Rotate);
+	glm::vec3 scale = rEntity.scale;
+	if(ImGui::DragFloat3("Scale", &scale.x, 0.01f)) rEntity.setScale(scale);
+	gizmoButton("Scale##scale", Gizmo::Scale);
 	glm::vec3 rendered = rEntity.renderPosition();
 	ImGui::Text("Drawn at: %.2f, %.2f, %.2f", rendered.x, rendered.y, rendered.z);
 	ImGui::Text("Active: %s%s", rEntity.active ? "yes" : "no", rEntity.behaviorNotCulled ? " (never put to sleep)" : "");
@@ -107,6 +131,43 @@ void InspectorPanel::drawTransform(PoolId entityId_)
 }
 
 /* One line for a prefab-wide shape in the list: form, size and centre. */
+/* The scope the prefab-wide boxes edit: Global only when the switch says so and the prefab can have a Changed file (not External). */
+static PrefabScope scopeOf(bool allLevels_, PoolId prefabId_)
+{
+	return allLevels_ && prefabId_ != UninitializedPoolId && Globals::Game::prefabs[prefabId_].kind != PrefabKind::External ? PrefabScope::Global : PrefabScope::Level;
+}
+
+/* What the boxes show: the Changed file's edits (Global), or the level's on top of the Source Game Level's (Level; the level's own edits are what the boxes change). */
+static PrefabEdits editsOf(PoolId prefabId_, PrefabScope scope_)
+{
+	const Prefab& rPrefab = Globals::Game::prefabs[prefabId_];
+	return scope_ == PrefabScope::Global ? rPrefab.changed : mergePrefabEdits(rPrefab.source, rPrefab.level);
+}
+
+/* The switch under the title of a prefab-wide box. Nothing for an External prefab (it has no Changed file). */
+void InspectorPanel::drawScopeSwitch(PoolId prefabId_)
+{
+	if(Globals::Game::prefabs[prefabId_].kind == PrefabKind::External) return;
+	if(ImGui::RadioButton("This level", !this->allLevels)) this->allLevels = false;
+	ImGui::SameLine();
+	if(ImGui::RadioButton("All levels", this->allLevels)) this->allLevels = true;
+	if(ImGui::IsItemHovered()) ImGui::SetTooltip("All levels edits the prefab's Changed file (External/Prefabs/<game>/<KEY>/Changed/prefab.json), saved at once.");
+}
+
+/* An edit that can fail to write the Changed file: the reason is shown on the tab instead of leaving the editor. */
+void InspectorPanel::tryEdit(const std::function<void()>& rEdit_)
+{
+	this->message.clear();
+	try
+	{
+		rEdit_();
+	}
+	catch(const std::runtime_error& rError)
+	{
+		this->message = std::format("Not saved: {}", rError.what());
+	}
+}
+
 static std::string shapeSummary(const Physics::CollisionShape& rShape_)
 {
 	return std::format("form {}  a {:.1f} b {:.1f} c {:.1f}  at {:.1f}, {:.1f}, {:.1f}", rShape_.form, rShape_.a, rShape_.b, rShape_.c, rShape_.center.x, rShape_.center.y, rShape_.center.z);
@@ -130,7 +191,9 @@ void InspectorPanel::drawBoundArea(PoolId entityId_)
 {
 	Entity& rEntity = getEntity(entityId_);
 	PoolId prefabId = rEntity.prefabId;
+	PrefabScope scope = scopeOf(this->allLevels, prefabId);
 	std::vector<Physics::CollisionShape> shapes = entityShapes(entityId_);
+	if(!this->message.empty()) ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", this->message.c_str());
 
 	if(rEntity.collisionId != UninitializedPoolId)
 	{
@@ -216,12 +279,12 @@ void InspectorPanel::drawBoundArea(PoolId entityId_)
 		Physics::CollisionShape copy = shapes[addAllIndex];
 		shapes.erase(shapes.begin() + addAllIndex);
 		setEntityShapes(entityId_, shapes);
-		addPrefabShape(prefabId, copy);
+		this->tryEdit([&] { addPrefabShape(prefabId, copy, scope); });
 	}
 	else if(removeAllIndex >= 0)
 	{
 		if(changed) setEntityShapes(entityId_, shapes);
-		removePrefabShape(prefabId, shapes[removeAllIndex]);
+		this->tryEdit([&] { removePrefabShape(prefabId, shapes[removeAllIndex], scope); });
 	}
 	else if(changed || removeIndex >= 0)
 	{
@@ -232,9 +295,10 @@ void InspectorPanel::drawBoundArea(PoolId entityId_)
 	{
 		ImGui::Separator();
 		ImGui::Text("Every entity of %s:", Globals::Game::prefabs.names[prefabId.id].c_str());
+		this->drawScopeSwitch(prefabId);
 		ImGui::BeginChild("PrefabShapes", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
-		std::vector<Physics::CollisionShape> added = Globals::Game::prefabs[prefabId].addedShapes;
-		std::vector<Physics::CollisionShape> removed = Globals::Game::prefabs[prefabId].removedShapes;
+		std::vector<Physics::CollisionShape> added = editsOf(prefabId, scope).addedShapes;
+		std::vector<Physics::CollisionShape> removed = editsOf(prefabId, scope).removedShapes;
 		if(added.empty() && removed.empty()) ImGui::TextDisabled("nothing added or removed");
 		ImGui::PushID("added");
 		for(uint32_t i = 0; i < added.size(); i++)
@@ -242,7 +306,7 @@ void InspectorPanel::drawBoundArea(PoolId entityId_)
 			ImGui::PushID(static_cast<int>(i));
 			ImGui::Text("+ %s", shapeSummary(added[i]).c_str());
 			ImGui::SameLine();
-			if(ImGui::SmallButton("Undo")) removePrefabShape(prefabId, added[i]);
+			if(ImGui::SmallButton("Undo")) this->tryEdit([&] { removePrefabShape(prefabId, added[i], scope); });
 			ImGui::PopID();
 		}
 		ImGui::PopID();
@@ -252,11 +316,11 @@ void InspectorPanel::drawBoundArea(PoolId entityId_)
 			ImGui::PushID(static_cast<int>(i));
 			ImGui::Text("- %s", shapeSummary(removed[i]).c_str());
 			ImGui::SameLine();
-			if(ImGui::SmallButton("Undo")) addPrefabShape(prefabId, removed[i]);
+			if(ImGui::SmallButton("Undo")) this->tryEdit([&] { addPrefabShape(prefabId, removed[i], scope); });
 			ImGui::PopID();
 		}
 		ImGui::PopID();
-		if(ImGui::SmallButton("Add shape to all")) addPrefabShape(prefabId, defaultShape());
+		if(ImGui::SmallButton("Add shape to all")) this->tryEdit([&] { addPrefabShape(prefabId, defaultShape(), scope); });
 		ImGui::EndChild();
 	}
 }
@@ -295,7 +359,11 @@ PoolId InspectorPanel::pickBehaviour(const char* id_)
 /* Gives the behaviour to the one entity, or to every entity of its prefab. */
 void InspectorPanel::giveBehaviour(PoolId entityId_, bool forPrefab_, PoolId behaviorId_)
 {
-	if(forPrefab_) addPrefabBehavior(getEntity(entityId_).prefabId, behaviorId_);
+	if(forPrefab_)
+	{
+		PoolId prefabId = getEntity(entityId_).prefabId;
+		this->tryEdit([&] { addPrefabBehavior(prefabId, behaviorId_, scopeOf(this->allLevels, prefabId)); });
+	}
 	else giveEntityBehavior(entityId_, behaviorId_);
 }
 
@@ -350,12 +418,125 @@ void InspectorPanel::acceptScript(PoolId entityId_, bool forPrefab_)
 }
 
 /*
+The external fields (EntityBehavior::fields, the ones declared external = true) of one behaviour of the entity, under its row: a number, bool, string or vec3 is a plain widget; an entity field takes an entity dragged from the list ("ENTITY" payload: the packed PoolId, as EntityListPanel
+makes it), a prefab field a prefab dragged from the Prefabs tab ("PREFAB" payload: its PoolId). A value is stored on the entity (Entity::externals) only once its widget was touched; Reset forgets it, back to the declared default.
+*/
+void InspectorPanel::drawFields(PoolId entityId_, PoolId behaviorId_)
+{
+	Entity& rEntity = getEntity(entityId_);
+	const EntityBehavior& rBehavior = Globals::Game::entityBehaviorTypes[behaviorId_];
+	const std::string& rBehaviorName = Globals::Game::entityBehaviorTypes.names[behaviorId_.id];
+	for(const ExternalField& rField : rBehavior.fields)
+	{
+		if(!rField.external) continue;
+		ExternalValue value = rField.defaultValue;
+		bool isSet = false;
+		auto set = rEntity.externals.find(rBehaviorName);
+		if(set != rEntity.externals.end())
+		{
+			auto found = set->second.find(rField.name);
+			if(found != set->second.end())
+			{
+				value = found->second;
+				isSet = true;
+			}
+		}
+
+		ImGui::PushID(rField.name.c_str());
+		bool changed = false;
+		switch(rField.type)
+		{
+		case ExternalType::Number:
+			changed = ImGui::DragScalar(rField.name.c_str(), ImGuiDataType_Double, &value.number, 0.05f);
+			break;
+		case ExternalType::Bool:
+			changed = ImGui::Checkbox(rField.name.c_str(), &value.flag);
+			break;
+		case ExternalType::String:
+		{
+			char buffer[256];
+			std::snprintf(buffer, sizeof(buffer), "%s", value.text.c_str());
+			if(ImGui::InputText(rField.name.c_str(), buffer, sizeof(buffer)))
+			{
+				value.text = buffer;
+				changed = true;
+			}
+			break;
+		}
+		case ExternalType::Vec3:
+			changed = ImGui::DragFloat3(rField.name.c_str(), &value.vector.x, 0.05f);
+			break;
+		case ExternalType::Entity:
+		{
+			bool exists = entityExists(value.entity);
+			ImGui::Button(exists ? Globals::Game::entities.names[value.entity.id].c_str() : "(drop an entity)", ImVec2(ImGui::GetContentRegionAvail().x * 0.6f, 0.0f));
+			if(ImGui::BeginDragDropTarget())
+			{
+				if(const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload("ENTITY"))
+				{
+					uint64_t packed = *static_cast<const uint64_t*>(pPayload->Data);
+					value.entity = PoolId(static_cast<uint32_t>(packed & 0xFFFFFFFFu), static_cast<uint32_t>(packed >> 32));
+					changed = true;
+				}
+				ImGui::EndDragDropTarget();
+			}
+			ImGui::SameLine();
+			if(exists && ImGui::SmallButton("Clear"))
+			{
+				value.entity = UninitializedPoolId;
+				changed = true;
+			}
+			ImGui::SameLine();
+			ImGui::TextUnformatted(rField.name.c_str());
+			break;
+		}
+		case ExternalType::Prefab:
+		{
+			auto& rPrefabs = Globals::Game::prefabs;
+			bool exists = value.prefab.id < rPrefabs.objects.size() && rPrefabs.alive[value.prefab.id] && rPrefabs.generation[value.prefab.id] == value.prefab.generation;
+			ImGui::Button(exists ? rPrefabs.names[value.prefab.id].c_str() : "(drop a prefab)", ImVec2(ImGui::GetContentRegionAvail().x * 0.6f, 0.0f));
+			if(ImGui::BeginDragDropTarget())
+			{
+				if(const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload("PREFAB"))
+				{
+					value.prefab = *static_cast<const PoolId*>(pPayload->Data);
+					changed = true;
+				}
+				ImGui::EndDragDropTarget();
+			}
+			ImGui::SameLine();
+			if(exists && ImGui::SmallButton("Clear"))
+			{
+				value.prefab = UninitializedPoolId;
+				changed = true;
+			}
+			ImGui::SameLine();
+			ImGui::TextUnformatted(rField.name.c_str());
+			break;
+		}
+		}
+		if(changed) rEntity.externals[rBehaviorName][rField.name] = value;
+		if(isSet)
+		{
+			ImGui::SameLine();
+			if(ImGui::SmallButton("Reset"))
+			{
+				rEntity.externals[rBehaviorName].erase(rField.name);
+				if(rEntity.externals[rBehaviorName].empty()) rEntity.externals.erase(rBehaviorName);
+			}
+		}
+		ImGui::PopID();
+	}
+}
+
+/*
 The behaviours in the order they run each gameplay tick, in two boxes: "This entity" (Remove takes one off this entity; Remove from all takes it off every entity of the prefab) and, for an entity made from a prefab, "Every entity of <prefab>"
 (what the editor gave to or took from all of them, which new entities get too). Each box has an Add combo and takes a script dropped on it.
 */
 void InspectorPanel::drawBehaviour(PoolId entityId_)
 {
 	PoolId prefabId = getEntity(entityId_).prefabId;
+	PrefabScope scope = scopeOf(this->allLevels, prefabId);
 	const auto& rTypes = Globals::Game::entityBehaviorTypes;
 
 	ImGui::TextDisabled("Drag a script from the Assets tab onto a box to add its behaviours.");
@@ -375,8 +556,11 @@ void InspectorPanel::drawBehaviour(PoolId entityId_)
 		if(prefabId != UninitializedPoolId)
 		{
 			ImGui::SameLine();
-			if(ImGui::SmallButton("Remove from all")) removePrefabBehavior(prefabId, ids[i]);
+			if(ImGui::SmallButton("Remove from all")) this->tryEdit([&] { removePrefabBehavior(prefabId, ids[i], scope); });
 		}
+		ImGui::Indent();
+		this->drawFields(entityId_, ids[i]);
+		ImGui::Unindent();
 		ImGui::PopID();
 	}
 	PoolId picked = this->pickBehaviour("##addEntity");
@@ -388,9 +572,10 @@ void InspectorPanel::drawBehaviour(PoolId entityId_)
 	{
 		ImGui::Separator();
 		ImGui::Text("Every entity of %s:", Globals::Game::prefabs.names[prefabId.id].c_str());
+		this->drawScopeSwitch(prefabId);
 		ImGui::BeginChild("PrefabBehaviours", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
-		std::vector<PoolId> added = Globals::Game::prefabs[prefabId].addedBehaviors;
-		std::vector<PoolId> removed = Globals::Game::prefabs[prefabId].removedBehaviors;
+		std::vector<PoolId> added = editsOf(prefabId, scope).addedBehaviors;
+		std::vector<PoolId> removed = editsOf(prefabId, scope).removedBehaviors;
 		if(added.empty() && removed.empty()) ImGui::TextDisabled("nothing added or removed");
 		ImGui::PushID("added");
 		for(uint32_t i = 0; i < added.size(); i++)
@@ -398,7 +583,7 @@ void InspectorPanel::drawBehaviour(PoolId entityId_)
 			ImGui::PushID(static_cast<int>(i));
 			ImGui::Text("+ %s", rTypes.names[added[i].id].c_str());
 			ImGui::SameLine();
-			if(ImGui::SmallButton("Undo")) removePrefabBehavior(prefabId, added[i]);
+			if(ImGui::SmallButton("Undo")) this->tryEdit([&] { removePrefabBehavior(prefabId, added[i], scope); });
 			ImGui::PopID();
 		}
 		ImGui::PopID();
@@ -408,7 +593,7 @@ void InspectorPanel::drawBehaviour(PoolId entityId_)
 			ImGui::PushID(static_cast<int>(i));
 			ImGui::Text("- %s", rTypes.names[removed[i].id].c_str());
 			ImGui::SameLine();
-			if(ImGui::SmallButton("Undo")) addPrefabBehavior(prefabId, removed[i]);
+			if(ImGui::SmallButton("Undo")) this->tryEdit([&] { addPrefabBehavior(prefabId, removed[i], scope); });
 			ImGui::PopID();
 		}
 		ImGui::PopID();
@@ -445,7 +630,12 @@ void InspectorPanel::giveMesh(PoolId entityId_, bool forPrefab_, const MeshChoic
 	try
 	{
 		if(!forPrefab_) setEntityMesh(entityId_, rChoice_);
-		else if(uint32_t failed = setPrefabMesh(getEntity(entityId_).prefabId, rChoice_); failed != 0) this->message = std::format("{} entities of the prefab could not use it (the first reason is on stderr).", failed);
+		else
+		{
+			PoolId prefabId = getEntity(entityId_).prefabId;
+			uint32_t failed = setPrefabMesh(prefabId, rChoice_, scopeOf(this->allLevels, prefabId));
+			if(failed != 0) this->message = std::format("{} entities of the prefab could not use it (the first reason is on stderr).", failed);
+		}
 	}
 	catch(const std::runtime_error& rError)
 	{
@@ -500,16 +690,25 @@ void InspectorPanel::drawMesh(PoolId entityId_)
 {
 	Entity& rEntity = getEntity(entityId_);
 	PoolId prefabId = rEntity.prefabId;
-	auto describe = [](const MeshChoice& rChoice_)
+	/* The slot shows the model in use: the external one when it is set, otherwise the instance's own disc model (what discMesh reports, also after a Disc choice). The prefab's box has no single model when it is on Default. */
+	auto describe = [&](const MeshChoice& rChoice_, bool forPrefab_)
 	{
-		if(rChoice_.kind == MeshChoiceKind::Disc) return std::format("Disc: {}", rChoice_.name);
 		if(rChoice_.kind == MeshChoiceKind::External) return std::format("External: {}", rChoice_.name);
-		return std::string("Default (the entity's own)");
+		if(forPrefab_ && rChoice_.kind == MeshChoiceKind::Default) return std::string("Default (each entity keeps its own)");
+		std::string used = "none";
+		try
+		{
+			used = rEntity.discMesh();
+		}
+		catch(const std::runtime_error&)
+		{
+		}
+		return std::format("{}{}", used, rChoice_.kind == MeshChoiceKind::Default ? " (default)" : "");
 	};
 	auto drawBox = [&](bool forPrefab_)
 	{
-		const MeshChoice& rChoice = forPrefab_ ? Globals::Game::prefabs[prefabId].mesh : rEntity.meshChoice;
-		ImGui::TextUnformatted(describe(rChoice).c_str());
+		const MeshChoice& rChoice = forPrefab_ ? editsOf(prefabId, scopeOf(this->allLevels, prefabId)).mesh : rEntity.meshChoice;
+		ImGui::TextUnformatted(describe(rChoice, forPrefab_).c_str());
 		ImGui::SameLine();
 		if(rChoice.kind != MeshChoiceKind::Default && ImGui::SmallButton("Default")) this->giveMesh(entityId_, forPrefab_, MeshChoice{});
 		std::string external = this->pickExternalModel("##external");
@@ -538,6 +737,7 @@ void InspectorPanel::drawMesh(PoolId entityId_)
 	{
 		ImGui::Separator();
 		ImGui::Text("Every entity of %s:", Globals::Game::prefabs.names[prefabId.id].c_str());
+		this->drawScopeSwitch(prefabId);
 		ImGui::BeginChild("PrefabMesh", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
 		ImGui::PushID("prefab");
 		drawBox(true);
@@ -554,7 +754,12 @@ void InspectorPanel::giveTexture(PoolId entityId_, bool forPrefab_, const Textur
 	try
 	{
 		if(!forPrefab_) setEntityTexture(entityId_, rChoice_);
-		else if(uint32_t failed = setPrefabTexture(getEntity(entityId_).prefabId, rChoice_); failed != 0) this->message = std::format("{} entities of the prefab could not use it (the first reason is on stderr).", failed);
+		else
+		{
+			PoolId prefabId = getEntity(entityId_).prefabId;
+			uint32_t failed = setPrefabTexture(prefabId, rChoice_, scopeOf(this->allLevels, prefabId));
+			if(failed != 0) this->message = std::format("{} entities of the prefab could not use it (the first reason is on stderr).", failed);
+		}
 	}
 	catch(const std::runtime_error& rError)
 	{
@@ -612,16 +817,26 @@ void InspectorPanel::drawTexture(PoolId entityId_)
 {
 	Entity& rEntity = getEntity(entityId_);
 	PoolId prefabId = rEntity.prefabId;
-	auto describe = [](const TextureChoice& rChoice_)
+	/* The slot shows the texture in use: the external one when it is set, otherwise the instance's own disc texture (what discTexture reports, also after a Disc choice; empty = untextured). The prefab's box has no single texture when it is on Default. */
+	auto describe = [&](const TextureChoice& rChoice_, bool forPrefab_)
 	{
-		if(rChoice_.kind == TextureChoiceKind::Disc) return std::format("Disc: {}", rChoice_.name);
 		if(rChoice_.kind == TextureChoiceKind::External) return std::format("External: {}", rChoice_.name);
-		return std::string("Default (the model's own)");
+		if(forPrefab_ && rChoice_.kind == TextureChoiceKind::Default) return std::string("Default (each entity keeps its own)");
+		std::string used = "none";
+		try
+		{
+			used = rEntity.discTexture();
+			if(used.empty()) used = "none (untextured)";
+		}
+		catch(const std::runtime_error&)
+		{
+		}
+		return std::format("{}{}", used, rChoice_.kind == TextureChoiceKind::Default ? " (default)" : "");
 	};
 	auto drawBox = [&](bool forPrefab_)
 	{
-		const TextureChoice& rChoice = forPrefab_ ? Globals::Game::prefabs[prefabId].texture : rEntity.textureChoice;
-		ImGui::TextUnformatted(describe(rChoice).c_str());
+		const TextureChoice& rChoice = forPrefab_ ? editsOf(prefabId, scopeOf(this->allLevels, prefabId)).texture : rEntity.textureChoice;
+		ImGui::TextUnformatted(describe(rChoice, forPrefab_).c_str());
 		ImGui::SameLine();
 		if(rChoice.kind != TextureChoiceKind::Default && ImGui::SmallButton("Default")) this->giveTexture(entityId_, forPrefab_, TextureChoice{});
 		std::string external = this->pickExternalTexture("##external");
@@ -650,6 +865,7 @@ void InspectorPanel::drawTexture(PoolId entityId_)
 	{
 		ImGui::Separator();
 		ImGui::Text("Every entity of %s:", Globals::Game::prefabs.names[prefabId.id].c_str());
+		this->drawScopeSwitch(prefabId);
 		ImGui::BeginChild("PrefabTexture", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
 		ImGui::PushID("prefab");
 		drawBox(true);
@@ -674,7 +890,8 @@ void InspectorPanel::drawCamera(PoolId entityId_)
 	ImGui::Checkbox("Enabled", &rCamera.enabled);
 
 	glm::vec3 position = rCamera.position;
-	if(ImGui::DragFloat3("Position", &position.x, 0.5f)) rCamera.set(position);
+	if(ImGui::DragFloat3("Position", &position.x, 0.5f))
+		getEntity(entityId_).setPosition(position);
 	ImGui::Text("Yaw %.1f  Pitch %.1f", rCamera.yaw, rCamera.pitch);
 	ImGui::SliderFloat("Speed (units/s)", &rCamera.speed, 1.0f, 5000.0f, "%.0f", ImGuiSliderFlags_Logarithmic);
 	ImGui::SliderFloat("Boost (Shift multiplier)", &rCamera.speedUp, 1.0f, 100.0f, "%.1f", ImGuiSliderFlags_Logarithmic);

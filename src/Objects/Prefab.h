@@ -35,6 +35,27 @@ enum class PrefabKind
 	External
 };
 
+/* Which set of a prefab's edits an edit goes to (Prefab::changed / Prefab::level). Global is saved at once to the prefab's Changed file (editor only) and is only for the prefabs built from a key, not External ones. */
+enum class PrefabScope
+{
+	Level,
+	Global
+};
+
+/*
+One set of edits to every entity of a prefab. Behaviours (Globals::Game::entityBehaviorTypes) given to every entity and ones taken from every entity. The same for bound areas: shapes (compared by value, all fields) given and taken. The texture and the model every entity gets
+(Default = none); the model is applied before the texture (a texture is checked against the model it is drawn on).
+*/
+struct PrefabEdits
+{
+	std::vector<PoolId> addedBehaviors;
+	std::vector<PoolId> removedBehaviors;
+	std::vector<Physics::CollisionShape> addedShapes;
+	std::vector<Physics::CollisionShape> removedShapes;
+	TextureChoice texture;
+	MeshChoice mesh;
+};
+
 /*
 A prefab is a kind of entity the engine can make, built from the entity resource keys (SAEntityKey, STH2005::EntityKey) of the generated tables a level file can name, plus the two player characters. Every entity
 is made from one with spawnPrefab (API.h), which remembers it in Entity::prefabId; the editor lists the prefabs by game and group, and groups the entities by their prefab.
@@ -45,7 +66,7 @@ model as a cube: dark blue if it only has collision, dark red if it only has beh
 group is a hypothesis of mine, from a hand-written table in Prefab.cpp: the keys do not say what an object is.
 An External prefab (PrefabKind::External, game GLTF_FILE) is made by the user in the editor's Prefabs tab, in the "Global" folder (every level) or the "Level" folder (the open level's), under the pool name "Global/<name>" / "Level/<name>"; it has no key and starts empty. Its
 entities are External-only (Entity::setExternalOnly): drawn by an external model alone. folder is where the tab lists it ("" = the top, else "a/b"); inLevel says which of the two it is. Its model and texture (mesh, texture) are part of its definition, saved with the prefab
-(Loading/ExternalPrefabs.h), not with the level's edits; the other edits (behaviours, shapes) are the level's like any prefab's.
+(Loading/ExternalPrefabs.h), not with the level's edits; the other edits (behaviours, shapes) are the level's like any prefab's (no Changed file).
 */
 struct Prefab
 {
@@ -58,16 +79,10 @@ struct Prefab
 	bool hasModel = false;
 	bool hasCollision = false;
 	bool hasBehaviour = false;
-	/* Behaviours (Globals::Game::entityBehaviorTypes) the editor gave to every entity of the prefab, and ones it took from every entity of it. Saved with the level (Loading::saveLevelEdits, "prefabs"); spawnPrefab applies both after the prefab's script setup. */
-	std::vector<PoolId> addedBehaviors;
-	std::vector<PoolId> removedBehaviors;
-	/* The same for bound areas: shapes (compared by value, all fields) the editor gave to every entity of the prefab, and ones it took from every entity of it. Saved with the level ("prefabs"); spawnPrefab applies them after the script setup. */
-	std::vector<Physics::CollisionShape> addedShapes;
-	std::vector<Physics::CollisionShape> removedShapes;
-	/* The texture the editor gave every entity of the prefab (Default = none); saved with the level ("prefabs"), applied by spawnPrefab after the script setup. */
-	TextureChoice texture;
-	/* The model the editor gave every entity of the prefab (Default = none); saved with the level ("prefabs"), applied by spawnPrefab before the texture (a texture is checked against the model it is drawn on). */
-	MeshChoice mesh;
+	/* What the editor changed for every entity of the prefab: "changed" in every level (the prefab's Changed file, read at startup, Loading::loadChangedPrefabs), "source" in the open level's Source Game Level (Levels/<level>/SourceGamePrefabs/<prefab name>/prefab.json, read at each level load by Loading::loadSourcePrefabs, written by File > Save Source Game Level), "level" in the open level (the level file's "prefabs", cleared at each level load). An entity gets the game's data, then changed, then source, then level (spawnPrefab). An External prefab has no changed set; its model and texture are level.mesh and level.texture (its definition, see above). */
+	PrefabEdits changed;
+	PrefabEdits source;
+	PrefabEdits level;
 	/* External prefabs only (see above). */
 	bool inLevel = false;
 	std::string folder;
@@ -109,40 +124,56 @@ uint32_t prefabRevision();
 /* The prefab of a game with that key name (SAEntityKey::name, EntityKey::name; "Sonic" and "Shadow" for the players), UninitializedPoolId if there is none. */
 PoolId findPrefab(SourceEngineEnum game_, const char* keyName_);
 
-/* Gives the behaviour to every entity of the prefab that has not got it, now and in every entity spawnPrefab makes later (addedBehaviors); undoes an earlier removePrefabBehavior of it. */
-void addPrefabBehavior(PoolId prefabId_, PoolId behaviorId_);
+/*
+The edit functions below change the set of the scope (Level: Prefab::level, Global: Prefab::changed, also saved at once to the prefab's Changed file, EDITOR only; Global throws std::runtime_error for an External prefab or if the file can't be written) and every entity of the prefab now.
+A Global edit leaves the entities alone where the level's set decides the same thing (a level's removed behaviour, its model).
 
-/* Takes the behaviour from every entity of the prefab, now and from every entity spawnPrefab makes later (removedBehaviors, applied after the prefab's script setup); undoes an earlier addPrefabBehavior of it. */
-void removePrefabBehavior(PoolId prefabId_, PoolId behaviorId_);
+Gives the behaviour to every entity of the prefab that has not got it, now and in every entity spawnPrefab makes later (addedBehaviors); undoes an earlier removePrefabBehavior of it in that set. */
+void addPrefabBehavior(PoolId prefabId_, PoolId behaviorId_, PrefabScope scope_ = PrefabScope::Level);
+
+/* Takes the behaviour from every entity of the prefab, now and from every entity spawnPrefab makes later (removedBehaviors, applied after the prefab's script setup); undoes an earlier addPrefabBehavior of it in that set. */
+void removePrefabBehavior(PoolId prefabId_, PoolId behaviorId_, PrefabScope scope_ = PrefabScope::Level);
 
 /* Gives a bound area shape to every entity of the prefab, now and to every entity spawnPrefab makes later (addedShapes); a shape equal to one removePrefabShape took only cancels that removal (on the entities that lack an equal one). An entity without a collision gets a hand-made one (setEntityShapes). */
-void addPrefabShape(PoolId prefabId_, const Physics::CollisionShape& rShape_);
+void addPrefabShape(PoolId prefabId_, const Physics::CollisionShape& rShape_, PrefabScope scope_ = PrefabScope::Level);
 
 /* Takes the first shape equal to this one off every entity of the prefab, now and from every entity spawnPrefab makes later (removedShapes); a shape equal to one addPrefabShape added only cancels that addition. */
-void removePrefabShape(PoolId prefabId_, const Physics::CollisionShape& rShape_);
+void removePrefabShape(PoolId prefabId_, const Physics::CollisionShape& rShape_, PrefabScope scope_ = PrefabScope::Level);
 
-/* The prefab's shape edits applied to a list of shapes: each removed shape takes the first equal one off, then the added ones go on the end. */
+/* The prefab's shape edits applied to a list of shapes: for changed, then source, then level, each removed shape takes the first equal one off, then the added ones go on the end (so a level's removal can take a shape the Changed file added). */
 void applyPrefabShapesTo(const Prefab& rPrefab_, std::vector<Physics::CollisionShape>& rShapes_);
 
-/* Gives every entity of the prefab this texture (setEntityTexture), now and to every entity spawnPrefab makes later (Prefab::texture); it replaces the choice of an entity that had its own. An entity it does not fit (a texture set that lacks a texture the model uses, a Shadow archive without the entry) is left as it was, and the first reason is printed on stderr; returns how many entities that was. */
-uint32_t setPrefabTexture(PoolId prefabId_, const TextureChoice& rChoice_);
+/* The prefab's behaviour edits applied to a list of behaviours, in the same order (changed, then source, then level; each its added, then its removed). */
+void applyPrefabBehaviorsTo(const Prefab& rPrefab_, std::vector<PoolId>& rBehaviors_);
 
-/* Gives every entity of the prefab this model (setEntityMesh), now and to every entity spawnPrefab makes later (Prefab::mesh); it replaces the choice of an entity that had its own. An entity it does not fit is left as it was, the first reason is printed on stderr; returns how many entities that was. */
-uint32_t setPrefabMesh(PoolId prefabId_, const MeshChoice& rChoice_);
+/* The model / texture every entity of the prefab gets: the level's if it is set, else the source level's, else the Changed file's. */
+MeshChoice prefabMesh(const Prefab& rPrefab_);
+TextureChoice prefabTexture(const Prefab& rPrefab_);
 
-/* Empties the behaviour, shape, texture and model edits of every prefab without touching any entity (the level load starts from the game's data; the editor's restore puts the entities back itself). */
+/* Gives every entity of the prefab this texture (setEntityTexture), now and to every entity spawnPrefab makes later (the set's texture); it replaces the choice of an entity that had its own. An entity it does not fit (a texture set that lacks a texture the model uses, a Shadow archive without the entry) is left as it was, and the first reason is printed on stderr; returns how many entities that was. */
+uint32_t setPrefabTexture(PoolId prefabId_, const TextureChoice& rChoice_, PrefabScope scope_ = PrefabScope::Level);
+
+/* Gives every entity of the prefab this model (setEntityMesh), now and to every entity spawnPrefab makes later (the set's mesh); it replaces the choice of an entity that had its own. An entity it does not fit is left as it was, the first reason is printed on stderr; returns how many entities that was. */
+uint32_t setPrefabMesh(PoolId prefabId_, const MeshChoice& rChoice_, PrefabScope scope_ = PrefabScope::Level);
+
+/* Empties the level set (Prefab::level) of every prefab, not the Changed or source ones, without touching any entity (the level load starts from the game's data; the editor's restore puts the entities back itself). */
 void clearPrefabEdits();
 
-/* Applies addedBehaviors and removedBehaviors to one entity just made from the prefab (spawnPrefab). */
+/* Applies the behaviour edits (changed, source, then level) to one entity just made from the prefab (spawnPrefab). */
 void applyPrefabBehaviors(PoolId prefabId_, PoolId entityId_);
 
-/* Applies addedShapes and removedShapes to one entity just made from the prefab (spawnPrefab); nothing when the prefab has none. */
+/*
+The edits of a level set on top of a source set as one set that does the same when applied to a prefab's data (Save Source Game Level writes it as the next source): a removal of something the source added cancels that addition, an addition of something the source removed cancels that removal; the level's model and texture win where set.
+*/
+PrefabEdits mergePrefabEdits(const PrefabEdits& rSource_, const PrefabEdits& rLevel_);
+
+/* Applies the shape edits to one entity just made from the prefab (spawnPrefab); nothing when the prefab has none. */
 void applyPrefabShapes(PoolId prefabId_, PoolId entityId_);
 
-/* Gives one entity just made from the prefab the prefab's texture (spawnPrefab); nothing when it has none, a failure is printed on stderr. */
+/* Gives one entity just made from the prefab the prefab's texture (prefabTexture; spawnPrefab); nothing when it has none, a failure is printed on stderr. */
 void applyPrefabTexture(PoolId prefabId_, PoolId entityId_);
 
-/* Gives one entity just made from the prefab the prefab's model (spawnPrefab); nothing when it has none, a failure is printed on stderr. */
+/* Gives one entity just made from the prefab the prefab's model (prefabMesh; spawnPrefab); nothing when it has none, a failure is printed on stderr. */
 void applyPrefabMesh(PoolId prefabId_, PoolId entityId_);
 
 /* "SADX" / "STH2005" (the prefab names' prefix) and the folder names the editor shows. */

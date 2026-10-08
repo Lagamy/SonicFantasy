@@ -54,17 +54,14 @@ Frame makeFrame(const Camera& rCamera_, const Entity& rEntity_, Gizmo::Mode mode
 	return frame;
 }
 
-/* The ray from the camera through the cursor (the cursor is free in the editor, so its position is the mouse's). False if the window has no size. */
-bool cursorRay(GLFWwindow* pWindow_, const Camera& rCamera_, Ray& rRay_)
+/* The ray from the camera through the window position (x_, y_) in pixels. False if the window has no size. */
+bool rayAt(GLFWwindow* pWindow_, const Camera& rCamera_, double x_, double y_, Ray& rRay_)
 {
-	double x = 0.0;
-	double y = 0.0;
 	int width = 0;
 	int height = 0;
-	glfwGetCursorPos(pWindow_, &x, &y);
 	glfwGetWindowSize(pWindow_, &width, &height);
 	if(width <= 0 || height <= 0) return false;
-	glm::vec2 ndc(2.0f * static_cast<float>(x) / static_cast<float>(width) - 1.0f, 1.0f - 2.0f * static_cast<float>(y) / static_cast<float>(height));
+	glm::vec2 ndc(2.0f * static_cast<float>(x_) / static_cast<float>(width) - 1.0f, 1.0f - 2.0f * static_cast<float>(y_) / static_cast<float>(height));
 	glm::mat4 inverse = glm::inverse(rCamera_.projection * rCamera_.view);
 	glm::vec4 nearPoint = inverse * glm::vec4(ndc, -1.0f, 1.0f);
 	glm::vec4 farPoint = inverse * glm::vec4(ndc, 1.0f, 1.0f);
@@ -73,6 +70,15 @@ bool cursorRay(GLFWwindow* pWindow_, const Camera& rCamera_, Ray& rRay_)
 	rRay_.origin = glm::vec3(nearPoint);
 	rRay_.direction = glm::normalize(glm::vec3(farPoint) - glm::vec3(nearPoint));
 	return true;
+}
+
+/* The ray from the camera through the cursor (the cursor is free in the editor, so its position is the mouse's). False if the window has no size. */
+bool cursorRay(GLFWwindow* pWindow_, const Camera& rCamera_, Ray& rRay_)
+{
+	double x = 0.0;
+	double y = 0.0;
+	glfwGetCursorPos(pWindow_, &x, &y);
+	return rayAt(pWindow_, rCamera_, x, y, rRay_);
 }
 
 /*
@@ -274,6 +280,61 @@ void Gizmo::update(GLFWwindow* pWindow_, const Camera& rCamera_, PoolId selected
 	this->startPosition = rEntity.position;
 	this->startRotation = rEntity.rotation;
 	this->startScale = rEntity.scale;
+}
+
+/*
+An entity with a model is hit where the ray crosses one of the model's triangles (Entity::rayHitsModel). Every other live entity (no model, or one whose vertices cannot be read) is a sphere: its bounds (model and collision shapes, moved by its position and rotation like the spatial index does),
+at least PickMinPixels on the screen so that an entity without a model (a camera, a point) can be clicked. Of everything the ray hits the nearest hit wins.
+*/
+PoolId pickEntity(GLFWwindow* pWindow_, const Camera& rCamera_, double x_, double y_)
+{
+	Ray ray;
+	if(!rayAt(pWindow_, rCamera_, x_, y_, ray)) return UninitializedPoolId;
+	constexpr float PickMinPixels = 12.0f;
+	float tanHalf = std::tan(glm::radians(rCamera_.fov) * 0.5f);
+	float height = static_cast<float>(std::max(rCamera_.viewportSize().y, 1u));
+	PoolId best = UninitializedPoolId;
+	float bestDistance = 0.0f;
+	for(uint32_t i = 0; i < Globals::Game::entities.objects.size(); i++)
+	{
+		if(!Globals::Game::entities.alive[i]) continue;
+		Entity& rEntity = Globals::Game::entities.objects[i];
+		float hitDistance = 0.0f;
+		bool hasTriangles = false;
+		if(rEntity.rayHitsModel(ray.origin, ray.direction, hitDistance, hasTriangles))
+		{
+			if(best == UninitializedPoolId || hitDistance < bestDistance)
+			{
+				best = PoolId(i, Globals::Game::entities.generation[i]);
+				bestDistance = hitDistance;
+			}
+			continue;
+		}
+		if(hasTriangles) continue;
+		glm::vec3 center = rEntity.renderPosition();
+		if(rEntity.bounds.valid) center += glm::mat3(rEntity.rotation) * rEntity.bounds.center;
+		float along = glm::dot(center - ray.origin, ray.direction);
+		if(along <= 0.0f) continue;
+		float pixelUnits = 2.0f * std::max(glm::dot(center - rCamera_.position, rCamera_.front), rCamera_.nearPlane) * tanHalf / height;
+		float radius = std::max(rEntity.bounds.valid ? rEntity.bounds.radius : 0.0f, PickMinPixels * pixelUnits);
+		if(glm::distance(center, ray.origin + ray.direction * along) > radius) continue;
+		if(best == UninitializedPoolId || along < bestDistance)
+		{
+			best = PoolId(i, Globals::Game::entities.generation[i]);
+			bestDistance = along;
+		}
+	}
+	return best;
+}
+
+bool pickPlanePoint(GLFWwindow* pWindow_, const Camera& rCamera_, double x_, double y_, float height_, glm::vec3& rPoint_)
+{
+	Ray ray;
+	if(!rayAt(pWindow_, rCamera_, x_, y_, ray) || std::abs(ray.direction.y) < 1e-4f) return false;
+	float t = (height_ - ray.origin.y) / ray.direction.y;
+	if(t <= 0.0f || t > rCamera_.farPlane) return false;
+	rPoint_ = ray.origin + ray.direction * t;
+	return true;
 }
 
 void Gizmo::draw(const Camera& rCamera_, PoolId selected_)

@@ -5,7 +5,10 @@
 #include "PoolId.h"
 #include "TextureChoice.h"
 #include "MeshChoice.h"
+#include "ExternalField.h"
 #include <array>
+#include <map>
+#include <string>
 #include <vector>
 #include "Constants.h"
 
@@ -57,7 +60,7 @@ selfId is the entity's own PoolId in Globals::Game::entities (set by addEntity),
 animationIntent is the motion gameplay wants (changeAnimation); update plays it when it differs from appliedAnimation, the last one it played.
 stateId is its EntityState in Globals::Game::entityStates (UninitializedPoolId = none; made by entityStateOf in API.h, removed by destroy).
 behaviorSetId is the entity's record in Globals::Game::entityBehaviors (UninitializedPoolId = no behaviours): its behaviours, stacked in the order they were given and run in that order by the GameplaySystem every gameplay tick; add one with giveEntityBehavior (API.h), which makes the record. destroy removes it.
-cameraId is the entity's camera module, its Camera in Globals::Game::cameras (UninitializedPoolId = none; made by addCamera in API.h, removed by destroy). The camera keeps its own position and view: the entity's position is not kept in step with it.
+cameraId is the entity's camera module, its Camera in Globals::Game::cameras (UninitializedPoolId = none; made by addCamera in API.h, removed by destroy). The camera is at the entity's position: setPosition and moveTo give it to the camera (moveCameraModule); the view direction is the camera's own. Set the position of a camera through its entity (the follow camera does), not with Camera::set alone, or the entity is left behind.
 Only one of the two setters can be called, once: an entity has a single instance. Until then instanceId is
 UninitializedPoolId and the entity is not drawn.
 previousPosition and previousRotation are where the entity was at the start of the latest gameplay tick. What is drawn (and shown by the debug views) is renderPosition and renderRotation, by how far the frame is
@@ -108,6 +111,11 @@ struct Entity
 	Graphics::Texture* pExternalTexture = nullptr;
 	/* The entity's table for what its script behaviours remember (sf.state, Scripting.h): a Lua registry reference, 0 = none yet; released by destroy. */
 	int scriptStateRef = 0;
+	/* The values the editor set for the external fields (ExternalField.h) of the entity's script behaviours: behaviour name -> field name -> value; a field not in it has its declared default. externalsApplied lists the behaviours whose fields Scripting::callBehavior has already written into the state table. */
+	std::map<std::string, std::map<std::string, ExternalValue>> externals;
+	std::vector<PoolId> externalsApplied;
+	/* Values of the level file that no declared field takes (the behaviour or field is not declared when the level loads, or the value does not fit its type), as their JSON text, behaviour name -> field name: kept so that saving the level does not lose them (Loading::saveLevelEdits writes them back). */
+	std::map<std::string, std::map<std::string, std::string>> externalsKept;
 	AnimationIntent animationIntent;
 	AnimationIntent appliedAnimation;
 	/*
@@ -167,6 +175,8 @@ struct Entity
 	void setONECollisionShapes(const std::vector<STH2005::CollisionKey>& rShapes_);
 	void setPosition(const glm::vec3& rPosition_);
 	void moveTo(const glm::vec3& rPosition_);
+	/* Puts the camera module (if any) at the entity's position. */
+	void moveCameraModule();
 	glm::vec3 renderPosition() const;
 	void setRotation(const glm::mat4& rRotation_);
 	void turnTo(const glm::mat4& rRotation_);
@@ -178,6 +188,9 @@ struct Entity
 	void update(float deltaTime_);
 	/* The bounding sphere of the entity's model in its own space, with the engine's own turn applied (invalid without an instance); computed once per mesh. Used to draw. */
 	Graphics::BoundingSphere localBounds();
+
+	/* Editor picking: whether the ray (world space, unit direction) crosses a triangle of the model (both sides; an SA model as posed in the last drawn frame, a ONE model in its rest pose); distance_ is along the ray to the nearest one. hasTriangles_ is false when the model has none readable (no model, or a custom vertex layout), then the result is false and the caller falls back to bounds. */
+	bool rayHitsModel(const glm::vec3& rOrigin_, const glm::vec3& rDirection_, float& rDistance_, bool& rHasTriangles_);
 	/*
 	The sphere the spatial index uses for the entity (what is in range of the camera and so active), in its own space: the model's sphere and a sphere around the collision shapes (about the origin, a conservative
 	|center| + a + b + c each, so it holds whatever the rotation), enclosed in one; a point if it has neither. refreshBounds recomputes it and tells the index to rebuild: every function that attaches or changes a model,
