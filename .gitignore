@@ -9,3 +9,5 @@ sadxDecomp/
 sadxExternalDecomp/
 sonic-adventure-workbench-main/
 shadowDecomp/
+
+__pycache__/

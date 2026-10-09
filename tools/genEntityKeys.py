@@ -3,7 +3,7 @@ Generates src/STH2005EntityKeys.h: the STH2005::EntityKey of every object whose 
 (stgNNNN/stgNNNN_gdt.one), and for each stage a table of STH2005::PlacedEntityKey (object type id -> key) that the stage's LevelKey uses.
 
 Run from anywhere:  python3 tools/genEntityKeys.py [stage ...]      (default: stg0100; a stage is its folder name)
-Inputs: build/Disks/Shadow2005.iso (the disc file table, .ONE and PRS through tools/dumpCCL.py, main.dol read from the disc). Writes only src/STH2005EntityKeys.h.
+Inputs: build/Disks/Shadow2005.iso (the disc file table, .ONE and PRS through tools/dumpCCL.py, main.dol read from the disc). Writes src/STH2005EntityKeys.h and External/Prefabs/STH2005/Placement.json (the per-object layout, variants and loop flag, which are not resource keys: Loading::loadPrefabData gives them to the prefabs).
 
 Where each fact comes from (external: the Ghidra decompile of main.dol and the files of the disc; the layouts are decoded from the files):
 - Object type ids and names: the registry of main.dol, a null terminated array of descriptor pointers at 0x8052B080 (REGISTRY_ADDRESS); a descriptor's
@@ -17,21 +17,22 @@ Where each fact comes from (external: the Ghidra decompile of main.dol and the f
   \"DashPanel\"; BATTERYBK's children name 0x251C, 0x251D, 0x7D0 ... which are bones of BATTERYBK.BON). A child whose parent has a .BON containing that id is a part of the parent's ModelKey, attached to that bone
   by name (the way ModelPart::bone works); a child whose parent has no .BON, or no such bone, stays a model of its own.
 - A model's .BON is the one of the motion that names the model (a model without a motion has none: it is imported as a static mesh).
-- An info is a variant: the BIN's models it lists, by name (EntityKey::variants holds their indices, children attached to another model left out). The first info is what an object is made of by default
+- An info is a variant: the BIN's models it lists, by name (Placement.json holds their indices into the key's models, children attached to another model left out). The first info is what an object is made of by default
   (observed: CAPTURECAGE's info 'cage' lists CAPTCAGE.DFF and CAPTCAGE1.DFF, the bars); the BINs in VARIANT_STEMS pick the info by the record.
 - Motions: a motion entry naming an .MTP gives one MotionKey per motion of that .MTP (names read from its table, the entry's .BON); one naming an .MTN gives one (a .MTN is a single
   motion, see src/Importers/STH2005/Mtp.cpp), named after the file.
 
 Which BIN an object type uses is not stored anywhere that was found: the BIN is the type's name in capitals without underscores and spaces (RING, SPRING, Helicopter ->
 HELICOPTER), or the entry of NAME_OVERRIDES (below), written from the names alone: hypothesis. A type with no BIN (enemies, particles, invisible objects) is skipped
-and listed on stdout. A stage's own BIN is preferred over the common one. Objects with no BIN but an archive of their own (ARCHIVE_ENTITIES, CHARACTERS) are listed in the script by hand; they are living things, so their motion loops (EntityKey::loopMotion).
+and listed on stdout. A stage's own BIN is preferred over the common one. Objects with no BIN but an archive of their own (ARCHIVE_ENTITIES, CHARACTERS) are listed by hand in tools/data/STH2005Objects.json; they are living things, so their motion loops (loopMotion in Placement.json).
 """
-import os, re, struct, sys
+import json, os, re, struct, sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import dumpCCL
 
 OUT = dumpCCL.ROOT + "src/STH2005EntityKeys.h"
+PLACEMENT_OUT = dumpCCL.ROOT + "External/Prefabs/STH2005/Placement.json"
 REGISTRY_ADDRESS = 0x8052B080
 COMMON_ARCHIVE = "stg_cmn_gdt.one"
 
@@ -57,57 +58,20 @@ NAME_OVERRIDES = {
 # BINs whose textures are in another archive than their models' (stem -> the archive whose STG_GDT.TXD to use): FRUIT's JG0404BKFRUIT.DFF names s0404_nn022, which the common and stg0100's
 # STG_GDT.TXD lack and the ones of stages 0301, 0404 and 0603 have (observed); the model is named after stage 0404, so that one (hypothesis: where the game finds the texture is unknown).
 TEXTURE_ARCHIVES = {"FRUIT": "stg0404/stg0404_gdt.one"}
-# BINs whose objects are laid out as a ring line (STH2005::PlacementLayout::RingLine, see src/Importers/STH2005/RingLine.cpp: from the decompile of the RING factory).
+# BINs whose objects are laid out as a ring line ("RingLine" in Placement.json, see src/Importers/STH2005/RingLine.cpp: from the decompile of the RING factory).
 RING_LINE_STEMS = {"RING"}
-# BINs whose objects pick their models by the placement's first parameter (STH2005::PlacementLayout::Variant): observed on ARTISTGADGET, whose 83 stg0100 records have a u32 of 0 to 19 there and the BIN
+# BINs whose objects pick their models by the placement's first parameter ("Variant" in Placement.json): observed on ARTISTGADGET, whose 83 stg0100 records have a u32 of 0 to 19 there and the BIN
 # has 27 infos named after street objects (hypothesis: the index of the info; not checked for the other ART BINs).
 VARIANT_STEMS = {"ARTISTGADGET"}
 
 
-# Objects with no .BIN whose archive holds the whole bundle: one archive with the model, its .BON, a .TXD, a .CCL and a .MTP (observed on the enemy archives and character/sonic.one, doomseye.one).
-# Written from the file names alone (hypothesis): registry name -> (archive, main .DFF, its .BON). Only the main model is used: the extra parts of these archives (SHIELDGUN.DFF, the
-# eyes, BKSHIELD0/1.DFF, SONIC_*_TE*.DFF) name no bone to attach to. The gun soldier archive is the "citii" one (hypothesis: the city stage's; the game formats enemy/GunSoldierData_%s.one).
-ARCHIVE_ENTITIES = {
-    "GUN_SOLDIER": ("enemy/gunsoldierdata_citii.one", "SOLDIERGUN_CITII.DFF", "SOLDIERGUN.BON"),
-    "BK_SOLDIER": ("enemy/bksoldierdata.one", "SOLDIERBK.DFF", "SOLDIERBK.BON"),
-    "BK_WINGSMALL": ("enemy/bkwingsmalldata.one", "WINGBKSMALL.DFF", "WINGBKSMALL.BON"),
-    "GUN_BEETLE": ("enemy/gunbeetledata.one", "BEETLEBOMB.DFF", "BEETLEBOMB.BON"),
-    "GUN_BIGFOOT": ("enemy/gunbigfootdata.one", "BIGFOOTA.DFF", "BIGFOOTA.BON"),
-    "GUN_ROBOT": ("enemy/gunrobotdata.one", "GUNROBOA.DFF", "GUNROBOA.BON"),
-    "EGG_PAWN": ("enemy/eggpawndata.one", "PAWN.DFF", "PAWN.BON"),
-    "EGG_SHADOWANDROID": ("enemy/eggshadowandroiddata.one", "SHADOW.DFF", "SHADOW.BON"),
-    "BK_GIANT": ("enemy/bkgiantdata.one", "GIANTBK.DFF", "GIANTBK.BON"),
-    "BK_WINGLARGE": ("enemy/bkwinglargedata.one", "WINGBKLARGE.DFF", "WINGBKLARGE.BON"),
-    "BK_WORM": ("enemy/bkwormdata.one", "BKWORM.DFF", "BKWORM.BON"),
-    "BK_LARVA": ("enemy/bklarvadata.one", "BKLARVA.DFF", "BKLARVA.BON"),
-    "BK_CHAOS": ("enemy/bkchaosdata.one", "CHAOSBODY.DFF", "CHAOS.BON"),
-    "BK_NINJA": ("enemy/bkninjadata.one", "NINJABK.DFF", "NINJABK.BON"),
-}
-# Not here: EGG_PIERROT (its three archives hold EGGPIERROT.DFF but only an EGGHORROR.BON: the pairing is unclear), the bosses and the other enemy types.
-# SET_CHARACTOR (type 400): the record's first parameter u32 picks the character. Hypothesis: it is the registry id - 400 (401 Sonic ... 412 DoomsEye): the stg0100 records have 1 (3 of them),
-# and 12 (4 of them, two at the same position), and Sonic and Doom's Eye are the characters of that stage. The other ids follow the registry's order (the files name each character; Eggman
-# is the egg monitor's archive, a guess); none of them is placed by stg0100.
-# Extra parts of a bundle (name -> [(.DFF, bone of the main .BON to attach to)]): hands are separate files with no .BON of their own, attached by bone name the way ModelPart::bone works.
-# Sonic's SN.BON has the hand bones j_l1te and j_r1te (HAnim ids 0x1C and 0x18, the ends of the arm chains j_l1ude1..3 / j_r1ude1..3); the TE1 file of each side is used (hypothesis: TE2 is
-# another pose of the hand, it is longer). Only Sonic's are listed: the other characters' hand bones are not looked up.
-BUNDLE_PARTS = {
-    "Sonic": [("SONIC_L_TE1.DFF", "j_l1te"), ("SONIC_R_TE1.DFF", "j_r1te")],
-}
-CHARACTOR_TYPE = 400
-CHARACTERS = {
-    1: ("Sonic", "character/sonic.one", "SN.DFF", "SN.BON"),
-    2: ("Tails", "character/tails.one", "TAILS.DFF", "TAILS.BON"),
-    3: ("Knuckles", "character/knuckles.one", "KNUCKLES.DFF", "KNUCKLES.BON"),
-    4: ("Amy", "character/amy.one", "AMY.DFF", "AMY.BON"),
-    5: ("Rouge", "character/rouge.one", "ROUGE.DFF", "ROUGE.BON"),
-    6: ("Omega", "character/omega.one", "OMEGA.DFF", "OMEGA.BON"),
-    7: ("Vector", "character/vector.one", "VECTOR.DFF", "VECTOR.BON"),
-    8: ("Espio", "character/espio.one", "ESPIO.DFF", "ESPIO.BON"),
-    9: ("Maria", "character/maria.one", "MARIA.DFF", "MARIA.BON"),
-    10: ("Charmy", "character/bee.one", "BEE.DFF", "BEE.BON"),
-    11: ("Eggman", "character/eggmonitor.one", "EGGMONITOR.DFF", "EGGMONITOR.BON"),
-    12: ("DoomsEye", "character/doomseye.one", "DOOMSEYE.DFF", "DOOMSEYE.BON"),
-}
+# The objects of archives of their own, the character picked by SET_CHARACTOR and the extra parts of a bundle: tools/data/STH2005Objects.json (hand-written, with the evidence of each).
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "STH2005Objects.json")) as _f:
+    _OBJECTS = json.load(_f)
+ARCHIVE_ENTITIES = {k: tuple(v) for k, v in _OBJECTS["archiveEntities"]["values"].items()}
+CHARACTOR_TYPE = _OBJECTS["characterType"]
+CHARACTERS = {int(k): tuple(v) for k, v in _OBJECTS["characters"]["values"].items()}
+BUNDLE_PARTS = {k: [tuple(p) for p in v] for k, v in _OBJECTS["bundleParts"]["values"].items()}
 
 
 def be(b, o, f=">I"):
@@ -359,9 +323,14 @@ def main():
         out.append("\t{" + ", ".join(motion_keys) + "},")
         kind = "RingLine" if stem in RING_LINE_STEMS else "Variant" if stem in VARIANT_STEMS else "Single"
         names = [m[0] for m in b["models"]]
-        variants = "{" + ", ".join("{" + ", ".join(str(names.index(n)) for n in models if n in names and n not in attached) + "}" for _, models in b["infos"]) + "}"
-        layout = f",\n\tSTH2005::PlacementLayout::{kind},\n\t{variants}"
-        out.append("\t{" + ", ".join(f'{{{a}, "{c}"}}' for c in b["collisions"]) + "}" + layout)
+        variants = [[names.index(n) for n in models if n in names and n not in attached] for _, models in b["infos"]]
+        entry = {}
+        if kind != "Single":
+            entry["layout"] = kind
+        if variants:
+            entry["variants"] = variants
+        add_placement(stem, entry)
+        out.append("\t{" + ", ".join(f'{{{a}, "{c}"}}' for c in b["collisions"]) + "}")
         out.append("};")
 
     bundles = {n: (ARCHIVE_ENTITIES[n]) for _, n in archive_used if n in ARCHIVE_ENTITIES}
@@ -390,10 +359,8 @@ def main():
         out.append("\t},")
         out.append(f'\t{{{a}, {json_str(txd)}}},')
         out.append("\t{" + ", ".join(motion_keys) + "},")
-        out.append("\t{" + ", ".join(f'{{{a}, "{c}"}}' for c in ccls) + "},")
-        out.append("\tSTH2005::PlacementLayout::Single,")
-        out.append("\t{},")
-        out.append("\ttrue")
+        out.append("\t{" + ", ".join(f'{{{a}, "{c}"}}' for c in ccls) + "}")
+        add_placement(name, {"loopMotion": True})
         out.append("};")
 
     for st in stages:
@@ -403,9 +370,22 @@ def main():
             out.append(f"\t{{{t}, {key}" + (f", {parameter}" if parameter is not None else "") + "},")
         out.append("};")
     open(OUT, "w").write("\n".join(out) + "\n")
+    os.makedirs(os.path.dirname(PLACEMENT_OUT), exist_ok=True)
+    with open(PLACEMENT_OUT, "w") as placement_file:
+        json.dump(placement, placement_file, indent=1)
     print(f"{len(used) + len(bundles)} keys and {len(stages)} tables written to {OUT}")
     for st in stages:
         print(f"{st}: {len(tables[st])} types with a BIN; no BIN for: " + ", ".join(skipped.get(st, [])))
+
+
+placement = {}
+
+
+def add_placement(name, entry):
+    """Records an object's placement data (Placement.json); two keys of one name must agree, since a prefab is named after the key."""
+    if name in placement and placement[name] != entry:
+        raise RuntimeError(f"two keys named {name} with different placement data")
+    placement[name] = entry
 
 
 def json_str(s):

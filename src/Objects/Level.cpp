@@ -21,23 +21,23 @@
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/gtc/constants.hpp>
 
-void Level::setSAGPUInstance(PoolId shaderId_, const SALandTableKey& rLandTable_, const SATextureSetKey& rTextures_)
+void Level::setSAGPUInstance(PoolId shaderId_, const SALandTableKey& rLandTable_, const SATextureSetKey& rTextures_, const std::vector<std::string>& rSkippedTextures_)
 {
 	if(this->instanceId != UninitializedPoolId)
 	{
 		throw std::runtime_error("Level: already has an instance.");
 	}
-	this->instanceId = Loading::addSALevelInstance(shaderId_, rLandTable_, rTextures_);
+	this->instanceId = Loading::addSALevelInstance(shaderId_, rLandTable_, rTextures_, rSkippedTextures_);
 	this->sourceEngine = SA_NINJA;
 }
 
-void Level::setONEGPUInstance(PoolId shaderId_, const STH2005::LevelKey& rLevel_)
+void Level::setONEGPUInstance(PoolId shaderId_, const STH2005::LevelKey& rLevel_, const std::vector<std::string>& rSkippedEntries_)
 {
 	if(this->instanceId != UninitializedPoolId)
 	{
 		throw std::runtime_error("Level: already has an instance.");
 	}
-	this->instanceId = Loading::addONELevelInstance(shaderId_, rLevel_);
+	this->instanceId = Loading::addONELevelInstance(shaderId_, rLevel_, rSkippedEntries_);
 	this->sourceEngine = STH2005_ONE;
 }
 
@@ -112,9 +112,16 @@ void Level::setONEEntities(PoolId shaderId_, const STH2005::LevelKey& rLevel_)
 			}
 			if(found->entity.models.empty()) continue;
 			const STH2005::EntityKey& rKey = found->entity;
+			PoolId prefabId = findPrefab(STH2005_ONE, rKey.name);
+			if(prefabId == UninitializedPoolId)
+			{
+				std::fprintf(stderr, "Level: skipped a record of %s: there is no prefab for it.\n", rKey.name);
+				continue;
+			}
+			const Prefab& rPrefab = Globals::Game::prefabs[prefabId];
 
 			/*
-			What a record makes (see PlacementLayout): Single, one entity per model of the key's first variant (just the first model if it has none); RingLine, one per ring; Variant, one per model of the variant the record
+			What a record makes (see PlacementLayout, the prefab's): Single, one entity per model of the key's first variant (just the first model if it has none); RingLine, one per ring; Variant, one per model of the variant the record
 			names, the variant's collision (the one with its index, if the key has that many) going to the first of them.
 			A rotation is the record's three angles in degrees; a ring takes only the one about Y: the ring code copies one angle of the record (the one it rotates the
 			line about first) into each ring (external, decompile of FUN_80112cbc; that it is the yaw is a hypothesis).
@@ -127,16 +134,16 @@ void Level::setONEEntities(PoolId shaderId_, const STH2005::LevelKey& rLevel_)
 				std::vector<STH2005::CollisionKey> collisions;
 			};
 			std::vector<Spawn> spawns;
-			if(rKey.layout == STH2005::PlacementLayout::RingLine)
+			if(rPrefab.layout == PlacementLayout::RingLine)
 			{
 				for(const glm::vec3& rRingPosition : STH2005::readRingPositions(rPlacement)) spawns.push_back(Spawn{rRingPosition, glm::vec3(0.0f, rPlacement.rotation.y, 0.0f), 0, rKey.collisions});
 			}
-			else if(rKey.layout == STH2005::PlacementLayout::Variant)
+			else if(rPrefab.layout == PlacementLayout::Variant)
 			{
 				if(rPlacement.params.size() < 4) throw std::runtime_error(std::format("Level: a record of {} has no variant parameter.", rKey.name));
 				uint32_t variant = readLE<uint32_t>(rPlacement.params, 0);
-				if(variant >= rKey.variants.size()) throw std::runtime_error(std::format("Level: a record of {} names variant {} of {}.", rKey.name, variant, rKey.variants.size()));
-				for(uint32_t modelIndex : rKey.variants[variant])
+				if(variant >= rPrefab.variants.size()) throw std::runtime_error(std::format("Level: a record of {} names variant {} of {}.", rKey.name, variant, rPrefab.variants.size()));
+				for(uint32_t modelIndex : rPrefab.variants[variant])
 				{
 					std::vector<STH2005::CollisionKey> collisions;
 					if(spawns.empty() && variant < rKey.collisions.size()) collisions.push_back(rKey.collisions[variant]);
@@ -146,7 +153,7 @@ void Level::setONEEntities(PoolId shaderId_, const STH2005::LevelKey& rLevel_)
 			else
 			{
 				/* The first variant (the .BIN's first info) is the object: all of its models, the first of them getting the collision. */
-				std::vector<uint32_t> modelIndices = rKey.variants.empty() ? std::vector<uint32_t>{0} : rKey.variants[0];
+				std::vector<uint32_t> modelIndices = rPrefab.variants.empty() ? std::vector<uint32_t>{0} : rPrefab.variants[0];
 				for(uint32_t modelIndex : modelIndices)
 				{
 					spawns.push_back(Spawn{rPlacement.position, rPlacement.rotation, modelIndex, spawns.empty() ? rKey.collisions : std::vector<STH2005::CollisionKey>{}});
@@ -163,7 +170,7 @@ void Level::setONEEntities(PoolId shaderId_, const STH2005::LevelKey& rLevel_)
 				params.what = std::format("(type {}) of {}", static_cast<unsigned>(rPlacement.type), pPath);
 				params.modelIndex = rSpawn.modelIndex;
 				params.pONECollisions = &rSpawn.collisions;
-				PoolId id = spawnPrefab(findPrefab(STH2005_ONE, rKey.name), shaderId_, params);
+				PoolId id = spawnPrefab(prefabId, shaderId_, params);
 				if(id == UninitializedPoolId) continue;
 				this->entityIds.push_back(id);
 			}
@@ -175,7 +182,7 @@ void Level::setONEEntities(PoolId shaderId_, const STH2005::LevelKey& rLevel_)
 The orientation an SADX SET record gives an object. External, from the decompile of _Main.rel: the objects' display code turns by the angles of their task (x at +0x14, y at +0x18, z at
 +0x1C) with the Ninja rotation functions (the ones that build a rotation about 'x', 'y' or 'z' and multiply it into the current matrix on the right), and the order that comes up
 most is z, then x, then y (92 functions with all three, 98 more with z and x); so the matrix is Rz * Rx * Ry, which turns the object about its own y first. Objects whose code differs have
-a rotation recipe in their key (SAEntityKey::rotation, from the generator): e.g. the dash panel turns about y by the angle plus 0x8000, the launch board turns about y before x. The angles are BAMS (65536 = a turn).
+a rotation recipe in their prefab (Prefab::rotation, from External/Prefabs/SADX/Placement.json): e.g. the dash panel turns about y by the angle plus 0x8000, the launch board turns about y before x. The angles are BAMS (65536 = a turn).
 */
 static glm::mat4 saObjectRotation(const glm::ivec3& rBams_, const std::vector<SARotationStep>& rSteps_)
 {
@@ -198,7 +205,7 @@ static glm::mat4 saObjectRotation(const glm::ivec3& rBams_, const std::vector<SA
 }
 
 /*
-Entities of an SADX stage's SET files, see Level.h, and of the objects its own code creates (SALandTableKey::stageEntities, placed as they are). Positions are the records' own (the land table and the objects share a space, observed on Emerald Coast: the SET positions are in
+Entities of an SADX stage's SET files, see Level.h. Positions are the records' own (the land table and the objects share a space, observed on Emerald Coast: the SET positions are in
 the land table's range) and the rotation is the record's three BAMS angles in the order the game's object code uses most (saObjectRotation). An object that
 fails to load is reported on stderr and skipped, as in setONEEntities.
 */
@@ -245,7 +252,8 @@ void Level::setSAEntities(PoolId shaderId_, const SALandTableKey& rLandTable_)
 				continue;
 			}
 			const SAEntityKey& rKey = found->entity;
-			uint32_t variantValue = static_cast<uint32_t>(static_cast<int32_t>(rPlacement.scale[rKey.variantField]) & 0xFF);
+			const Prefab& rPrefab = Globals::Game::prefabs[findPrefab(SA_NINJA, rKey.name)];
+			uint32_t variantValue = static_cast<uint32_t>(static_cast<int32_t>(rPlacement.scale[rPrefab.variantField]) & 0xFF);
 			const SAModelKey& rModel = rKey.variantModels.empty() ? rKey.model : rKey.variantModels[variantValue % rKey.variantModels.size()];
 			const std::vector<SACollisionShapesKey>& rCollisions = rKey.variantCollisions.empty() ? rKey.collisions : rKey.variantCollisions[variantValue % rKey.variantCollisions.size()];
 			if(rModel.rel == nullptr)
@@ -255,12 +263,8 @@ void Level::setSAEntities(PoolId shaderId_, const SALandTableKey& rLandTable_)
 #endif
 				continue;
 			}
-			createEntity(rKey, rModel, rCollisions, position, saObjectRotation(rPlacement.rotation, rKey.rotation), std::format("(type {}) of {}", static_cast<unsigned>(rPlacement.type), pPath), &rPlacement);
+			createEntity(rKey, rModel, rCollisions, position, saObjectRotation(rPlacement.rotation, rPrefab.rotation), std::format("(type {}) of {}", static_cast<unsigned>(rPlacement.type), pPath), &rPlacement);
 		}
-	}
-	for(const SAStageEntityKey& rStageEntity : rLandTable_.stageEntities)
-	{
-		createEntity(*rStageEntity.entity, rStageEntity.entity->model, rStageEntity.entity->collisions, glm::vec3(rStageEntity.position[0], rStageEntity.position[1], rStageEntity.position[2]) + this->position, glm::mat4(1.0f), "(created by the stage)", nullptr);
 	}
 }
 

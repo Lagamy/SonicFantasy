@@ -86,6 +86,18 @@ struct PoolMap {
 		}
 	}
 
+	/* Gives a live object a new name, keeping its PoolId; throws, changing nothing, when the new name is taken. */
+	void rename(PoolId pId_, const char* name_)
+	{
+		#ifdef ENGINE_DEBUG
+			this->isPoolIdValid(pId_);
+		#endif
+		if(this->nameToId.contains(name_)) throw std::runtime_error(std::format("{} Pool: the name '{}' is taken.", this->name, name_));
+		this->eraseName(pId_.id);
+		this->names[pId_.id] = name_;
+		this->nameToId.emplace(name_, pId_);
+	}
+
 	void remove(PoolId pId_) {
 
 		#ifdef ENGINE_DEBUG

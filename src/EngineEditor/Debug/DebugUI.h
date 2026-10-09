@@ -40,7 +40,6 @@ struct DebugUI
 	char newPlacementFiles[256] = "";
 	char newEntityTable[64] = "";
 	char newTypeNames[64] = "";
-	char newStageEntities[64] = "";
 	char newModel[256] = "";
 	char newCollisions[512] = "";
 

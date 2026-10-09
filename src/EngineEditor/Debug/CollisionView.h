@@ -46,7 +46,7 @@ struct CollisionView
 
 	/*
 	One distinct triangle value (attribute or piece flags) of the shown level collisions: its raw value, how many triangles have it, its line color and the name of the behaviour the collision's remap gives it
-	(BAKeys.h; "?" if it has none). Most common first.
+	(External/Collision/Remaps.json; "?" if it has none). Most common first.
 	*/
 	struct AttributeCount
 	{

@@ -1,0 +1,223 @@
+{
+ "O AXPNL": {
+  "rotation": [
+   {
+    "axis": "Z",
+    "field": 2,
+    "addend": 0,
+    "negate": false
+   },
+   {
+    "axis": "X",
+    "field": 0,
+    "addend": 0,
+    "negate": false
+   },
+   {
+    "axis": "Y",
+    "field": 1,
+    "addend": 32768,
+    "negate": false
+   }
+  ]
+ },
+ "O SWITCH": {
+  "rotation": [
+   {
+    "axis": "X",
+    "field": 0,
+    "addend": 0,
+    "negate": false
+   },
+   {
+    "axis": "Y",
+    "field": 1,
+    "addend": 0,
+    "negate": false
+   },
+   {
+    "axis": "Z",
+    "field": 2,
+    "addend": 0,
+    "negate": false
+   }
+  ]
+ },
+ "CMN_DRING": {
+  "rotation": [
+   {
+    "axis": "X",
+    "field": 0,
+    "addend": 0,
+    "negate": false
+   },
+   {
+    "axis": "Y",
+    "field": 1,
+    "addend": 0,
+    "negate": false
+   },
+   {
+    "axis": "Z",
+    "field": 2,
+    "addend": 0,
+    "negate": false
+   }
+  ]
+ },
+ "O BUBBLE": {
+  "rotation": [
+   {
+    "axis": "X",
+    "field": 0,
+    "addend": 0,
+    "negate": false
+   },
+   {
+    "axis": "Y",
+    "field": 1,
+    "addend": 0,
+    "negate": false
+   },
+   {
+    "axis": "Z",
+    "field": 2,
+    "addend": 0,
+    "negate": false
+   }
+  ]
+ },
+ "E SARU": {
+  "rotation": [
+   {
+    "axis": "Y",
+    "field": 0,
+    "addend": 0,
+    "negate": false
+   },
+   {
+    "axis": "Y",
+    "field": 1,
+    "addend": 0,
+    "negate": false
+   },
+   {
+    "axis": "Y",
+    "field": 3,
+    "addend": 32768,
+    "negate": false
+   }
+  ]
+ },
+ "O BGIRO": {
+  "rotation": [
+   {
+    "axis": "Y",
+    "field": 1,
+    "addend": 0,
+    "negate": false
+   }
+  ]
+ },
+ "O IWA": {
+  "rotation": [
+   {
+    "axis": "Z",
+    "field": 2,
+    "addend": 0,
+    "negate": false
+   },
+   {
+    "axis": "Y",
+    "field": 1,
+    "addend": 0,
+    "negate": false
+   },
+   {
+    "axis": "X",
+    "field": 0,
+    "addend": 0,
+    "negate": false
+   }
+  ]
+ },
+ "O JUMP": {
+  "rotation": [
+   {
+    "axis": "Z",
+    "field": 2,
+    "addend": 0,
+    "negate": false
+   },
+   {
+    "axis": "Y",
+    "field": 1,
+    "addend": 0,
+    "negate": false
+   },
+   {
+    "axis": "X",
+    "field": 0,
+    "addend": 0,
+    "negate": false
+   }
+  ]
+ },
+ "O GRASA": {
+  "rotation": [
+   {
+    "axis": "Z",
+    "field": 2,
+    "addend": 0,
+    "negate": false
+   },
+   {
+    "axis": "Y",
+    "field": 1,
+    "addend": 0,
+    "negate": false
+   },
+   {
+    "axis": "X",
+    "field": 0,
+    "addend": 0,
+    "negate": false
+   }
+  ]
+ },
+ "O PIER": {
+  "variantField": 1
+ },
+ "O KASA": {
+  "rotation": [
+   {
+    "axis": "Y",
+    "field": 1,
+    "addend": 0,
+    "negate": false
+   }
+  ]
+ },
+ "S GENE": {
+  "rotation": [
+   {
+    "axis": "Y",
+    "field": 1,
+    "addend": 32768,
+    "negate": false
+   },
+   {
+    "axis": "Z",
+    "field": 2,
+    "addend": 0,
+    "negate": false
+   },
+   {
+    "axis": "X",
+    "field": 0,
+    "addend": 0,
+    "negate": false
+   }
+  ]
+ }
+}

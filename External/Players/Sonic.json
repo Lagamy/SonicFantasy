@@ -1,0 +1,114 @@
+{
+ "note": "Sonic's resources on the SADX disc (read once at startup by Loading::loadPlayerKeys; a missing or wrong file stops the game). Everything but the animation names is a disc offset: model roots and motions of ModelsMiles.rel (external, SA Tools GameConfig/GC_SADX/ModelsMiles.ini, section [Sonic] and the motion names in quotes) and the texture archive. The animation names ('walk', 'jumpC' ...) are ours, the names the Lua scripts use.",
+ "textures": "sonic.gvm",
+ "models": {
+  "body": {
+   "rel": "ModelsMiles.rel",
+   "offset": "0x16ED5C",
+   "note": "Sonic's root NJS_OBJECT (external, SA Tools ModelsMiles.ini, [Sonic])."
+  },
+  "curled": {
+   "rel": "ModelsMiles.rel",
+   "offset": "0x17671C",
+   "note": "The jump's model (external: the table at _Main.rel 0x3544E0 pairs each animation id with a model and a motion; id 0xE, 'Spring Launch')."
+  },
+  "jumpball": {
+   "rel": "ModelsMiles.rel",
+   "offset": "0x17F900",
+   "note": "The spin ball's model (external: same table, id 0x20, 'Spin (Jumpball)')."
+  }
+ },
+ "idle": {
+  "rel": "ModelsMiles.rel",
+  "offset": "0x2118B4",
+  "nodes": 73,
+  "note": "'Sonic Alternate Stand', 73 nodes (external, SA Tools ModelsMiles.ini; observed: 16 frames, position and rotation keys, linear). Played when Sonic is made."
+ },
+ "animationsNote": "The motions of ModelsMiles.rel, 73 nodes like his body model (external, SA Tools ModelsMiles.ini). Which one the game plays for which speed and move is the table at _Main.rel 0x3544E0 (16 bytes per animation id, a pointer to the motion first; external, Ghidra pseudocode of sadxDecomp): id 0 Stand, 9 Walk, 10 Speedwalk, 11 Jog, 12 Run, 13 Sprint, 0x12 Fall, 0x13 Landing, 0x11 Begin Falling From Spring Launch, 0x14 Brake, 0x17 Damage, 0x1E Turn Around. 'Spring Launch' (0xE, 74 nodes) is the jump, with the curled model; the spin ball (id 0x20, 'Spin (Jumpball)', 1 node) has the jumpball model. Which motion plays in which state is chosen by the scripts (hypothesis, from the names).",
+ "animations": {
+  "stand": {
+   "rel": "ModelsMiles.rel",
+   "offset": "0x1C3F30",
+   "nodes": 73,
+   "model": "body"
+  },
+  "walk": {
+   "rel": "ModelsMiles.rel",
+   "offset": "0x1CCEE8",
+   "nodes": 73,
+   "model": "body"
+  },
+  "speedwalk": {
+   "rel": "ModelsMiles.rel",
+   "offset": "0x1D07EC",
+   "nodes": 73,
+   "model": "body"
+  },
+  "jog": {
+   "rel": "ModelsMiles.rel",
+   "offset": "0x1D4020",
+   "nodes": 73,
+   "model": "body"
+  },
+  "run": {
+   "rel": "ModelsMiles.rel",
+   "offset": "0x1D72B4",
+   "nodes": 73,
+   "model": "body"
+  },
+  "sprint": {
+   "rel": "ModelsMiles.rel",
+   "offset": "0x1E8AD8",
+   "nodes": 73,
+   "model": "body"
+  },
+  "brake": {
+   "rel": "ModelsMiles.rel",
+   "offset": "0x1D9F58",
+   "nodes": 73,
+   "model": "body"
+  },
+  "turnAround": {
+   "rel": "ModelsMiles.rel",
+   "offset": "0x1F7190",
+   "nodes": 73,
+   "model": "body"
+  },
+  "springFall": {
+   "rel": "ModelsMiles.rel",
+   "offset": "0x1DFCD4",
+   "nodes": 73,
+   "model": "body"
+  },
+  "fall": {
+   "rel": "ModelsMiles.rel",
+   "offset": "0x1E3218",
+   "nodes": 73,
+   "model": "body"
+  },
+  "landing": {
+   "rel": "ModelsMiles.rel",
+   "offset": "0x1E5F24",
+   "nodes": 73,
+   "model": "body"
+  },
+  "damage": {
+   "rel": "ModelsMiles.rel",
+   "offset": "0x1FB99C",
+   "nodes": 73,
+   "model": "body"
+  },
+  "jump": {
+   "rel": "ModelsMiles.rel",
+   "offset": "0x1DA47C",
+   "nodes": 74,
+   "model": "curled"
+  },
+  "ball": {
+   "rel": "ModelsMiles.rel",
+   "offset": "0x1F8BB8",
+   "nodes": 1,
+   "model": "jumpball"
+  }
+ }
+}

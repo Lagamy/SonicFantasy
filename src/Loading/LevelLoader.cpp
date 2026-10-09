@@ -32,14 +32,16 @@ namespace
 using Json = nlohmann::json;
 
 /*
-The generated tables a level file can name (see the "entityTable", "typeNames" and "stageEntities" fields in docs/ENGINE_USAGE.md). A new generated
+The generated tables a level file can name (see the "entityTable" and "typeNames" fields in docs/ENGINE_USAGE.md). A new generated
 table is one line here.
 */
 const std::map<std::string, const std::vector<SAPlacedEntityKey>*> saEntityTables{
 	{"SAEntityTable_EmeraldCoast", &SAEntityTable_EmeraldCoast}
 };
-const std::map<std::string, const std::vector<SAStageEntityKey>*> saStageEntities{
-	{"EmeraldCoastStageEntities", &EmeraldCoastStageEntities}
+
+/* Objects a stage's own code creates (no SET record): their keys, so they are prefabs; the level file's "source" says where they stand. */
+const std::vector<const SAEntityKey*> saStageCreated{
+	&EmeraldCoastBridgeDockForward, &EmeraldCoastBridgeDockBackward, &EmeraldCoastBridgePier, &EmeraldCoastBridgeLinks
 };
 const std::map<std::string, const std::map<uint16_t, const char*>*> typeNameMaps{
 	{"SAObjectTypeNames_EmeraldCoast", &SAObjectTypeNames_EmeraldCoast},
@@ -57,6 +59,8 @@ struct Recipe
 	std::unique_ptr<SATextureSetKey> saTextures;
 	std::unique_ptr<STH2005::LevelKey> oneLevel;
 	std::unique_ptr<GLTFLevelKey> gltfLevel;
+	/* The level file's "skippedTextures" (sadx) or "skippedEntries" (sth2005): our choice of what not to load, not part of the disc keys. */
+	std::vector<std::string> skipped;
 	glm::vec3 position{0.0f};
 	PoolId shaderId;
 };
@@ -95,13 +99,11 @@ uint32_t readOffset(const Json& rValue_)
 void fillSA(Recipe& rRecipe_, const Json& rFile_)
 {
 	const Json& rLandTable = rFile_.at("landTable");
-	std::vector<std::string> skippedTextures;
-	if(rFile_.contains("skippedTextures")) skippedTextures = rFile_.at("skippedTextures").get<std::vector<std::string>>();
-	rRecipe_.saLandTable = std::make_unique<SALandTableKey>(SALandTableKey{keepString(rRecipe_, rLandTable.at("rel").get<std::string>()), readOffset(rLandTable.at("offset")), skippedTextures, keepStrings(rRecipe_, rFile_, "placementFiles")});
+	if(rFile_.contains("skippedTextures")) rRecipe_.skipped = rFile_.at("skippedTextures").get<std::vector<std::string>>();
+	rRecipe_.saLandTable = std::make_unique<SALandTableKey>(SALandTableKey{keepString(rRecipe_, rLandTable.at("rel").get<std::string>()), readOffset(rLandTable.at("offset")), keepStrings(rRecipe_, rFile_, "placementFiles")});
 	SALandTableKey& rKey = *rRecipe_.saLandTable;
 	if(rFile_.contains("entityTable")) rKey.entities = findTable(saEntityTables, rFile_, "entityTable");
 	if(rFile_.contains("typeNames")) rKey.typeNames = &findTable(typeNameMaps, rFile_, "typeNames");
-	if(rFile_.contains("stageEntities")) rKey.stageEntities = findTable(saStageEntities, rFile_, "stageEntities");
 	rRecipe_.saTextures = std::make_unique<SATextureSetKey>(SATextureSetKey{keepString(rRecipe_, rFile_.at("textures").get<std::string>())});
 }
 
@@ -111,9 +113,8 @@ void fillONE(Recipe& rRecipe_, const Json& rFile_)
 	for(const Json& rSection : rFile_.at("sections")) sections.push_back(STH2005::ArchiveKey{keepString(rRecipe_, rSection.get<std::string>())});
 	const Json& rTextures = rFile_.at("textures");
 	STH2005::TextureKey textures{{keepString(rRecipe_, rTextures.at("archive").get<std::string>())}, keepString(rRecipe_, rTextures.at("txd").get<std::string>())};
-	std::vector<std::string> skippedEntries;
-	if(rFile_.contains("skippedEntries")) skippedEntries = rFile_.at("skippedEntries").get<std::vector<std::string>>();
-	rRecipe_.oneLevel = std::make_unique<STH2005::LevelKey>(STH2005::LevelKey{sections, textures, skippedEntries, keepStrings(rRecipe_, rFile_, "placementFiles")});
+	if(rFile_.contains("skippedEntries")) rRecipe_.skipped = rFile_.at("skippedEntries").get<std::vector<std::string>>();
+	rRecipe_.oneLevel = std::make_unique<STH2005::LevelKey>(STH2005::LevelKey{sections, textures, keepStrings(rRecipe_, rFile_, "placementFiles")});
 	STH2005::LevelKey& rKey = *rRecipe_.oneLevel;
 	if(rFile_.contains("entityTable")) rKey.entities = findTable(oneEntityTables, rFile_, "entityTable");
 	if(rFile_.contains("typeNames")) rKey.typeNames = &findTable(typeNameMaps, rFile_, "typeNames");
@@ -769,7 +770,7 @@ PoolId loadLevel(const std::string& name_)
 		loadSourcePrefabs(name_);
 		if(rRecipe.saLandTable != nullptr)
 		{
-			rLevel.setSAGPUInstance(rRecipe.shaderId, *rRecipe.saLandTable, *rRecipe.saTextures);
+			rLevel.setSAGPUInstance(rRecipe.shaderId, *rRecipe.saLandTable, *rRecipe.saTextures, rRecipe.skipped);
 			rLevel.setSACollision(*rRecipe.saLandTable);
 			rLevel.setSAEntities(rRecipe.shaderId, *rRecipe.saLandTable);
 		}
@@ -780,7 +781,7 @@ PoolId loadLevel(const std::string& name_)
 		}
 		else
 		{
-			rLevel.setONEGPUInstance(rRecipe.shaderId, *rRecipe.oneLevel);
+			rLevel.setONEGPUInstance(rRecipe.shaderId, *rRecipe.oneLevel, rRecipe.skipped);
 			rLevel.setONECollision(*rRecipe.oneLevel);
 			rLevel.setONEEntities(rRecipe.shaderId, *rRecipe.oneLevel);
 		}
@@ -823,10 +824,7 @@ void forEachSAEntityKey(const std::function<void(const SAEntityKey&)>& rFunction
 	{
 		for(const SAPlacedEntityKey& rPlaced : *pTable) rFunction_(rPlaced.entity);
 	}
-	for(const auto& [tableName, pTable] : saStageEntities)
-	{
-		for(const SAStageEntityKey& rStage : *pTable) rFunction_(*rStage.entity);
-	}
+	for(const SAEntityKey* pKey : saStageCreated) rFunction_(*pKey);
 }
 
 void forEachONEEntityKey(const std::function<void(const STH2005::EntityKey&)>& rFunction_)
@@ -844,6 +842,109 @@ std::string changedPrefabFile(const std::string& rRoot_, const std::string& rPoo
 {
 	return rRoot_ + "Prefabs/" + rPoolName_ + "/Changed/prefab.json";
 }
+}
+
+namespace
+{
+PrefabGroup readGroup(const std::string& rName_)
+{
+	for(PrefabGroup group : {PrefabGroup::Enemies, PrefabGroup::Npcs, PrefabGroup::Characters, PrefabGroup::StaticObjects, PrefabGroup::InteractibleObjects})
+	{
+		if(rName_ == prefabGroupFolder(group)) return group;
+	}
+	throw std::runtime_error(std::format("'{}' is not a prefab group.", rName_));
+}
+
+/* The group a key name goes in for one game of Groups.json: the first prefix that starts it, else the list that names it, else StaticObjects. */
+PrefabGroup groupOf(const Json& rGame_, const std::string& rName_)
+{
+	for(const auto& [prefix, group] : rGame_.at("prefixes").items())
+	{
+		if(rName_.starts_with(prefix)) return readGroup(group.get<std::string>());
+	}
+	for(const auto& [group, names] : rGame_.at("names").items())
+	{
+		for(const Json& rName : names)
+		{
+			if(rName.get<std::string>() == rName_) return readGroup(group);
+		}
+	}
+	return PrefabGroup::StaticObjects;
+}
+
+PlacementLayout readLayout(const std::string& rName_)
+{
+	if(rName_ == "Single") return PlacementLayout::Single;
+	if(rName_ == "RingLine") return PlacementLayout::RingLine;
+	if(rName_ == "Variant") return PlacementLayout::Variant;
+	throw std::runtime_error(std::format("'{}' is not a placement layout.", rName_));
+}
+}
+
+void loadPrefabData()
+{
+	auto& rPrefabs = Globals::Game::prefabs;
+	try
+	{
+		std::ifstream stream("Assets/External/Prefabs/Groups.json");
+		if(!stream) throw std::runtime_error("the file is missing");
+		Json groups = Json::parse(stream);
+		for(uint32_t i = 0; i < rPrefabs.objects.size(); i++)
+		{
+			if(!rPrefabs.alive[i]) continue;
+			Prefab& rPrefab = rPrefabs.objects[i];
+			if(rPrefab.kind != PrefabKind::SAObject && rPrefab.kind != PrefabKind::ONEObject) continue;
+			rPrefab.group = groupOf(groups.at(prefabGameName(rPrefab.game)), rPrefab.name);
+		}
+	}
+	catch(const std::exception& rError)
+	{
+		fprintf(stderr, "Prefab groups not read (Assets/External/Prefabs/Groups.json): %s\n", rError.what());
+	}
+	try
+	{
+		std::ifstream stream("Assets/External/Prefabs/STH2005/Placement.json");
+		if(!stream) throw std::runtime_error("the file is missing");
+		Json placement = Json::parse(stream);
+		for(uint32_t i = 0; i < rPrefabs.objects.size(); i++)
+		{
+			if(!rPrefabs.alive[i] || rPrefabs.objects[i].kind != PrefabKind::ONEObject) continue;
+			Prefab& rPrefab = rPrefabs.objects[i];
+			auto found = placement.find(rPrefab.name);
+			if(found == placement.end()) continue;
+			rPrefab.layout = readLayout(found->value("layout", std::string("Single")));
+			rPrefab.variants = found->value("variants", std::vector<std::vector<uint32_t>>{});
+			rPrefab.loopMotion = found->value("loopMotion", false);
+		}
+	}
+	catch(const std::exception& rError)
+	{
+		fprintf(stderr, "Prefab placement data not read (Assets/External/Prefabs/STH2005/Placement.json): %s\n", rError.what());
+	}
+	try
+	{
+		std::ifstream stream("Assets/External/Prefabs/SADX/Placement.json");
+		if(!stream) throw std::runtime_error("the file is missing");
+		Json placement = Json::parse(stream);
+		for(uint32_t i = 0; i < rPrefabs.objects.size(); i++)
+		{
+			if(!rPrefabs.alive[i] || rPrefabs.objects[i].kind != PrefabKind::SAObject) continue;
+			Prefab& rPrefab = rPrefabs.objects[i];
+			auto found = placement.find(rPrefab.saKey->name);
+			if(found == placement.end()) continue;
+			for(const Json& rStep : found->value("rotation", Json::array()))
+			{
+				std::string axis = rStep.at("axis").get<std::string>();
+				if(axis.size() != 1 || axis.find_first_of("XYZ") != 0) throw std::runtime_error(std::format("{}: '{}' is not an axis.", rPrefab.name, axis));
+				rPrefab.rotation.push_back(SARotationStep{axis[0], rStep.at("field").get<uint8_t>(), rStep.at("addend").get<int32_t>(), rStep.at("negate").get<bool>()});
+			}
+			rPrefab.variantField = found->value("variantField", 0);
+		}
+	}
+	catch(const std::exception& rError)
+	{
+		fprintf(stderr, "SADX prefab placement data not read (Assets/External/Prefabs/SADX/Placement.json): %s\n", rError.what());
+	}
 }
 
 void loadChangedPrefabs()
@@ -1243,7 +1344,6 @@ void createLevelFile(const NewLevelFile& rLevel_)
 	if(rLevel_.engine != "gltf" && !placementFiles.empty()) file["placementFiles"] = placementFiles;
 	if(rLevel_.engine != "gltf" && !rLevel_.entityTable.empty()) file["entityTable"] = rLevel_.entityTable;
 	if(rLevel_.engine != "gltf" && !rLevel_.typeNames.empty()) file["typeNames"] = rLevel_.typeNames;
-	if(!rLevel_.stageEntities.empty() && rLevel_.engine == "sadx") file["stageEntities"] = rLevel_.stageEntities;
 
 	std::string text = file.dump(2);
 	for(const std::string& rFolder : folders)

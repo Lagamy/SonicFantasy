@@ -10,8 +10,8 @@
 namespace Loading
 {
     PoolId addSAInstance(PoolId shaderId_, const SAModelKey& rMesh_, const SATextureSetKey* pTextures_);
-    PoolId addSALevelInstance(PoolId shaderId_, const SALandTableKey& rLandTable_, const SATextureSetKey& rTextures_);
-    PoolId addONELevelInstance(PoolId shaderId_, const STH2005::LevelKey& rLevel_);
+    PoolId addSALevelInstance(PoolId shaderId_, const SALandTableKey& rLandTable_, const SATextureSetKey& rTextures_, const std::vector<std::string>& rSkippedTextures_);
+    PoolId addONELevelInstance(PoolId shaderId_, const STH2005::LevelKey& rLevel_, const std::vector<std::string>& rSkippedEntries_);
     PoolId addONEInstance(PoolId shaderId_, const STH2005::ModelKey& rMesh_, const STH2005::TextureKey* pTextures_);
     PoolId addGLTFLevelInstance(PoolId shaderId_, const GLTFLevelKey& rLevel_);
     PoolId addGLTFCollision(const GLTFLevelKey& rLevel_);

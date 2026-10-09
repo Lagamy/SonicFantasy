@@ -60,6 +60,9 @@ namespace Globals {
 		inline PoolMap<BABehavior> behaviors = ("Behaviors");
 		inline BABehaviors baBehaviors;
 
+		/* The named onTouch functions scripts registered with sf.onTouch (BoundAreaFunction in BABehavior.h): what the bound area rules of the editor and the project's data file name. */
+		inline PoolMap<BoundAreaFunction> boundAreaFunctions = ("BoundAreaFunctions");
+
 		/*
 		Entity behaviours (EntityBehavior.h): the kinds, by name, the stack each entity that has any has (one record per such entity) and the system that runs them every gameplay tick.
 		*/

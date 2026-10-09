@@ -203,7 +203,6 @@ void DebugUI::draw(Editor& rEditor_)
 				ImGui::InputText("Land table module (.rel)", this->newLandTableRel, sizeof(this->newLandTableRel));
 				ImGui::InputText("Land table offset", this->newLandTableOffset, sizeof(this->newLandTableOffset));
 				ImGui::InputText("Textures (.gvm)", this->newTextures, sizeof(this->newTextures));
-				ImGui::InputText("Stage entities", this->newStageEntities, sizeof(this->newStageEntities));
 			}
 			else if(this->newEngine == 2)
 			{
@@ -236,7 +235,6 @@ void DebugUI::draw(Editor& rEditor_)
 				level.placementFiles = this->newPlacementFiles;
 				level.entityTable = this->newEntityTable;
 				level.typeNames = this->newTypeNames;
-				level.stageEntities = this->newStageEntities;
 				level.model = this->newModel;
 				level.collisions = this->newCollisions;
 				rEditor_.newLevel(level);

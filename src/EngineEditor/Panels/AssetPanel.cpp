@@ -486,21 +486,30 @@ void AssetPanel::loadFolderIcon()
 	stbi_image_free(pPixels);
 }
 
-/* The behaviours whose sourceFile is the open script file, as tiles in the size of the asset tiles. Dragging one carries its name ("BEHAVIOR" payload, with the '\0'); the inspector looks it up in entityBehaviorTypes. Read live every frame, so a script loaded after the tab was opened shows up. */
+/* The behaviours (sf.behavior) and the bound area onTouch functions (sf.onTouch) whose sourceFile is the open script file, as tiles in the size of the asset tiles. Dragging a behaviour carries its name ("BEHAVIOR" payload, with the '\0'); the inspector looks it up in entityBehaviorTypes. An onTouch function is a "TCH" tile with the "TOUCH" payload (its name), looked up in boundAreaFunctions by the bound area rules. Read live every frame, so a script loaded after the tab was opened shows up. */
 void AssetPanel::drawBehaviours()
 {
 	const auto& rTypes = Globals::Game::entityBehaviorTypes;
+	const auto& rTouch = Globals::Game::boundAreaFunctions;
 	std::vector<std::string> names;
+	std::vector<std::string> touchNames;
 	for(uint32_t i = 0; i < rTypes.objects.size(); i++)
 	{
 		if(rTypes.alive[i] && rTypes.objects[i].sourceFile == this->scriptFile) names.push_back(rTypes.names[i]);
 	}
-	if(names.empty())
+	for(uint32_t i = 0; i < rTouch.objects.size(); i++)
 	{
-		ImGui::TextUnformatted("No behaviour registered by this file (sf.behavior): it may be loaded by another script, or not be loaded at all.");
+		if(rTouch.alive[i] && rTouch.objects[i].sourceFile == this->scriptFile) touchNames.push_back(rTouch.names[i]);
+	}
+	if(names.empty() && touchNames.empty())
+	{
+		ImGui::TextUnformatted("No behaviour (sf.behavior) or onTouch function (sf.onTouch) registered by this file: it may be loaded by another script, or not be loaded at all.");
 		return;
 	}
 	std::sort(names.begin(), names.end());
+	std::sort(touchNames.begin(), touchNames.end());
+	size_t behaviourCount = names.size();
+	names.insert(names.end(), touchNames.begin(), touchNames.end());
 	const ImGuiStyle& rStyle = ImGui::GetStyle();
 	float cell = TileSize + 2.0f * rStyle.FramePadding.x;
 	int columns = std::max(1, static_cast<int>((ImGui::GetContentRegionAvail().x + rStyle.ItemSpacing.x) / (cell + rStyle.ItemSpacing.x)));
@@ -510,11 +519,12 @@ void AssetPanel::drawBehaviours()
 		ImGui::PushID(i);
 		ImGui::BeginGroup();
 		ImGui::PushStyleColor(ImGuiCol_Button, kindColor(Script));
-		ImGui::Button("BHV", ImVec2(cell, TileSize + 2.0f * rStyle.FramePadding.y));
+		bool isTouch = static_cast<size_t>(i) >= behaviourCount;
+		ImGui::Button(isTouch ? "TCH" : "BHV", ImVec2(cell, TileSize + 2.0f * rStyle.FramePadding.y));
 		ImGui::PopStyleColor();
 		if(ImGui::BeginDragDropSource())
 		{
-			ImGui::SetDragDropPayload("BEHAVIOR", names[i].c_str(), names[i].size() + 1);
+			ImGui::SetDragDropPayload(isTouch ? "TOUCH" : "BEHAVIOR", names[i].c_str(), names[i].size() + 1);
 			ImGui::TextUnformatted(names[i].c_str());
 			ImGui::EndDragDropSource();
 		}

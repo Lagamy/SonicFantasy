@@ -33,7 +33,7 @@ constexpr const char* ExternalScriptsRoot = "Assets/External/Scripts/";
 /* Runs a script below a root (path_ relative to it; Assets/Scripts by default); an error is printed on stderr and gives false. */
 bool loadFile(const char* path_, const char* root_ = ScriptsRoot);
 
-/* Runs Assets/External/Scripts/main.lua, the project's own scripts (it includes the others with sf.include, which inside an External script is relative to Assets/External/Scripts); a missing file is nothing to load. Call right after Scripts/main.lua: the behaviours must be registered before registerPrefabs and the Changed files name them. */
+/* Runs Assets/External/Scripts/main.lua, the project's own scripts, then every .lua below its Entity/ and BoundArea/ folders (the folder says what a script is: sf.behavior or sf.onTouch; in name order) (main.lua includes the others with sf.include, which inside an External script is relative to Assets/External/Scripts); a missing file is nothing to load. Call right after Scripts/main.lua: the behaviours must be registered before registerPrefabs and the Changed files name them. */
 void loadExternalScripts();
 
 /* Called by the gameplay system and the collision system for a function a script registered (a Lua registry reference). callBehavior also gets the behaviour's PoolId: before its first call on an entity it writes the behaviour's declared fields into the entity's state table (EntityBehavior::fields). */

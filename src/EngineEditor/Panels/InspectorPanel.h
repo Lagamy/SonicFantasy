@@ -31,6 +31,16 @@ private:
 	bool openPick = false;
 	std::string message;
 
+	/* The BoundArea tab's "Tags and behaviours" box: the names being typed for a new tag and a new behaviour. */
+	char newTagName[64] = "";
+	char newBehaviorName[64] = "";
+
+	/* The rename popup of that box: what is being renamed (0 nothing, 1 a tag by name, 2 a behaviour by its index in BoundAreaData::behaviors) and the text typed. */
+	int renameKind = 0;
+	std::string renameTag;
+	size_t renameIndex = 0;
+	char renameText[64] = "";
+
 	/* The switch of the "Every entity of <prefab>" boxes (all four tabs): false = the open level's edits (Prefab::level, saved with the level), true = every level's (Prefab::changed, the prefab's Changed file, saved at once). Not for an External prefab. */
 	bool allLevels = false;
 
@@ -41,6 +51,7 @@ private:
 	void acceptScript(PoolId entityId_, bool forPrefab_);
 	void drawTransform(PoolId entityId_);
 	void drawBoundArea(PoolId entityId_);
+	void drawBoundAreaRules();
 	void drawPhysics(PoolId entityId_);
 	void drawBehaviour(PoolId entityId_);
 	void drawFields(PoolId entityId_, PoolId behaviorId_);

@@ -4,7 +4,8 @@ for the stage's SALandTableKey, and the object list's names (type -> name).
 
 Run from anywhere:  python3 tools/genSAEntityKeys.py
 Inputs: build/Disks/SADX.iso (the disc table through tools/dumpCCL.py; the .rel modules through tools/decomp/sadx/relTool.py, which reads and decompresses them), and the SA Tools INIs
-of tools/.cache/gc_sadx/ (_Stg01.ini, _Main.ini: names, addresses and textures of the modules' models). Writes only src/SAEntityKeys.h.
+of tools/.cache/gc_sadx/ (_Stg01.ini, _Main.ini: names, addresses and textures of the modules' models). Writes src/SAEntityKeys.h and External/Prefabs/SADX/Placement.json (the objects' rotation recipes and variant field,
+which are not resource keys: Loading::loadPrefabData gives them to the prefabs).
 
 Where each fact comes from (external: SA Tools' INIs and the module's own data; the object list and relocations decoded from _Stg01.rel):
 - The object list of a stage module (STAGES below): an array of 20 byte entries { u32 flags, f32 clip distance squared, u32 0, u32 function, u32 name pointer } starting at ENTRIES, in the
@@ -13,7 +14,7 @@ Where each fact comes from (external: SA Tools' INIs and the module's own data; 
 - An object's model: the module's relocations tell which data each instruction of its function refers to (the high and low halves of an address, types 6 and 4). The first model of the INI
   (basicmodel with a texture, not a Debug one) referenced between the function's start and the next function start (the targets of calls and of function pointers, in the module) is the object's
   model. Hypothesis: the object's main function may draw several models, or reach its model through another function or a table, and then the first one is not the object's or none is found.
-  MODEL_NAMES below overrides it by the INI's model name for the shared objects, whose functions are in _Main.rel with no clear boundaries (hypothesis from the names).
+  MODEL_NAMES (tools/data/SADXObjectModels.json) overrides it by the INI's model name for the shared objects, whose functions are in _Main.rel with no clear boundaries (hypothesis from the names).
 - Textures: the INI's `texture` of the model (OBJ_BEACH, OBJ_REGULAR ...) is the name of a .gvm on the disc (the disc's own spelling is used: it is case sensitive).
 - Motions: a model's INI section lists its animation files (`animations=`); each is an `animation` section with its address and `numparts` (the node count SAMotionKey needs). They are the
   entity's motions, in the INI's order with the ones named like an idle (wait, stand, swim, fly, walk, mihari) first; Level plays the first.
@@ -21,15 +22,15 @@ Where each fact comes from (external: SA Tools' INIs and the module's own data; 
   with the entry count and a mode, as the Ghidra pseudocode of the module shows (sadxDecomp/decompiled*/pseudocode.c; the call and the table, with `count` plausible entries: form <= 10, sane floats).
   The function and the functions it names (calls and the exec / display / destroy pointers it stores), one level down, are searched; a table the code computes is not found. For the shared objects (code in _Main.rel) only tables that src/SAShapeKeys.h already has, with its counts from the decompile, are taken.
 - A model with no `texture` in the INI is drawn with the stage's object textures (STAGE_TEXTURES); the first model in code order may be one the object only collides with or only spawns, which is why
-  NO_MODEL lists the spawners. A model reached through an array of pointers counts (the first model of the array).
+  NO_MODEL (tools/data/SADXObjectModels.json) lists the spawners. A model reached through an array of pointers counts (the first model of the array).
 - Rotation: the objects' display code turns by the task's angles with the Ninja rotate functions of main.dol (0x8004AFDC about z, 0x8004B3E0 about x, 0x8004AF5C about y; external, the decompile
   of main.dol: each builds a rotation about the axis and multiplies it into the current matrix on the right). The calls to them in the object's code, in code order, with the angle each is given
   (found by following r4 backwards to a `lwz r4, 0x14 / 0x18 / 0x1C (task)` of the task's x, y or z angle, plus the `addi`, `addis` and `neg` on the way, or a constant) are the object's recipe
   (the first function of the object's code that has any; the exec function and what it calls or names, two levels). A recipe with an angle that could not be followed or that is a constant, or that does not turn about all three axes (a display that only uses the yaw, or an effect's turn such as O PIER's 45 degrees about x), is not used; one that equals
-  the usual z, x, y is not written (SAEntityKey::rotation is then empty).
+  the usual z, x, y is not written (Placement.json then has no rotation for it).
 Objects with no model found are listed on stdout; they are not in the table, so the level gives them a marker.
 """
-import bisect, collections, math, os, re, struct, sys
+import bisect, collections, json, math, os, re, struct, sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) + "/"
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -40,6 +41,7 @@ import relTool
 dumpCCL.ISO = ROOT + "build/Disks/SADX.iso"
 INI = ROOT + "tools/.cache/gc_sadx/"
 OUT = ROOT + "src/SAEntityKeys.h"
+PLACEMENT_OUT = ROOT + "External/Prefabs/SADX/Placement.json"
 
 # stage name -> (module, its INI, address of the first object list entry, entry count, the SET file)
 STAGES = {
@@ -50,22 +52,13 @@ STAGES = {
 # draws that model, the one its dynamic collision uses, with the stage's object textures).
 STAGE_TEXTURES = {"EmeraldCoast": "OBJ_BEACH"}
 
-# Objects that only spawn or remove other things at run time (hypothesis, from the names; their code names the Orca or the fish models without drawing them): no model, so they get a marker.
-NO_MODEL = {"O AO SUMMON", "O AO KILL", "O PO SUMMON", "O DOLSW"}
-# DOLSW: "dolphin switch" (hypothesis, from the name): its code names the Dolphin model because it starts the jumping dolphin; the switch itself shows nothing.
-# O MKUSA: the only model its code names is Parasol A, which cannot be a grass; no model.
-NO_MODEL.add("O MKUSA")
-# O BEWIND: observed (user): its first guessed model, "Floating Pier", showed up as a piece of a bridge where nothing is. That model belongs to the floating bridge the stage's own code creates
-# (SALandTableKey::stageEntities, docs/EMERALD_COAST_OBJECTS.md), whose code sits in the same source file as BEWIND's (_Stg01.rel 0x16F0C to 0x1883C), so a scan of the relocations of the file finds
-# it. BEWIND's own exec (0x16F0C, 104 bytes) checks the players, clamps its scale components and draws a debug volume only; its two records are high above the ground with scale (111, 0, 230)
-# (hypothesis: an invisible volume).
-NO_MODEL.add("O BEWIND")
+# Objects with no model, the stage objects whose model is named by hand and the shared objects' model names: tools/data/SADXObjectModels.json (hand-written, with the evidence of each).
+with open(ROOT + "tools/data/SADXObjectModels.json") as _f:
+    _OBJECT_MODELS = json.load(_f)
+NO_MODEL = set(_OBJECT_MODELS["noModel"]["names"])
+STAGE_MODEL_NAMES = dict(_OBJECT_MODELS["stageModels"]["values"])
+MODEL_NAMES = dict(_OBJECT_MODELS["mainModels"]["values"])
 
-# Stage objects whose model is named by hand, by the INI's model name of the stage module (hypothesis, from the names). O PARASOL: external, the decompile of _Stg01.rel (FUN_8040e364): the byte of
-# the record's scale x modulo 5 picks one of 5 parasol kinds (its debug text is "KIND OF PARASOL").
-STAGE_MODEL_NAMES = {"O PARASOL": "Parasol A"}
-# O PIER: its guessed model, "Pier Collision", is a white collision plane and "Floating Pier" belongs to O BEWIND's chain (observed, user); the pier's own models are VARIANT_MODELS' (the straight pier is the first).
-STAGE_MODEL_NAMES["O PIER"] = "Pier (Straight)"
 # O PARASOL's kinds: observed, the display function (found by tools/sadxLiveTasks.py in a RAM dump of Emerald Coast act 1, whose display code is _Stg01.rel 0xE008) indexes a table of 5 pointers
 # (_Stg01.rel 0x249CC4) by the kind, and each entry is an array of the kind's model and its breakable pieces: kind 0 Parasol A, 1 Parasol B, 2 Breakable Lounge Chair, 3 Breakable Table Chair, 4
 # Breakable Table. That is why records of different kinds sit at the same spot (an umbrella, a chair and a table together).
@@ -78,49 +71,17 @@ VARIANT_FIELD = {"O PIER": 1}
 # scale x byte modulo 5 as for its models, and the 5 pointers of kinds 0 to 4 are used; a RAM dump of Emerald Coast act 1 shows the kind 4 table at 0x249D38 and the kind 5 table (= kind 0) at 0x249CD8).
 VARIANT_COLLISIONS = {"O PARASOL": (0x249D98, 5, 2), "O PIER": (0x24A034, 2, 2)}
 
-# Display code seen in the same dump (the display functions were read from the machine code, see above): O BED draws "Beach Bed" (_Stg01.rel 0x41C4), O KASA draws "Straw Umbrella" turned
-# about y only (0xB0B8).
-STAGE_MODEL_NAMES.update({"O BED": "Beach Bed", "O KASA": "Straw Umbrella"})
-ROTATION_OVERRIDES = {"O KASA": ["{'Y', 1, 0, false}"]}
+# O KASA (display code seen in a RAM dump of Emerald Coast act 1, machine code, _Stg01.rel 0xB0B8) turns about y only.
+ROTATION_OVERRIDES = {"O KASA": [("Y", 1, 0, False)]}
 # O JUMP (the launch board): its display (_Stg01.rel 0x9560, called by the display function 0x951c; machine code) pushes the matrix, translates, rotates about z, y, x by the task's angles and draws the
 # board's models; the recipe finder gives that to O IWA instead, whose code sits in the same merged function range (0x930c). A launch board is pitched (x) before it is turned (y).
 # O BGIRO: its code (_Stg01.rel 0x6B38 on, machine code) turns by the task's y angle only, in all 8 rotate calls (no z, x), like O KASA; the records' x and z angles (e.g. 65408 and 256) are not used.
 # E SARU (Kiki): observed (user): rotated wrongly everywhere. Its display (_Main.rel 0x3D748, the pseudocode FUN_8053d748) turns about y by the record's x angle plus its y angle (the init
 # 0x3D900 also reads the x angle as a heading, and keeps parameters in the z angle's low bytes), scales by 1.2 times the work scale (not applied by us), and turns about y by 0x8000 before drawing the model.
 # Turns about the same axis add up, so the steps are y by x, y by y and y by 0x8000 (field 3 = no angle).
-ROTATION_OVERRIDES["E SARU"] = ["{'Y', 0, 0, false}", "{'Y', 1, 0, false}", "{'Y', 3, 32768, false}"]
-ROTATION_OVERRIDES["O BGIRO"] = ["{'Y', 1, 0, false}"]
-ROTATION_OVERRIDES["O JUMP"] = ["{'Z', 2, 0, false}", "{'Y', 1, 0, false}", "{'X', 0, 0, false}"]
-
-# Shared objects' models by the INI's model name of _Main.rel (hypothesis from the names; the object list's names are the game's own).
-MODEL_NAMES = {
-    "RING": "Ring",
-    "SPRING": "Spring",
-    # SPRINGB: the INI's "Rotatable Spring" is object/bane_type_b (type B) and the records turn it about all three axes (hypothesis: the name; "Triple Spring" is bane_yoko_body, a side spring).
-    "SPRINGB": "Rotatable Spring",
-    "O AXPNL": "Dash Panel",
-    "O IRONB": "Iron Ball (Joint)",
-    "O FeBJG": "Iron Ball",
-    "O TOGE": "Spikes",
-    "O EME P": "Master Emerald Shard",
-    "O RELEASE": "Capsule",
-    "O SWITCH": "Switch",
-    "CMN_DRING": "Dash Ring",
-    "O BALOON": "Balloon",
-    "O ITEMBOX": "Item Box",
-    "Rocket H": "Rocket Platform",
-    "Rocket HS": "Rocket Platform",
-    "Rocket V": "Rocket Platform",
-    "Rocket VS": "Rocket Platform",
-    "O JPanel": "Jump Panel",
-    "O Save Point": "Checkpoint",
-    "CMN KUSA": "Weed",
-    "O ItemBoxAir": "Item Box (Air)",
-    "E SARU": "Kiki",
-    "E SAITO": "Rhinotank",
-    "E AMEMB": "Sweeper",
-}
-
+ROTATION_OVERRIDES["E SARU"] = [("Y", 0, 0, False), ("Y", 1, 0, False), ("Y", 3, 32768, False)]
+ROTATION_OVERRIDES["O BGIRO"] = [("Y", 1, 0, False)]
+ROTATION_OVERRIDES["O JUMP"] = [("Z", 2, 0, False), ("Y", 1, 0, False), ("X", 0, 0, False)]
 
 def be(b, o, f=">I"):
     return struct.unpack_from(f, b, o)[0]
@@ -386,6 +347,7 @@ def main():
         "*/",
     ]
     texts = []
+    placement = {}
     for stage, (rel, ini, table, count, setfile) in STAGES.items():
         mod = module(rel, ini)
         b = mod.b
@@ -467,7 +429,7 @@ def main():
                     usual = [("Z", ("field", 2, 0, False)), ("X", ("field", 0, 0, False)), ("Y", ("field", 1, 0, False))]
                     if seq != usual:
                         for axis, a in seq:
-                            rotation.append(f'{{\'{axis}\', 3, {a[1]}, false}}' if a[0] == "const" else f'{{\'{axis}\', {a[1]}, {a[2]}, {"true" if a[3] else "false"}}}')
+                            rotation.append((axis, 3, a[1], False) if a[0] == "const" else (axis, a[1], a[2], a[3]))
             if name in ROTATION_OVERRIDES:
                 rotation = ROTATION_OVERRIDES[name]
             stats[2] += bool(rotation)
@@ -481,10 +443,16 @@ def main():
                 for k in range(kinds):
                     variant_collisions.append("{" + f'{{"{mod.name}", 0x{be(b, array + 4 * k):X}, {entries}}}' + "}")
             tail = ""
-            if variant_collisions or name in VARIANT_FIELD:
-                tail = f", {{{', '.join(variant_collisions)}}}, {VARIANT_FIELD.get(name, 0)}"
+            if variant_collisions:
+                tail = f", {{{', '.join(variant_collisions)}}}"
+            if rotation or name in VARIANT_FIELD:
+                placement[name] = {}
+                if rotation:
+                    placement[name]["rotation"] = [{"axis": a, "field": f, "addend": d, "negate": n} for a, f, d, n in rotation]
+                if name in VARIANT_FIELD:
+                    placement[name]["variantField"] = VARIANT_FIELD[name]
             texts.append(f'/* {name}: {model[2]} */')
-            texts.append(f'inline const SAEntityKey {ident}{{"{name}", {{"{model[0]}", 0x{model[1]:X}}}, {{"{tex}"}}, {{{", ".join(motions)}}}, {{{", ".join(collisions)}}}, {{{", ".join(rotation)}}}, {{{", ".join(variants)}}}{tail}}};')
+            texts.append(f'inline const SAEntityKey {ident}{{"{name}", {{"{model[0]}", 0x{model[1]:X}}}, {{"{tex}"}}, {{{", ".join(motions)}}}, {{{", ".join(collisions)}}}, {{{", ".join(variants)}}}{tail}}};')
             table_rows.append((i, ident))
             stats[0] += bool(motions)
             stats[1] += bool(collisions)
@@ -498,6 +466,10 @@ def main():
         texts.append("};")
         print(f"{stage}: {len(table_rows)} of {count} types have a model ({stats[0]} with motions, {stats[1]} with collisions, {stats[2]} with their own rotation order); none for: " + ", ".join(missing))
     open(OUT, "w").write("\n".join(out + texts) + "\n")
+    os.makedirs(os.path.dirname(PLACEMENT_OUT), exist_ok=True)
+    with open(PLACEMENT_OUT, "w") as f:
+        json.dump(placement, f, indent=1)
+        f.write("\n")
 
 
 if __name__ == "__main__":

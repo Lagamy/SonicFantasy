@@ -20,7 +20,7 @@ Rules: never build or run the app. Run only tools that read existing files. NEVE
 
 ## Disc / resource generators (write files; only when asked)
 - `genResourceMap.py` → `ResourceMap.txt`; `genCategoryMap.py` → `ResourceMapByCategory.txt` (run after the first); `genAssetCatalog.py` → `Catalog/AssetCatalog.tsv` for the editor's Assets tab (run after `genResourceMap.py`; `--ai` prints counts only).
-- `genEntityKeys.py [stage ...]` (default stg0100) → `src/STH2005EntityKeys.h`. `genCCLKeys.py` → `src/STH2005ShapeKeys.h`. `genSAEntityKeys.py` → `src/SAEntityKeys.h`. `genSAShapeKeys.py` → `src/SAShapeKeys.h` (needs sadxDecomp pseudocode).
+- `genEntityKeys.py [stage ...]` (default stg0100) → `src/STH2005EntityKeys.h` and `External/Prefabs/STH2005/Placement.json` (reads the hand-written `tools/data/STH2005Objects.json`). `genCCLKeys.py` → `src/STH2005ShapeKeys.h`. `genSAEntityKeys.py` → `src/SAEntityKeys.h` and `External/Prefabs/SADX/Placement.json` (reads the hand-written `tools/data/SADXObjectModels.json`). `genSAShapeKeys.py` → `src/SAShapeKeys.h` (needs sadxDecomp pseudocode).
 - `dumpCCL.py [outDir] | -x NAME (hex) | -p NAME (parsed) | --check (strict all)`: Shadow `.CCL` entries.
 
 ## RAM-dump readers (read only, print)

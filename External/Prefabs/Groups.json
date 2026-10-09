@@ -1,0 +1,101 @@
+{
+ "SADX": {
+  "prefixes": {
+   "E ": "Enemies"
+  },
+  "names": {
+   "NPCs": [
+    "O TIKAL",
+    "S KAERU"
+   ],
+   "Interactible objects": [
+    "RING",
+    "SPRING",
+    "SPRINGB",
+    "O AXPNL",
+    "O IRONB",
+    "O FeBJG",
+    "O TOGE",
+    "O EME P",
+    "O RELEASE",
+    "O SWITCH",
+    "CMN_DRING",
+    "O BALOON",
+    "O ITEMBOX",
+    "O ItemBoxAir",
+    "Rocket H",
+    "Rocket HS",
+    "Rocket V",
+    "Rocket VS",
+    "O JPanel",
+    "O Save Point",
+    "O BUBBLE",
+    "O JUMP",
+    "O BGIRO",
+    "O BFLOOT",
+    "S GENE"
+   ]
+  }
+ },
+ "STH2005": {
+  "prefixes": {
+   "GUN_": "Enemies",
+   "BK_": "Enemies",
+   "EGG_": "Enemies"
+  },
+  "names": {
+   "Characters": [
+    "Amy",
+    "Charmy",
+    "DoomsEye",
+    "Eggman",
+    "Espio",
+    "Knuckles",
+    "Maria",
+    "Omega",
+    "Rouge",
+    "Sonic",
+    "Tails",
+    "Vector"
+   ],
+   "Interactible objects": [
+    "BALLOON",
+    "BLASTBREAK",
+    "BOMB",
+    "BREAKOBJ",
+    "CAPTURECAGE",
+    "CONTAINER",
+    "CONTAINERHARD",
+    "CONTAINERSECRET",
+    "CONTAINERUNBREAK",
+    "CONTAINERWEAPON",
+    "DASHPANEL",
+    "DASHRING",
+    "FAN",
+    "FRUIT",
+    "GOALRING",
+    "HEALINGUNIT",
+    "HINTRING",
+    "ITEMBOX",
+    "JUMPBOARD",
+    "LONGSPRING",
+    "RING",
+    "ROCKET",
+    "SAVEPOINT",
+    "SECRETDOOR",
+    "SECRETKEY",
+    "SETWEAPON",
+    "SPRING",
+    "SWITCH",
+    "TANK",
+    "TARGETSWITCH",
+    "TURNOVER",
+    "UPDOWNREEL",
+    "WEIGHT",
+    "FOOTINGMOVABLE",
+    "CITYLASER",
+    "FALLBUILDING"
+   ]
+  }
+ }
+}

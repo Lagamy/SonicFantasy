@@ -6,6 +6,7 @@
 #include "TextureChoice.h"
 #include "MeshChoice.h"
 #include "CollisionShape.h"
+#include <cstdint>
 #include <string>
 #include <vector>
 #include <glm/glm.hpp>
@@ -23,6 +24,18 @@ enum class PrefabGroup
 	Characters,
 	StaticObjects,
 	InteractibleObjects
+};
+
+/*
+How many entities one placement record of a Shadow object makes, and where they are (see RingLine.h): Single is one per model of the first variant at the record's position, RingLine is the layout of the ring object (a record
+is a count of rings along a line, or the other shapes of the game's ring code), Variant is for objects whose record names one of the BIN's variants: the u32 at the start of its parameters is an index into Prefab::variants (observed
+on the stage art objects; hypothesis that it is the index of the .BIN's info), and the record makes one entity per model of that variant.
+*/
+enum class PlacementLayout
+{
+	Single,
+	RingLine,
+	Variant
 };
 
 /* What spawnPrefab (API.h) makes an entity of a prefab from. */
@@ -57,13 +70,29 @@ struct PrefabEdits
 };
 
 /*
+One rotation of an SADX object's display code (see Prefab::rotation): about axis ('X', 'Y' or 'Z') by the task's angle `field` (0 x, 1 y, 2 z, in BAMS), negated if negate, plus addend. A step with
+field 3 uses no angle: it turns by addend alone.
+*/
+struct SARotationStep
+{
+	char axis;
+	uint8_t field;
+	int32_t addend;
+	bool negate;
+};
+
+/*
 A prefab is a kind of entity the engine can make, built from the entity resource keys (SAEntityKey, STH2005::EntityKey) of the generated tables a level file can name, plus the two player characters. Every entity
 is made from one with spawnPrefab (API.h), which remembers it in Entity::prefabId; the editor lists the prefabs by game and group, and groups the entities by their prefab.
 It is registered once, by registerPrefabs, in Globals::Game::prefabs under the name "<game>/<key name>" ("SADX/SPRING", "STH2005/SPRING"; the games' folders are SADX and STH2005), which is also the name scripts use (sf.prefabBehavior).
 saKey / oneKey point into the generated tables, which live for the whole run. name is the key's name, for reading.
 hasModel, hasCollision and hasBehaviour say what the prefab is made of: a model it is drawn with, collision shapes the key lists (the player characters get theirs from DebugSetup), and a script behaviour registered for it (sf.prefabBehavior; the characters get theirs from attachPlayer). The editor draws a prefab without a
 model as a cube: dark blue if it only has collision, dark red if it only has behaviour, dark purple if it has both and dark grey if it has neither (PrefabThumbnails).
-group is a hypothesis of mine, from a hand-written table in Prefab.cpp: the keys do not say what an object is.
+group is a hypothesis of mine, from External/Prefabs/Groups.json (StaticObjects where it lists nothing): the keys do not say what an object is. layout, variants and loopMotion (Shadow objects) come from External/Prefabs/STH2005/Placement.json, made by tools/genEntityKeys.py
+(Loading::loadPrefabData reads both after registerPrefabs): see PlacementLayout; variants lists, per variant (the .BIN's info), the indices into the key's models of the models it is made of, and the collision with the variant's index (if any) goes to the first of them (empty: model 0 alone);
+loopMotion makes the motion the entity starts on loop (set for living things, enemies and characters, whose idle goes on) instead of playing once.
+SADX objects have rotation and variantField from External/Prefabs/SADX/Placement.json (also made by tools/genSAEntityKeys.py; an object it does not list has the defaults): rotation is the order and angles the object's display code turns by when it is not the usual z, x, y of the three angles (empty = the usual; found by the generator from the object's code),
+and variantField is the component of the record's scale (0 x, 1 y, 2 z) that, as a byte modulo the count, picks the key's variantModels / variantCollisions entry (O PARASOL by x, O PIER by y).
 An External prefab (PrefabKind::External, game GLTF_FILE) is made by the user in the editor's Prefabs tab, in the "Global" folder (every level) or the "Level" folder (the open level's), under the pool name "Global/<name>" / "Level/<name>"; it has no key and starts empty. Its
 entities are External-only (Entity::setExternalOnly): drawn by an external model alone. folder is where the tab lists it ("" = the top, else "a/b"); inLevel says which of the two it is. Its model and texture (mesh, texture) are part of its definition, saved with the prefab
 (Loading/ExternalPrefabs.h), not with the level's edits; the other edits (behaviours, shapes) are the level's like any prefab's (no Changed file).
@@ -79,6 +108,11 @@ struct Prefab
 	bool hasModel = false;
 	bool hasCollision = false;
 	bool hasBehaviour = false;
+	PlacementLayout layout = PlacementLayout::Single;
+	std::vector<std::vector<uint32_t>> variants;
+	bool loopMotion = false;
+	std::vector<SARotationStep> rotation;
+	uint8_t variantField = 0;
 	/* What the editor changed for every entity of the prefab: "changed" in every level (the prefab's Changed file, read at startup, Loading::loadChangedPrefabs), "source" in the open level's Source Game Level (Levels/<level>/SourceGamePrefabs/<prefab name>/prefab.json, read at each level load by Loading::loadSourcePrefabs, written by File > Save Source Game Level), "level" in the open level (the level file's "prefabs", cleared at each level load). An entity gets the game's data, then changed, then source, then level (spawnPrefab). An External prefab has no changed set; its model and texture are level.mesh and level.texture (its definition, see above). */
 	PrefabEdits changed;
 	PrefabEdits source;

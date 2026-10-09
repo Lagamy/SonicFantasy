@@ -131,8 +131,21 @@ bool loadFile(const char* path_, const char* root_)
 
 void loadExternalScripts()
 {
-	if(!std::filesystem::exists(std::string(ExternalScriptsRoot) + "main.lua")) return;
-	loadFile("main.lua", ExternalScriptsRoot);
+	if(std::filesystem::exists(std::string(ExternalScriptsRoot) + "main.lua")) loadFile("main.lua", ExternalScriptsRoot);
+
+	/* Then every .lua of the two kind folders, Entity (sf.behavior) and BoundArea (sf.onTouch), in name order so the load order is the same every run. */
+	for(const char* pFolder : {"Entity", "BoundArea"})
+	{
+		std::filesystem::path folder = std::filesystem::path(ExternalScriptsRoot) / pFolder;
+		if(!std::filesystem::is_directory(folder)) continue;
+		std::vector<std::string> files;
+		for(const auto& rEntry : std::filesystem::recursive_directory_iterator(folder))
+		{
+			if(rEntry.is_regular_file() && rEntry.path().extension() == ".lua") files.push_back(std::filesystem::relative(rEntry.path(), ExternalScriptsRoot).generic_string());
+		}
+		std::sort(files.begin(), files.end());
+		for(const std::string& rFile : files) loadFile(rFile.c_str(), ExternalScriptsRoot);
+	}
 }
 
 /* A vector of three numbers as a table {x, y, z}. */

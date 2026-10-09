@@ -23,7 +23,7 @@ A tile of the wooden pier. Its record's `scl.y & 1` picks the kind (the game's d
   y -34.6) and a side beam. The intact tile is entry 0, one mesh with all of it.
 - The display (`0x12458` on) turns by the task's three angles z, x, y with no addend, like the usual order (observed: machine code), and draws entry 0.
 - The ~60 records of Set0100S.bin sit 50 apart along lines at y = 7 (x 4052 to 5053, z 366 to 1766); the odd `scl.y` (1, 5, 7) are at the corners of the loop.
-- Used by us: the first model of the kind (`SAEntityKey::variantModels`, picked by `scl.y`) and the kind's collision shapes (`variantCollisions`), see `tools/genSAEntityKeys.py` (`VARIANT_*`).
+- Used by us: the first model of the kind (`SAEntityKey::variantModels`, picked by `scl.y` through `Prefab::variantField`) and the kind's collision shapes (`variantCollisions`), see `tools/genSAEntityKeys.py` (`VARIANT_*`).
 
 ### Breaking (not implemented, no behaviour system yet)
 
@@ -51,7 +51,7 @@ and the same in the manager's exec `0x17D4C`): push, `njTranslateV` to the work 
 `njTranslate(20, 0, 0)` + draw the pier + `njTranslate(20, 0, 0)` + draw the links, then `njTranslate(20, 0, 0)` + the last pier, `njTranslate(95, 0, 0)` and the Backward dock. The piers and docks are also
 separate tasks (exec/display pairs `0x176D8`/`0x1762C` for a pier, `0x179A4`/`0x17930` for a dock) created at the positions in the table (`x0 + 75 + 20 = 95` for the first pier, 40 apart: `0x203A8` = 1000 and
 `0x203A4` = 150 give the Backward dock at 1150). A pier task draws `njTranslateV`, `njRotateZ` and `njRotateX` by its work `+0x1C` and the Floating Pier; a dock only `njRotateY`.
-Implemented: that rest pose, as `SALandTableKey::stageEntities` (`EmeraldCoastStageEntities`, `src/ResourceKeys.h`).
+Implemented: that rest pose. The four disc keys are in `src/ResourceKeys.h` (`EmeraldCoastBridgeDockForward`, `DockBackward`, `Pier`, `Links`), registered as prefabs by `saStageCreated` in `LevelLoader.cpp`; the 51 positions are the `source.added` of `Levels/EmeraldCoast/EmeraldCoast.json` (prefabs `SADX/Floating Dock (Forward)`, `SADX/Floating Pier`, `SADX/Floating Pier Links`, `SADX/Floating Dock (Backward)`), made after the SET records so the entity indices of those do not change.
 
 ### Wave and weight behaviour (not implemented, no behaviour system yet)
 
@@ -71,6 +71,7 @@ bridge); it is given no model (`NO_MODEL` in `tools/genSAEntityKeys.py`, it gets
 ## Where in the code
 
 - `tools/genSAEntityKeys.py`: `VARIANT_MODELS`, `VARIANT_FIELD`, `VARIANT_COLLISIONS` (O PIER, O PARASOL), `NO_MODEL` (O BEWIND).
-- `src/Keys/SAKeys.h`: `SAEntityKey::variantModels / variantCollisions / variantField`, `SAStageEntityKey`, `SALandTableKey::stageEntities`.
-- `src/Objects/Level.cpp`: `Level::setSAEntities` (SET records, then the stage's own entities).
-- `src/ResourceKeys.h`: `EmeraldCoastStageEntities`.
+- `src/Keys/SAKeys.h`: `SAEntityKey::variantModels / variantCollisions` (the picking field is `Prefab::variantField`, `External/Prefabs/SADX/Placement.json`).
+- `src/Objects/Level.cpp`: `Level::setSAEntities` (SET records only; the stage's own entities come from the level file's `source`).
+- `src/ResourceKeys.h`: the four `EmeraldCoastBridge*` keys (no positions).
+- `Levels/EmeraldCoast/EmeraldCoast.json`: the `source.added` list.

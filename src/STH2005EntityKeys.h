@@ -355,9 +355,7 @@ inline const STH2005::EntityKey Entity_stg0100_gdt_ARTISTGADGET{
 	},
 	{{"stg0100/stg0100_gdt.one"}, "STG_GDT.TXD"},
 	{{{"stg0100/stg0100_gdt.one"}, "CT0100HIWAYLIGHTBRK_ANM.MTN", "CT0100HIWAYLIGHTBRK_ANM", "CT0100HIWAYLIGHTBRK.BON"}},
-	{{{"stg0100/stg0100_gdt.one"}, "CT0100KOWAREBLD.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0000BARRICADE.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100WALLFOOTING.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100BENCH.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100SIGNDONOTENT.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100SIGNPARK.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100DUMPSTER.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100GARBAGEBIN.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100FIREHYD.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100PAPERBOX.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100BLOCK.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100CONCWALLLG.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100CONCWALLSM.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100DEBRIS.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100CONCPILLARLG.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100CONCPILLARSM.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100TBOOTH.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0000CARCRUSHYLW.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100CARCRUSHTRK.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100HIWAYLIGHT.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100TRAFFICSIGNAL.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100CONE.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100TREE.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100CONCPILLARLGLEFT.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100CONCPILLARSMLEFT.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100HIWAYLIGHT.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100TREEBRKLEFT.CCL"}},
-	STH2005::PlacementLayout::Variant,
-	{{0}, {1}, {2}, {3}, {4}, {5}, {6}, {7}, {8}, {9}, {10}, {11}, {12}, {13}, {14}, {15}, {16, 17}, {18}, {19}, {20, 21}, {22}, {23}, {24}, {48}, {49}, {50}, {52}}
+	{{{"stg0100/stg0100_gdt.one"}, "CT0100KOWAREBLD.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0000BARRICADE.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100WALLFOOTING.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100BENCH.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100SIGNDONOTENT.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100SIGNPARK.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100DUMPSTER.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100GARBAGEBIN.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100FIREHYD.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100PAPERBOX.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100BLOCK.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100CONCWALLLG.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100CONCWALLSM.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100DEBRIS.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100CONCPILLARLG.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100CONCPILLARSM.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100TBOOTH.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0000CARCRUSHYLW.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100CARCRUSHTRK.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100HIWAYLIGHT.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100TRAFFICSIGNAL.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100CONE.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100TREE.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100CONCPILLARLGLEFT.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100CONCPILLARSMLEFT.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100HIWAYLIGHT.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100TREEBRKLEFT.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg0100_gdt_CITYCHAOSEMERALD{
 	"CITYCHAOSEMERALD",
@@ -366,9 +364,7 @@ inline const STH2005::EntityKey Entity_stg0100_gdt_CITYCHAOSEMERALD{
 	},
 	{{"stg0100/stg0100_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg0100/stg0100_gdt.one"}, "CT0100CHAOSEMERALD.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}}
+	{{{"stg0100/stg0100_gdt.one"}, "CT0100CHAOSEMERALD.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg0100_gdt_CITYLASER{
 	"CITYLASER",
@@ -378,9 +374,7 @@ inline const STH2005::EntityKey Entity_stg0100_gdt_CITYLASER{
 	},
 	{{"stg0100/stg0100_gdt.one"}, "STG_GDT.TXD"},
 	{{{"stg0100/stg0100_gdt.one"}, "CT0100CITYLASERPREDICT_ANM.MTN", "CT0100CITYLASERPREDICT_ANM", "CT0100CITYLASERPREDICT.BON"}, {{"stg0100/stg0100_gdt.one"}, "CT0100CITYLASER_ANM.MTN", "CT0100CITYLASER_ANM", "CT0100CITYLASER.BON"}},
-	{},
-	STH2005::PlacementLayout::Single,
-	{{0}, {1}}
+	{}
 };
 inline const STH2005::EntityKey Entity_stg0100_gdt_FALLBUILDING{
 	"FALLBUILDING",
@@ -394,9 +388,7 @@ inline const STH2005::EntityKey Entity_stg0100_gdt_FALLBUILDING{
 	},
 	{{"stg0100/stg0100_gdt.one"}, "STG_GDT.TXD"},
 	{{{"stg0100/stg0100_gdt.one"}, "CT0100ANTENA15_ANM.MTN", "CT0100ANTENA15_ANM", "CT0100ANTENA15.BON"}, {{"stg0100/stg0100_gdt.one"}, "CT0100ANTENA30_ANM.MTN", "CT0100ANTENA30_ANM", "CT0100ANTENA30.BON"}, {{"stg0100/stg0100_gdt.one"}, "CT0100BLDFALL_FALL.MTN", "CT0100BLDFALL_FALL", "CT0100BLDFALL.BON"}},
-	{{{"stg0100/stg0100_gdt.one"}, "CT0100ANTENA15_FL.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100ANTENA15_FE.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100ANTENA30_FL.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100ANTENA30_FE.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100BLDFALL.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100ANTENABASE.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0, 3}, {1, 3}, {2}, {0, 4}, {1, 4}}
+	{{{"stg0100/stg0100_gdt.one"}, "CT0100ANTENA15_FL.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100ANTENA15_FE.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100ANTENA30_FL.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100ANTENA30_FE.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100BLDFALL.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100ANTENABASE.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg0100_gdt_FOOTINGMOVABLE{
 	"FOOTINGMOVABLE",
@@ -405,9 +397,7 @@ inline const STH2005::EntityKey Entity_stg0100_gdt_FOOTINGMOVABLE{
 	},
 	{{"stg0100/stg0100_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg0100/stg0100_gdt.one"}, "CT0000FOOTING.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}}
+	{{{"stg0100/stg0100_gdt.one"}, "CT0000FOOTING.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg0100_gdt_HELICOPTER{
 	"HELICOPTER",
@@ -417,9 +407,7 @@ inline const STH2005::EntityKey Entity_stg0100_gdt_HELICOPTER{
 	},
 	{{"stg0100/stg0100_gdt.one"}, "STG_GDT.TXD"},
 	{{{"stg0100/stg0100_gdt.one"}, "CT0100HELI_ANM.MTN", "CT0100HELI_ANM", "CT0100HELI.BON"}},
-	{{{"stg0100/stg0100_gdt.one"}, "CT0100HELI.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100HELI_HOLD.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}}
+	{{{"stg0100/stg0100_gdt.one"}, "CT0100HELI.CCL"}, {{"stg0100/stg0100_gdt.one"}, "CT0100HELI_HOLD.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg0100_gdt_STICK{
 	"STICK",
@@ -429,9 +417,7 @@ inline const STH2005::EntityKey Entity_stg0100_gdt_STICK{
 	},
 	{{"stg0100/stg0100_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg0100/stg0100_gdt.one"}, "CT0100SIGNSPD.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}}
+	{{{"stg0100/stg0100_gdt.one"}, "CT0100SIGNSPD.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg0100_gdt_TURNOVER{
 	"TURNOVER",
@@ -440,9 +426,7 @@ inline const STH2005::EntityKey Entity_stg0100_gdt_TURNOVER{
 	},
 	{{"stg0100/stg0100_gdt.one"}, "STG_GDT.TXD"},
 	{{{"stg0100/stg0100_gdt.one"}, "CT0100TURNOVER.MTP", "ct0100turnover_on", "CT0100TURNOVER.BON"}, {{"stg0100/stg0100_gdt.one"}, "CT0100TURNOVER.MTP", "ct0100turnover_up", "CT0100TURNOVER.BON"}, {{"stg0100/stg0100_gdt.one"}, "CT0100TURNOVER.MTP", "ct0100turnover_off", "CT0100TURNOVER.BON"}},
-	{{{"stg0100/stg0100_gdt.one"}, "CT0100TURNOVER.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}}
+	{{{"stg0100/stg0100_gdt.one"}, "CT0100TURNOVER.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_BALLOON{
 	"BALLOON",
@@ -452,9 +436,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_BALLOON{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg_cmn_gdt.one"}, "BALLOON.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0, 1}}
+	{{{"stg_cmn_gdt.one"}, "BALLOON.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_BLASTBREAK{
 	"BLASTBREAK",
@@ -463,9 +445,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_BLASTBREAK{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg_cmn_gdt.one"}, "BRKBLAST.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}}
+	{{{"stg_cmn_gdt.one"}, "BRKBLAST.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_BOMB{
 	"BOMB",
@@ -475,9 +455,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_BOMB{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg_cmn_gdt.one"}, "BOMB.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0, 1}}
+	{{{"stg_cmn_gdt.one"}, "BOMB.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_BREAKOBJ{
 	"BREAKOBJ",
@@ -490,9 +468,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_BREAKOBJ{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg_cmn_gdt.one"}, "BRKOBJGUN.CCL"}, {{"stg_cmn_gdt.one"}, "BRKOBJBK.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}, {1, 2}}
+	{{{"stg_cmn_gdt.one"}, "BRKOBJGUN.CCL"}, {{"stg_cmn_gdt.one"}, "BRKOBJBK.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_CAPTURECAGE{
 	"CAPTURECAGE",
@@ -504,9 +480,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_CAPTURECAGE{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg_cmn_gdt.one"}, "CAPTCAGE.CCL"}, {{"stg_cmn_gdt.one"}, "CAPTCAGECRSH.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0, 1}, {2}}
+	{{{"stg_cmn_gdt.one"}, "CAPTCAGE.CCL"}, {{"stg_cmn_gdt.one"}, "CAPTCAGECRSH.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_CONTAINER{
 	"CONTAINER",
@@ -527,9 +501,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_CONTAINER{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg_cmn_gdt.one"}, "BOXBW.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}, {1, 2}, {3}}
+	{{{"stg_cmn_gdt.one"}, "BOXBW.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_CONTAINERHARD{
 	"CONTAINERHARD",
@@ -550,9 +522,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_CONTAINERHARD{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg_cmn_gdt.one"}, "BOXBM.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}, {1, 2}, {3}}
+	{{{"stg_cmn_gdt.one"}, "BOXBM.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_CONTAINERSECRET{
 	"CONTAINERSECRET",
@@ -564,9 +534,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_CONTAINERSECRET{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg_cmn_gdt.one"}, "BOXBW.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}}
+	{{{"stg_cmn_gdt.one"}, "BOXBW.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_CONTAINERUNBREAK{
 	"CONTAINERUNBREAK",
@@ -578,9 +546,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_CONTAINERUNBREAK{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg_cmn_gdt.one"}, "BOXBU.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}, {1, 2}, {3}}
+	{{{"stg_cmn_gdt.one"}, "BOXBU.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_CONTAINERWEAPON{
 	"CONTAINERWEAPON",
@@ -601,9 +567,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_CONTAINERWEAPON{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg_cmn_gdt.one"}, "BOXBW.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}, {1, 2}, {3}}
+	{{{"stg_cmn_gdt.one"}, "BOXBW.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_DASHPANEL{
 	"DASHPANEL",
@@ -613,9 +577,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_DASHPANEL{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{{{"stg_cmn_gdt.one"}, "DASHPANEL00_ANM.MTN", "DASHPANEL00_ANM", "DASHPANEL00.BON"}},
-	{{{"stg_cmn_gdt.one"}, "DASHPANEL.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}}
+	{{{"stg_cmn_gdt.one"}, "DASHPANEL.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_DASHRING{
 	"DASHRING",
@@ -626,9 +588,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_DASHRING{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{{{"stg_cmn_gdt.one"}, "DASHRING00_ANM.MTN", "DASHRING00_ANM", "DASHRING00.BON"}},
-	{{{"stg_cmn_gdt.one"}, "DASHRING.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}}
+	{{{"stg_cmn_gdt.one"}, "DASHRING.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_FAN{
 	"FAN",
@@ -637,9 +597,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_FAN{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{{{"stg_cmn_gdt.one"}, "FAN.MTP", "fan_anm", "FAN.BON"}},
-	{{{"stg_cmn_gdt.one"}, "FAN.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}}
+	{{{"stg_cmn_gdt.one"}, "FAN.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_FRUIT{
 	"FRUIT",
@@ -651,9 +609,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_FRUIT{
 	},
 	{{"stg0404/stg0404_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg_cmn_gdt.one"}, "JG0404BKFRUIT.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0, 1}, {3}}
+	{{{"stg_cmn_gdt.one"}, "JG0404BKFRUIT.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_GOALRING{
 	"GOALRING",
@@ -662,9 +618,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_GOALRING{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{{{"stg_cmn_gdt.one"}, "GOALRING_ROLL.MTN", "GOALRING_ROLL", "GOALRING.BON"}},
-	{{{"stg_cmn_gdt.one"}, "GOALRING.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}, {0}, {0}, {0}, {0}, {0}, {0}, {0}}
+	{{{"stg_cmn_gdt.one"}, "GOALRING.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_HEALINGUNIT{
 	"HEALINGUNIT",
@@ -676,9 +630,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_HEALINGUNIT{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg_cmn_gdt.one"}, "HEALUNIT.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0, 1, 2, 3}}
+	{{{"stg_cmn_gdt.one"}, "HEALUNIT.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_HINTRING{
 	"HINTRING",
@@ -688,9 +640,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_HINTRING{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg_cmn_gdt.one"}, "HINTRING.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}}
+	{{{"stg_cmn_gdt.one"}, "HINTRING.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_ITEMBOX{
 	"ITEMBOX",
@@ -711,9 +661,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_ITEMBOX{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg_cmn_gdt.one"}, "ITEMBOX.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0, 1, 2, 3}, {0, 1, 2, 4}, {0, 1, 2, 5}, {0, 1, 2, 6}, {0, 1, 2, 7}, {0, 1, 2, 11}, {0, 1, 2, 8}, {0, 1, 2, 9}, {0, 1, 2, 12}, {0, 1, 2, 10}, {0, 1, 2}}
+	{{{"stg_cmn_gdt.one"}, "ITEMBOX.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_JUMPBOARD{
 	"JUMPBOARD",
@@ -723,9 +671,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_JUMPBOARD{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{{{"stg_cmn_gdt.one"}, "JBOARD00_ANM.MTN", "JBOARD00_ANM", "JBOARD00.BON"}},
-	{{{"stg_cmn_gdt.one"}, "JBOARD.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}}
+	{{{"stg_cmn_gdt.one"}, "JBOARD.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_LONGSPRING{
 	"LONGSPRING",
@@ -735,9 +681,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_LONGSPRING{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{{{"stg_cmn_gdt.one"}, "SPRINGB00_ANM.MTN", "SPRINGB00_ANM", "SPRINGB00.BON"}},
-	{{{"stg_cmn_gdt.one"}, "SPRINGB00.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}}
+	{{{"stg_cmn_gdt.one"}, "SPRINGB00.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_RING{
 	"RING",
@@ -747,9 +691,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_RING{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg_cmn_gdt.one"}, "RING.CCL"}},
-	STH2005::PlacementLayout::RingLine,
-	{{0}, {1}}
+	{{{"stg_cmn_gdt.one"}, "RING.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_ROCKET{
 	"ROCKET",
@@ -762,9 +704,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_ROCKET{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{{{"stg_cmn_gdt.one"}, "PARACHUTE_ANM.MTN", "PARACHUTE_ANM", "PARACHUTE.BON"}},
-	{{{"stg_cmn_gdt.one"}, "ROCKET00.CCL"}, {{"stg_cmn_gdt.one"}, "ROCKETSTAGE.CCL"}, {{"stg_cmn_gdt.one"}, "ROCKETBODY.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0, 1}, {2, 3}, {4}}
+	{{{"stg_cmn_gdt.one"}, "ROCKET00.CCL"}, {{"stg_cmn_gdt.one"}, "ROCKETSTAGE.CCL"}, {{"stg_cmn_gdt.one"}, "ROCKETBODY.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_SAVEPOINT{
 	"SAVEPOINT",
@@ -776,9 +716,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_SAVEPOINT{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg_cmn_gdt.one"}, "SAVEPOINT.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0, 1}, {2, 3}}
+	{{{"stg_cmn_gdt.one"}, "SAVEPOINT.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_SECRETDOOR{
 	"SECRETDOOR",
@@ -792,9 +730,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_SECRETDOOR{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{{{"stg_cmn_gdt.one"}, "SECRETDOOR00_ANM.MTN", "SECRETDOOR00_ANM", "SECRETDOOR00.BON"}},
-	{{{"stg_cmn_gdt.one"}, "SECRETDOOR.CCL"}, {{"stg_cmn_gdt.one"}, "SECRETDOORMAIN.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}}
+	{{{"stg_cmn_gdt.one"}, "SECRETDOOR.CCL"}, {{"stg_cmn_gdt.one"}, "SECRETDOORMAIN.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_SECRETKEY{
 	"SECRETKEY",
@@ -803,9 +739,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_SECRETKEY{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{{{"stg_cmn_gdt.one"}, "SECRETKEY00_ANM.MTN", "SECRETKEY00_ANM", "SECRETKEY00.BON"}},
-	{{{"stg_cmn_gdt.one"}, "SECRETKEY.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}}
+	{{{"stg_cmn_gdt.one"}, "SECRETKEY.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_SETWEAPON{
 	"SETWEAPON",
@@ -814,9 +748,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_SETWEAPON{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg_cmn_gdt.one"}, "SETWEAPON00.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}}
+	{{{"stg_cmn_gdt.one"}, "SETWEAPON00.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_SPRING{
 	"SPRING",
@@ -826,9 +758,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_SPRING{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{{{"stg_cmn_gdt.one"}, "SPRING00_ANM.MTN", "SPRING00_ANM", "SPRING00.BON"}},
-	{{{"stg_cmn_gdt.one"}, "SPRING00.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}}
+	{{{"stg_cmn_gdt.one"}, "SPRING00.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_SWITCH{
 	"SWITCH",
@@ -840,9 +770,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_SWITCH{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{{{"stg_cmn_gdt.one"}, "SWITCH.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}, {1, 2}, {1, 3}}
+	{{{"stg_cmn_gdt.one"}, "SWITCH.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_TANK{
 	"TANK",
@@ -851,9 +779,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_TANK{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{{{"stg_cmn_gdt.one"}, "TANK.MTP", "tank_on", "TANK.BON"}, {{"stg_cmn_gdt.one"}, "TANK.MTP", "tank_up", "TANK.BON"}, {{"stg_cmn_gdt.one"}, "TANK.MTP", "tank_off", "TANK.BON"}},
-	{{{"stg_cmn_gdt.one"}, "TANK.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}}
+	{{{"stg_cmn_gdt.one"}, "TANK.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_TARGETSWITCH{
 	"TARGETSWITCH",
@@ -864,9 +790,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_TARGETSWITCH{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{{{"stg_cmn_gdt.one"}, "TARGETSW00_ANM.MTN", "TARGETSW00_ANM", "TARGETSW00.BON"}},
-	{{{"stg_cmn_gdt.one"}, "TARGETSW.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}}
+	{{{"stg_cmn_gdt.one"}, "TARGETSW.CCL"}}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_UPDOWNREEL{
 	"UPDOWNREEL",
@@ -878,9 +802,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_UPDOWNREEL{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{},
-	{},
-	STH2005::PlacementLayout::Single,
-	{{0}, {1, 2}, {3}}
+	{}
 };
 inline const STH2005::EntityKey Entity_stg_cmn_gdt_WEIGHT{
 	"WEIGHT",
@@ -890,9 +812,7 @@ inline const STH2005::EntityKey Entity_stg_cmn_gdt_WEIGHT{
 	},
 	{{"stg_cmn_gdt.one"}, "STG_GDT.TXD"},
 	{{{"stg_cmn_gdt.one"}, "WEIGHT00_ANM.MTN", "WEIGHT00_ANM", "WEIGHT00.BON"}},
-	{{{"stg_cmn_gdt.one"}, "WEIGHT.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{{0}}
+	{{{"stg_cmn_gdt.one"}, "WEIGHT.CCL"}}
 };
 inline const STH2005::EntityKey Entity_amy_Amy{
 	"Amy",
@@ -901,10 +821,7 @@ inline const STH2005::EntityKey Entity_amy_Amy{
 	},
 	{{"character/amy.one"}, "AMY.TXD"},
 	{{{"character/amy.one"}, "AMY.MTP", "amy_idle", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_idle_b", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_idle_c", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_atc", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_break_a", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_break_b", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_break_c", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_break_turn_l", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_break_turn_r", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_dam_m_a", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_dam_m_b", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_dam_m_c", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_edge_otto", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_fw_jump", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_jump_a", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_jump_b", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_jump_c", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_jump_d", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_jump_e", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_meet", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_mid_run", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_slow_run", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_top_run", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_trap_jump", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_turn_l", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_turn_r", "AMY.BON"}, {{"character/amy.one"}, "AMY.MTP", "amy_walk", "AMY.BON"}},
-	{},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{}
 };
 inline const STH2005::EntityKey Entity_BKChaosData_BK_CHAOS{
 	"BK_CHAOS",
@@ -913,10 +830,7 @@ inline const STH2005::EntityKey Entity_BKChaosData_BK_CHAOS{
 	},
 	{{"enemy/BKChaosData.one"}, "BKCHAOS.TXD"},
 	{{{"enemy/BKChaosData.one"}, "BKCHAOS.MTP", "chaos_attack", "CHAOS.BON"}, {{"enemy/BKChaosData.one"}, "BKCHAOS.MTP", "chaos_rot", "CHAOS.BON"}, {{"enemy/BKChaosData.one"}, "BKCHAOS.MTP", "chaos_water", "CHAOS.BON"}},
-	{{{"enemy/BKChaosData.one"}, "BKCHAOS.CCL"}, {{"enemy/BKChaosData.one"}, "BKCHIBICHAOS.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{{{"enemy/BKChaosData.one"}, "BKCHAOS.CCL"}, {{"enemy/BKChaosData.one"}, "BKCHIBICHAOS.CCL"}}
 };
 inline const STH2005::EntityKey Entity_BkGiantData_BK_GIANT{
 	"BK_GIANT",
@@ -925,10 +839,7 @@ inline const STH2005::EntityKey Entity_BkGiantData_BK_GIANT{
 	},
 	{{"enemy/BkGiantData.one"}, "BKGIANT.TXD"},
 	{{{"enemy/BkGiantData.one"}, "BKGIANT.MTP", "giantbk_walk", "GIANTBK.BON"}, {{"enemy/BkGiantData.one"}, "BKGIANT.MTP", "giantbk_attacka", "GIANTBK.BON"}, {{"enemy/BkGiantData.one"}, "BKGIANT.MTP", "giantbk_attackb", "GIANTBK.BON"}, {{"enemy/BkGiantData.one"}, "BKGIANT.MTP", "giantbk_attackc", "GIANTBK.BON"}, {{"enemy/BkGiantData.one"}, "BKGIANT.MTP", "giantbk_falla", "GIANTBK.BON"}, {{"enemy/BkGiantData.one"}, "BKGIANT.MTP", "giantbk_fallb", "GIANTBK.BON"}, {{"enemy/BkGiantData.one"}, "BKGIANT.MTP", "giantbk_search", "GIANTBK.BON"}, {{"enemy/BkGiantData.one"}, "BKGIANT.MTP", "giantbk_damage", "GIANTBK.BON"}, {{"enemy/BkGiantData.one"}, "BKGIANT.MTP", "giantbk_dead", "GIANTBK.BON"}, {{"enemy/BkGiantData.one"}, "BKGIANT.MTP", "giantbk_guard", "GIANTBK.BON"}, {{"enemy/BkGiantData.one"}, "BKGIANT.MTP", "giantbk_shot", "GIANTBK.BON"}, {{"enemy/BkGiantData.one"}, "BKGIANT.MTP", "giantbk_shotpre", "GIANTBK.BON"}},
-	{{{"enemy/BkGiantData.one"}, "GIANTBK.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{{{"enemy/BkGiantData.one"}, "GIANTBK.CCL"}}
 };
 inline const STH2005::EntityKey Entity_BkLarvaData_BK_LARVA{
 	"BK_LARVA",
@@ -937,10 +848,7 @@ inline const STH2005::EntityKey Entity_BkLarvaData_BK_LARVA{
 	},
 	{{"enemy/BkLarvaData.one"}, "BKLARVA.TXD"},
 	{{{"enemy/BkLarvaData.one"}, "BKLARVA.MTP", "bklarva_move", "BKLARVA.BON"}},
-	{},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{}
 };
 inline const STH2005::EntityKey Entity_BkNinjaData_BK_NINJA{
 	"BK_NINJA",
@@ -949,10 +857,7 @@ inline const STH2005::EntityKey Entity_BkNinjaData_BK_NINJA{
 	},
 	{{"enemy/BkNinjaData.one"}, "BKNINJA.TXD"},
 	{{{"enemy/BkNinjaData.one"}, "BKNINJA.MTP", "ninjabk_alertb", "NINJABK.BON"}, {{"enemy/BkNinjaData.one"}, "BKNINJA.MTP", "ninjabk_ambusha", "NINJABK.BON"}, {{"enemy/BkNinjaData.one"}, "BKNINJA.MTP", "ninjabk_ambushb", "NINJABK.BON"}, {{"enemy/BkNinjaData.one"}, "BKNINJA.MTP", "ninjabk_ambushb_mirror", "NINJABK.BON"}, {{"enemy/BkNinjaData.one"}, "BKNINJA.MTP", "ninjabk_bullet", "NINJABK.BON"}, {{"enemy/BkNinjaData.one"}, "BKNINJA.MTP", "ninjabk_damage0", "NINJABK.BON"}, {{"enemy/BkNinjaData.one"}, "BKNINJA.MTP", "ninjabk_damage1", "NINJABK.BON"}, {{"enemy/BkNinjaData.one"}, "BKNINJA.MTP", "ninjabk_fall", "NINJABK.BON"}, {{"enemy/BkNinjaData.one"}, "BKNINJA.MTP", "ninjabk_landing", "NINJABK.BON"}, {{"enemy/BkNinjaData.one"}, "BKNINJA.MTP", "ninjabk_rechallenge0", "NINJABK.BON"}, {{"enemy/BkNinjaData.one"}, "BKNINJA.MTP", "ninjabk_rechallenge1", "NINJABK.BON"}, {{"enemy/BkNinjaData.one"}, "BKNINJA.MTP", "ninjabk_runa", "NINJABK.BON"}, {{"enemy/BkNinjaData.one"}, "BKNINJA.MTP", "ninjabk_shotgun0", "NINJABK.BON"}, {{"enemy/BkNinjaData.one"}, "BKNINJA.MTP", "ninjabk_shotgun0pre", "NINJABK.BON"}},
-	{{{"enemy/BkNinjaData.one"}, "NINJABK.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{{{"enemy/BkNinjaData.one"}, "NINJABK.CCL"}}
 };
 inline const STH2005::EntityKey Entity_BkSoldierData_BK_SOLDIER{
 	"BK_SOLDIER",
@@ -961,10 +866,7 @@ inline const STH2005::EntityKey Entity_BkSoldierData_BK_SOLDIER{
 	},
 	{{"enemy/BkSoldierData.one"}, "BKSOLDIER.TXD"},
 	{{{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_alerta", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_alertb", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_alertc", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_damage0", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_damage1", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_fall", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_landing", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_runa", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_runb", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_runc", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_shotgrapplea", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_shotgrappleb", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_shotgun0", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_rechallenge0", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_rechallenge1", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_shotsword", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_shotgrappleapre", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_shotgrapplebpre", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_shotgun0pre", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_shotswordpre", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_guard", "SOLDIERBK.BON"}, {{"enemy/BkSoldierData.one"}, "BKSOLDIER.MTP", "soldierbk_bullet", "SOLDIERBK.BON"}},
-	{{{"enemy/BkSoldierData.one"}, "SOLDIERBK.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{{{"enemy/BkSoldierData.one"}, "SOLDIERBK.CCL"}}
 };
 inline const STH2005::EntityKey Entity_BkWingLargeData_BK_WINGLARGE{
 	"BK_WINGLARGE",
@@ -973,10 +875,7 @@ inline const STH2005::EntityKey Entity_BkWingLargeData_BK_WINGLARGE{
 	},
 	{{"enemy/BkWingLargeData.one"}, "BKWINGLARGE.TXD"},
 	{{{"enemy/BkWingLargeData.one"}, "BKWINGLARGE.MTP", "wingbklarge_fly", "WINGBKLARGE.BON"}, {{"enemy/BkWingLargeData.one"}, "BKWINGLARGE.MTP", "wingbklarge_deada", "WINGBKLARGE.BON"}, {{"enemy/BkWingLargeData.one"}, "BKWINGLARGE.MTP", "wingbklarge_attacka", "WINGBKLARGE.BON"}, {{"enemy/BkWingLargeData.one"}, "BKWINGLARGE.MTP", "wingbklarge_deadb", "WINGBKLARGE.BON"}, {{"enemy/BkWingLargeData.one"}, "BKWINGLARGE.MTP", "wingbklarge_deadc", "WINGBKLARGE.BON"}, {{"enemy/BkWingLargeData.one"}, "BKWINGLARGE.MTP", "wingbklarge_bullet", "WINGBKLARGE.BON"}, {{"enemy/BkWingLargeData.one"}, "BKWINGLARGE.MTP", "wingbklarge_vacuum", "WINGBKLARGE.BON"}},
-	{{{"enemy/BkWingLargeData.one"}, "BKWINGLARGE.CCL"}, {{"enemy/BkWingLargeData.one"}, "EFFWINGCUTTER_COL_DMG.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{{{"enemy/BkWingLargeData.one"}, "BKWINGLARGE.CCL"}, {{"enemy/BkWingLargeData.one"}, "EFFWINGCUTTER_COL_DMG.CCL"}}
 };
 inline const STH2005::EntityKey Entity_BkWingSmallData_BK_WINGSMALL{
 	"BK_WINGSMALL",
@@ -985,10 +884,7 @@ inline const STH2005::EntityKey Entity_BkWingSmallData_BK_WINGSMALL{
 	},
 	{{"enemy/BkWingSmallData.one"}, "BKWINGSMALL.TXD"},
 	{{{"enemy/BkWingSmallData.one"}, "BKWINGSMALL.MTP", "wingbksmall_fly", "WINGBKSMALL.BON"}, {{"enemy/BkWingSmallData.one"}, "BKWINGSMALL.MTP", "wingbksmall_deada", "WINGBKSMALL.BON"}, {{"enemy/BkWingSmallData.one"}, "BKWINGSMALL.MTP", "wingbksmall_attacka0", "WINGBKSMALL.BON"}, {{"enemy/BkWingSmallData.one"}, "BKWINGSMALL.MTP", "wingbksmall_attacka1", "WINGBKSMALL.BON"}, {{"enemy/BkWingSmallData.one"}, "BKWINGSMALL.MTP", "wingbksmall_bullet", "WINGBKSMALL.BON"}},
-	{{{"enemy/BkWingSmallData.one"}, "BKWINGSMALL.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{{{"enemy/BkWingSmallData.one"}, "BKWINGSMALL.CCL"}}
 };
 inline const STH2005::EntityKey Entity_BkWormData_BK_WORM{
 	"BK_WORM",
@@ -997,10 +893,7 @@ inline const STH2005::EntityKey Entity_BkWormData_BK_WORM{
 	},
 	{{"enemy/BkWormData.one"}, "BKWORM.TXD"},
 	{{{"enemy/BkWormData.one"}, "BKWORM.MTP", "bkworm_stand", "BKWORM.BON"}, {{"enemy/BkWormData.one"}, "BKWORM.MTP", "bkworm_appear", "BKWORM.BON"}, {{"enemy/BkWormData.one"}, "BKWORM.MTP", "bkworm_damage", "BKWORM.BON"}, {{"enemy/BkWormData.one"}, "BKWORM.MTP", "bkworm_move", "BKWORM.BON"}, {{"enemy/BkWormData.one"}, "BKWORM.MTP", "bkworm_shoot", "BKWORM.BON"}, {{"enemy/BkWormData.one"}, "BKWORM.MTP", "effworml_anm", "BKWORM.BON"}, {{"enemy/BkWormData.one"}, "BKWORM.MTP", "effworms_anm", "BKWORM.BON"}, {{"enemy/BkWormData.one"}, "BKWORM.MTP", "bkworm_bullet", "BKWORM.BON"}},
-	{{{"enemy/BkWormData.one"}, "BKWORM.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{{{"enemy/BkWormData.one"}, "BKWORM.CCL"}}
 };
 inline const STH2005::EntityKey Entity_bee_Charmy{
 	"Charmy",
@@ -1009,10 +902,7 @@ inline const STH2005::EntityKey Entity_bee_Charmy{
 	},
 	{{"character/bee.one"}, "BEE.TXD"},
 	{{{"character/bee.one"}, "BEE.MTP", "bee_idle", "BEE.BON"}, {{"character/bee.one"}, "BEE.MTP", "bee_idle_b", "BEE.BON"}, {{"character/bee.one"}, "BEE.MTP", "bee_break_a", "BEE.BON"}, {{"character/bee.one"}, "BEE.MTP", "bee_break_b", "BEE.BON"}, {{"character/bee.one"}, "BEE.MTP", "bee_break_c", "BEE.BON"}, {{"character/bee.one"}, "BEE.MTP", "bee_dam_m_a", "BEE.BON"}, {{"character/bee.one"}, "BEE.MTP", "bee_dam_m_b", "BEE.BON"}, {{"character/bee.one"}, "BEE.MTP", "bee_dam_m_c", "BEE.BON"}, {{"character/bee.one"}, "BEE.MTP", "bee_fw_jump", "BEE.BON"}, {{"character/bee.one"}, "BEE.MTP", "bee_meet", "BEE.BON"}, {{"character/bee.one"}, "BEE.MTP", "bee_mid_run", "BEE.BON"}, {{"character/bee.one"}, "BEE.MTP", "bee_slow_run", "BEE.BON"}, {{"character/bee.one"}, "BEE.MTP", "bee_top_run", "BEE.BON"}, {{"character/bee.one"}, "BEE.MTP", "bee_trap_jump", "BEE.BON"}, {{"character/bee.one"}, "BEE.MTP", "beewing_run", "BEE.BON"}},
-	{},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{}
 };
 inline const STH2005::EntityKey Entity_doomseye_DoomsEye{
 	"DoomsEye",
@@ -1021,10 +911,7 @@ inline const STH2005::EntityKey Entity_doomseye_DoomsEye{
 	},
 	{{"character/doomseye.one"}, "DOOMSEYE.TXD"},
 	{{{"character/doomseye.one"}, "DOOMSEYE.MTP", "doomseye_fly", "DOOMSEYE.BON"}, {{"character/doomseye.one"}, "DOOMSEYE.MTP", "doomseye_stand", "DOOMSEYE.BON"}, {{"character/doomseye.one"}, "DOOMSEYE.MTP", "doomseye_meet", "DOOMSEYE.BON"}},
-	{},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{}
 };
 inline const STH2005::EntityKey Entity_EggPawnData_EGG_PAWN{
 	"EGG_PAWN",
@@ -1033,10 +920,7 @@ inline const STH2005::EntityKey Entity_EggPawnData_EGG_PAWN{
 	},
 	{{"enemy/EggPawnData.one"}, "EGGPAWN.TXD"},
 	{{{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_damage1", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_damage2", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_dropgs", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_gun", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_guns", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_revival1", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_revival2", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_run", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_rung", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_rungs", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_runs", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_slidings", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_touchgs", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_wait", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_waitg", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_waitgs", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_waits", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_yari", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_yaris", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_damage", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_guard", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_bullet", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_sliding", "PAWN.BON"}, {{"enemy/EggPawnData.one"}, "EGGPAWN.MTP", "pawn_tuki", "PAWN.BON"}},
-	{{{"enemy/EggPawnData.one"}, "EGGPAWN.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{{{"enemy/EggPawnData.one"}, "EGGPAWN.CCL"}}
 };
 inline const STH2005::EntityKey Entity_EggShadowAndroidData_EGG_SHADOWANDROID{
 	"EGG_SHADOWANDROID",
@@ -1045,10 +929,7 @@ inline const STH2005::EntityKey Entity_EggShadowAndroidData_EGG_SHADOWANDROID{
 	},
 	{{"enemy/EggShadowAndroidData.one"}, "EGGSHADOWANDROID.TXD"},
 	{{{"enemy/EggShadowAndroidData.one"}, "EGGSHADOWANDROID.MTP", "shadow_bullet", "SHADOW.BON"}, {{"enemy/EggShadowAndroidData.one"}, "EGGSHADOWANDROID.MTP", "shadow_guard", "SHADOW.BON"}, {{"enemy/EggShadowAndroidData.one"}, "EGGSHADOWANDROID.MTP", "shadow_pick", "SHADOW.BON"}},
-	{{{"enemy/EggShadowAndroidData.one"}, "SHADOWROBO.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{{{"enemy/EggShadowAndroidData.one"}, "SHADOWROBO.CCL"}}
 };
 inline const STH2005::EntityKey Entity_eggmonitor_Eggman{
 	"Eggman",
@@ -1057,10 +938,7 @@ inline const STH2005::EntityKey Entity_eggmonitor_Eggman{
 	},
 	{{"character/eggmonitor.one"}, "EGGMONITOR.TXD"},
 	{{{"character/eggmonitor.one"}, "EGGMONITOR.MTP", "eggmonitor_fly", "EGGMONITOR.BON"}, {{"character/eggmonitor.one"}, "EGGMONITOR.MTP", "eggmonitor_meet", "EGGMONITOR.BON"}},
-	{},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{}
 };
 inline const STH2005::EntityKey Entity_espio_Espio{
 	"Espio",
@@ -1069,10 +947,7 @@ inline const STH2005::EntityKey Entity_espio_Espio{
 	},
 	{{"character/espio.one"}, "ESPIO.TXD"},
 	{{{"character/espio.one"}, "ESPIO.MTP", "espio_idle", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_idle_b", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_atc", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_break_a", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_break_b", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_break_c", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_break_turn_l", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_break_turn_r", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_dam_m_a", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_dam_m_b", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_dam_m_c", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_edge_otto", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_fw_jump", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_jump_02", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_jump_a", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_jump_b", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_jump_c", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_jump_d", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_jump_e", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_meet", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_mid_run", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_slow_run", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_top_run", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_trap_jump", "ESPIO.BON"}, {{"character/espio.one"}, "ESPIO.MTP", "espio_walk", "ESPIO.BON"}},
-	{},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{}
 };
 inline const STH2005::EntityKey Entity_GunBeetleData_GUN_BEETLE{
 	"GUN_BEETLE",
@@ -1081,10 +956,7 @@ inline const STH2005::EntityKey Entity_GunBeetleData_GUN_BEETLE{
 	},
 	{{"enemy/GunBeetleData.one"}, "GUNBEETLE.TXD"},
 	{{{"enemy/GunBeetleData.one"}, "GUNBEETLE.MTP", "beetlebomb_fly", "BEETLEBOMB.BON"}, {{"enemy/GunBeetleData.one"}, "GUNBEETLE.MTP", "beetlebomb_damage", "BEETLEBOMB.BON"}, {{"enemy/GunBeetleData.one"}, "GUNBEETLE.MTP", "beetlebomb_bullet", "BEETLEBOMB.BON"}},
-	{{{"enemy/GunBeetleData.one"}, "GUNBEETLE.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{{{"enemy/GunBeetleData.one"}, "GUNBEETLE.CCL"}}
 };
 inline const STH2005::EntityKey Entity_GunBigfootData_GUN_BIGFOOT{
 	"GUN_BIGFOOT",
@@ -1093,10 +965,7 @@ inline const STH2005::EntityKey Entity_GunBigfootData_GUN_BIGFOOT{
 	},
 	{{"enemy/GunBigfootData.one"}, "GUNBIGFOOT.TXD"},
 	{{{"enemy/GunBigfootData.one"}, "GUNBIGFOOT.MTP", "bigfoota_stand", "BIGFOOTA.BON"}, {{"enemy/GunBigfootData.one"}, "GUNBIGFOOT.MTP", "bigfoota_alert", "BIGFOOTA.BON"}, {{"enemy/GunBigfootData.one"}, "GUNBIGFOOT.MTP", "bigfoota_landing", "BIGFOOTA.BON"}, {{"enemy/GunBigfootData.one"}, "GUNBIGFOOT.MTP", "bigfoota_fall", "BIGFOOTA.BON"}, {{"enemy/GunBigfootData.one"}, "GUNBIGFOOT.MTP", "bigfoota_hover", "BIGFOOTA.BON"}, {{"enemy/GunBigfootData.one"}, "GUNBIGFOOT.MTP", "bigfoota_shot", "BIGFOOTA.BON"}, {{"enemy/GunBigfootData.one"}, "GUNBIGFOOT.MTP", "bigfoota_hover_shot", "BIGFOOTA.BON"}, {{"enemy/GunBigfootData.one"}, "GUNBIGFOOT.MTP", "bigfoota_walk", "BIGFOOTA.BON"}, {{"enemy/GunBigfootData.one"}, "GUNBIGFOOT.MTP", "bigfoota_damage", "BIGFOOTA.BON"}},
-	{{{"enemy/GunBigfootData.one"}, "GUNBIGFOOT.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{{{"enemy/GunBigfootData.one"}, "GUNBIGFOOT.CCL"}}
 };
 inline const STH2005::EntityKey Entity_GunRobotData_GUN_ROBOT{
 	"GUN_ROBOT",
@@ -1105,10 +974,7 @@ inline const STH2005::EntityKey Entity_GunRobotData_GUN_ROBOT{
 	},
 	{{"enemy/GunRobotData.one"}, "GUNROBOT.TXD"},
 	{{{"enemy/GunRobotData.one"}, "GUNROBOT.MTP", "gunroboa_alertgun3", "GUNROBOA.BON"}, {{"enemy/GunRobotData.one"}, "GUNROBOT.MTP", "gunroboa_alertlockon", "GUNROBOA.BON"}, {{"enemy/GunRobotData.one"}, "GUNROBOT.MTP", "gunroboa_damage", "GUNROBOA.BON"}, {{"enemy/GunRobotData.one"}, "GUNROBOT.MTP", "gunroboa_dash", "GUNROBOA.BON"}, {{"enemy/GunRobotData.one"}, "GUNROBOT.MTP", "gunroboa_fall", "GUNROBOA.BON"}, {{"enemy/GunRobotData.one"}, "GUNROBOT.MTP", "gunroboa_landing", "GUNROBOA.BON"}, {{"enemy/GunRobotData.one"}, "GUNROBOT.MTP", "gunroboa_shotgun3", "GUNROBOA.BON"}, {{"enemy/GunRobotData.one"}, "GUNROBOT.MTP", "gunroboa_shotlockon", "GUNROBOA.BON"}, {{"enemy/GunRobotData.one"}, "GUNROBOT.MTP", "gunroboa_shotgun3pre", "GUNROBOA.BON"}, {{"enemy/GunRobotData.one"}, "GUNROBOT.MTP", "gunroboa_shotlockonpre", "GUNROBOA.BON"}, {{"enemy/GunRobotData.one"}, "GUNROBOT.MTP", "gunroboa_hyde", "GUNROBOA.BON"}, {{"enemy/GunRobotData.one"}, "GUNROBOT.MTP", "gunroboa_bullet", "GUNROBOA.BON"}},
-	{{{"enemy/GunRobotData.one"}, "GUNROBO.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{{{"enemy/GunRobotData.one"}, "GUNROBO.CCL"}}
 };
 inline const STH2005::EntityKey Entity_GunSoldierData_citii_GUN_SOLDIER{
 	"GUN_SOLDIER",
@@ -1117,10 +983,7 @@ inline const STH2005::EntityKey Entity_GunSoldierData_citii_GUN_SOLDIER{
 	},
 	{{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.TXD"},
 	{{{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_alerta", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_alertb", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_alertc", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_damage0", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_damage1", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_dead0", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_dead1", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_fall", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_hidegun0a", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_landing", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_recover", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_runa", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_runb", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_runc", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotcannon0a", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgun0a", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgun0b", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgun0shield", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgun1a", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgun1b", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgun1shield", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgun2a", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgun2b", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgun2shield", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotlockon0a", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotsword0", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_walkgun0", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_talk", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgrapplea", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgrappleb", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_rechallenge0", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_rechallenge1", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotcannon0apre", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotglappleb", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgrappleapre", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgrapplebpre", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgun0apre", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgun0bpre", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgun0shieldpre", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgun1apre", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgun1bpre", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgun1shieldpre", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgun2apre", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgun2bpre", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotlockon0apre", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_shotgun2shieldpre", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_guard", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_bullet", "SOLDIERGUN.BON"}, {{"enemy/GunSoldierData_citii.one"}, "GUNSOLDIER.MTP", "soldiergun_recoverloop", "SOLDIERGUN.BON"}},
-	{{{"enemy/GunSoldierData_citii.one"}, "SOLDIERGUN.CCL"}},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{{{"enemy/GunSoldierData_citii.one"}, "SOLDIERGUN.CCL"}}
 };
 inline const STH2005::EntityKey Entity_knuckles_Knuckles{
 	"Knuckles",
@@ -1129,10 +992,7 @@ inline const STH2005::EntityKey Entity_knuckles_Knuckles{
 	},
 	{{"character/knuckles.one"}, "KNUCKLES.TXD"},
 	{{{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_idle", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_idle_b", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_atc", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_break_a", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_break_b", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_break_c", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_break_turn_l", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_break_turn_r", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_dam_m_a", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_dam_m_b", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_dam_m_c", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_edge_otto", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_fw_jump", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_jump_a", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_jump_b", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_jump_c", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_jump_d", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_jump_e", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_meet", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_mid_run", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_slow_run", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_top_run", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_trap_jump", "KNUCKLES.BON"}, {{"character/knuckles.one"}, "KNUCKLES.MTP", "knuckles_walk", "KNUCKLES.BON"}},
-	{},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{}
 };
 inline const STH2005::EntityKey Entity_maria_Maria{
 	"Maria",
@@ -1141,10 +1001,7 @@ inline const STH2005::EntityKey Entity_maria_Maria{
 	},
 	{{"character/maria.one"}, "MARIA.TXD"},
 	{{{"character/maria.one"}, "MARIA.MTP", "maria_idle", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_idle_b", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_idle_c", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_atc", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_break_a", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_break_b", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_break_c", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_dam_a", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_dam_b", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_dam_c", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_edge_otto", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_fw_jump", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_jump_a", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_jump_b", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_jump_c", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_jump_d", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_jump_down", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_jump_e", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_jump_land", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_jump_up", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_meet", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_slow_run", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_top_run", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_trap_jump", "MARIA.BON"}, {{"character/maria.one"}, "MARIA.MTP", "maria_walk", "MARIA.BON"}},
-	{},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{}
 };
 inline const STH2005::EntityKey Entity_omega_Omega{
 	"Omega",
@@ -1153,10 +1010,7 @@ inline const STH2005::EntityKey Entity_omega_Omega{
 	},
 	{{"character/omega.one"}, "OMEGA.TXD"},
 	{{{"character/omega.one"}, "OMEGA.MTP", "omega_idle", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_idle_c", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_atc", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_break_a", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_break_b", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_break_c", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_break_turn_l", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_break_turn_r", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_dam_m_a", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_dam_m_b", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_dam_m_c", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_edge_otto", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_fw_jump", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_jump_a", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_jump_b", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_jump_c", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_jump_d", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_jump_e", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_meet", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_mid_run", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_slow_run", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_top_run", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_trap_jump", "OMEGA.BON"}, {{"character/omega.one"}, "OMEGA.MTP", "omega_walk", "OMEGA.BON"}},
-	{},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{}
 };
 inline const STH2005::EntityKey Entity_rouge_Rouge{
 	"Rouge",
@@ -1165,10 +1019,7 @@ inline const STH2005::EntityKey Entity_rouge_Rouge{
 	},
 	{{"character/rouge.one"}, "ROUGE.TXD"},
 	{{{"character/rouge.one"}, "ROUGE.MTP", "rouge_idle", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_idle_b", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_atc_kick", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_break_a", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_break_b", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_break_c", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_break_turn_l", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_break_turn_r", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_dam_m_a", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_dam_m_b", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_dam_m_c", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_edge_otto", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_fw_jump", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_jump_a", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_jump_b", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_jump_c", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_jump_d", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_jump_e", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_meet", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_mid_run", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_slow_run", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_top_run", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_trap_jump", "ROUGE.BON"}, {{"character/rouge.one"}, "ROUGE.MTP", "rouge_walk", "ROUGE.BON"}},
-	{},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{}
 };
 inline const STH2005::EntityKey Entity_sonic_Sonic{
 	"Sonic",
@@ -1177,10 +1028,7 @@ inline const STH2005::EntityKey Entity_sonic_Sonic{
 	},
 	{{"character/sonic.one"}, "SONIC.TXD"},
 	{{{"character/sonic.one"}, "SONIC.MTP", "sn_idle", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_idle_b", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_atc", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_atc_dash", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_break_a", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_break_b", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_break_c", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_break_turn_l", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_break_turn_r", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_dam_m_a", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_dam_m_b", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_dam_m_c", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_edge_otto", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_flort", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_fw_jump", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_glind", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_glind_bk", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_glind_flip_fr", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_jump_a", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_jump_b", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_jump_back", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_jump_c", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_jump_d", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_jump_e", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_jump_trickA", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_meet", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_mid_run", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_run_l_jump", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_run_r_jump", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_slow_run", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_top_run", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_trap_jump", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_turn_l", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_turn_r", "SN.BON"}, {{"character/sonic.one"}, "SONIC.MTP", "sn_walk", "SN.BON"}},
-	{},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{}
 };
 inline const STH2005::EntityKey Entity_tails_Tails{
 	"Tails",
@@ -1189,10 +1037,7 @@ inline const STH2005::EntityKey Entity_tails_Tails{
 	},
 	{{"character/tails.one"}, "TAILS.TXD"},
 	{{{"character/tails.one"}, "TAILS.MTP", "tails_idle", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_idle_d", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_idle", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_atc", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_break_a", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_break_b", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_break_c", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_dam_m_a", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_dam_m_b", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_dam_m_c", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_edge_otto", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_fw_jump", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_jump_a", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_jump_b", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_jump_c", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_jump_d", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_jump_e", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_meet", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_mid_run", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_slow_run", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_top_run", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_trap_jump", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_walk", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_atc", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_break_a", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_break_b", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_break_c", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_dam_m_a", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_dam_m_b", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_dam_m_c", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_edge_otto", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_fw_jump", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_jump_a", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_jump_b", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_jump_c", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_jump_d", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_jump_e", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_meet", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_mid_run", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_slow_run", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_top_run", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_trap_jump", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tailstail_walk", "TAILS.BON"}, {{"character/tails.one"}, "TAILS.MTP", "tails_atc_tail", "TAILS.BON"}},
-	{},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{}
 };
 inline const STH2005::EntityKey Entity_vector_Vector{
 	"Vector",
@@ -1201,10 +1046,7 @@ inline const STH2005::EntityKey Entity_vector_Vector{
 	},
 	{{"character/vector.one"}, "VECTOR.TXD"},
 	{{{"character/vector.one"}, "VECTOR.MTP", "vector_idle", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_idle_b", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_atc", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_break_a", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_break_b", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_break_c", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_break_turn_l", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_break_turn_r", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_dam_m_a", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_dam_m_b", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_dam_m_c", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_edge_otto", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_fw_jump", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_jump_a", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_jump_b", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_jump_c", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_jump_d", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_jump_e", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_meet", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_mid_run", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_slow_run", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_top_run", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_trap_jump", "VECTOR.BON"}, {{"character/vector.one"}, "VECTOR.MTP", "vector_walk", "VECTOR.BON"}},
-	{},
-	STH2005::PlacementLayout::Single,
-	{},
-	true
+	{}
 };
 
 inline const std::vector<STH2005::PlacedEntityKey> EntityTable_stg0100{

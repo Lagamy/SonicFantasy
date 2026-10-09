@@ -1,0 +1,163 @@
+{
+ "note": "Shadow's resources in character/shadow.one on the Shadow the Hedgehog disc (read once at startup by Loading::loadPlayerKeys; a missing or wrong file stops the game). Entry names of the archive; the animation names are ours, the names Scripts/shadow/player.lua uses.",
+ "archive": "character/shadow.one",
+ "textures": "SHADOW.TXD",
+ "model": {
+  "name": "SHADOW_BODY.DFF",
+  "note": "The parts are named so that the mesh is built from them and Entity::switchMeshPart can swap one for another; a part without a .BON of its own names the bone of the main skeleton to attach to ('bone').",
+  "parts": [
+   {
+    "dff": "SHADOW_BODY.DFF",
+    "bon": "SH.BON"
+   },
+   {
+    "dff": "SHADOW_HAND_L.DFF",
+    "bon": "LTE.BON"
+   },
+   {
+    "dff": "SHADOW_HAND_R.DFF",
+    "bon": "RTE.BON"
+   },
+   {
+    "dff": "SHADOW_EYE_L.DFF",
+    "bone": "sh_j_head"
+   },
+   {
+    "dff": "SHADOW_EYE_R.DFF",
+    "bone": "sh_j_head"
+   },
+   {
+    "dff": "SHADOW_MABUTA01.DFF",
+    "bone": "sh_j_head"
+   }
+  ]
+ },
+ "idle": [
+  {
+   "mtp": "SHADOW.MTP",
+   "motion": "sh_idle",
+   "bon": "SH.BON",
+   "note": "'sh_idle' of SHADOW.MTP for the SH.BON skeleton (observed: 100 frames)."
+  },
+  {
+   "mtp": "SHADOW.MTP",
+   "motion": "lte_idle",
+   "bon": "LTE.BON",
+   "attachedPart": true,
+   "note": "The hands' fingers, for LTE.BON / RTE.BON (observed: 100 frames, the first node is the wrist sh_j_l1te / sh_j_r1te)."
+  },
+  {
+   "mtp": "SHADOW.MTP",
+   "motion": "rte_idle",
+   "bon": "RTE.BON",
+   "attachedPart": true
+  }
+ ],
+ "animationsNote": "The motions the player script picks, for SH.BON. Which motion the game plays in which state is not decoded: the names of SHADOW.MTP's table (158 entries) are the only evidence (hypothesis): sh_walk, sh_run, sh_jump_a, sh_jump_b, sh_jump_c (a jump: observed on the disc, each one's last pose is the next one's first, and sh_jump_c turns the root by -6.98 radians, a full somersault curled up; then sh_jump_idle, whose first pose is close to sh_jump_c's last), sh_break_a (a brake), sh_dam_m_a (damage). 'loop' false: the motion plays once and holds its last frame ('jump' and 'jumpB': sh_jump_a is a start motion, observed by the user; b follows it).",
+ "animations": {
+  "stand": {
+   "mtp": "SHADOW.MTP",
+   "motion": "sh_idle",
+   "bon": "SH.BON",
+   "loop": true
+  },
+  "idle": {
+   "mtp": "SHADOW.MTP",
+   "motion": "sh_idle",
+   "bon": "SH.BON",
+   "loop": true
+  },
+  "walk": {
+   "mtp": "SHADOW.MTP",
+   "motion": "sh_walk",
+   "bon": "SH.BON",
+   "loop": true
+  },
+  "run": {
+   "mtp": "SHADOW.MTP",
+   "motion": "sh_run",
+   "bon": "SH.BON",
+   "loop": true
+  },
+  "jump": {
+   "mtp": "SHADOW.MTP",
+   "motion": "sh_jump_a",
+   "bon": "SH.BON",
+   "loop": false
+  },
+  "jumpB": {
+   "mtp": "SHADOW.MTP",
+   "motion": "sh_jump_b",
+   "bon": "SH.BON",
+   "loop": false
+  },
+  "jumpC": {
+   "mtp": "SHADOW.MTP",
+   "motion": "sh_jump_c",
+   "bon": "SH.BON",
+   "loop": true,
+   "note": "The somersault, which ends in the pose it starts from, so it loops."
+  },
+  "fall": {
+   "mtp": "SHADOW.MTP",
+   "motion": "sh_jump_idle",
+   "bon": "SH.BON",
+   "loop": true
+  },
+  "brake": {
+   "mtp": "SHADOW.MTP",
+   "motion": "sh_break_a",
+   "bon": "SH.BON",
+   "loop": true
+  },
+  "damage": {
+   "mtp": "SHADOW.MTP",
+   "motion": "sh_dam_m_a",
+   "bon": "SH.BON",
+   "loop": true
+  },
+  "skate": {
+   "mtp": "SHADOW.MTP",
+   "motion": "sh_slow_skate",
+   "bon": "SH.BON",
+   "loop": true
+  },
+  "highSkate": {
+   "mtp": "SHADOW.MTP",
+   "motion": "sh_high_skate",
+   "bon": "SH.BON",
+   "loop": true
+  },
+  "jumpFA": {
+   "mtp": "SHADOW.MTP",
+   "motion": "sh_jump_fa",
+   "bon": "SH.BON",
+   "loop": false
+  },
+  "jumpFB": {
+   "mtp": "SHADOW.MTP",
+   "motion": "sh_jump_fb",
+   "bon": "SH.BON",
+   "loop": false
+  },
+  "jumpD": {
+   "mtp": "SHADOW.MTP",
+   "motion": "sh_jump_d",
+   "bon": "SH.BON",
+   "loop": true
+  },
+  "jumpE": {
+   "mtp": "SHADOW.MTP",
+   "motion": "sh_jump_e",
+   "bon": "SH.BON",
+   "loop": false
+  },
+  "dash": {
+   "mtp": "SHADOW.MTP",
+   "motion": "sh_fw_jump",
+   "bon": "SH.BON",
+   "loop": true,
+   "note": "The jump dash's motion (observed in the live log: animation index 6, motion number 83 = sh_fw_jump, range 0 to 15, looping while the dash lasts)."
+  }
+ }
+}

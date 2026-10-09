@@ -9,6 +9,7 @@
 #include "imgui.h"
 #include <glm/gtc/quaternion.hpp>
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <format>
@@ -173,18 +174,269 @@ static std::string shapeSummary(const Physics::CollisionShape& rShape_)
 	return std::format("form {}  a {:.1f} b {:.1f} c {:.1f}  at {:.1f}, {:.1f}, {:.1f}", rShape_.form, rShape_.a, rShape_.b, rShape_.c, rShape_.center.x, rShape_.center.y, rShape_.center.z);
 }
 
-/* A new shape for the Add buttons: a sphere (form 0) of radius 5 at the entity's origin, no collision behaviour (counts as a Body); the rest is edited in the shape's fields. */
-static Physics::CollisionShape defaultShape()
+/*
+The four shapes the editor offers by name (Physics::CollisionShape::form): a sphere is form 0 (radius a), a box one of 3 to 5 and 7 (half sizes a, b, c; 3 is made), a capsule form 6 (radius a, half length b, along the shape's z axis for Shadow, y for SADX),
+a cylinder form 1 or 2 (radius a, height b, along y: SADX's; 1 is made) or 11 (radius a, half length b, along z: the form of Shadow's own importer, made for a Shadow entity).
+*/
+enum ShapeKind
+{
+	ShapeSphere = 0,
+	ShapeBox = 1,
+	ShapeCapsule = 2,
+	ShapeCylinder = 3,
+	ShapeOther = -1,
+};
+
+static int shapeKindOf(const Physics::CollisionShape& rShape_)
+{
+	if(rShape_.form == 0) return ShapeSphere;
+	if((rShape_.form >= 3 && rShape_.form <= 5) || rShape_.form == 7) return ShapeBox;
+	if(rShape_.form == 6) return ShapeCapsule;
+	if(rShape_.form == 1 || rShape_.form == 2 || rShape_.form == 11) return ShapeCylinder;
+	return ShapeOther;
+}
+
+static const char* shapeKindName(int kind_)
+{
+	if(kind_ == ShapeSphere) return "Sphere";
+	if(kind_ == ShapeBox) return "Box";
+	if(kind_ == ShapeCapsule) return "Capsule";
+	if(kind_ == ShapeCylinder) return "Cylinder";
+	return "Other";
+}
+
+/* Makes the shape that kind: sets the form (a cylinder's depends on the game of the entity, sadx_) and gives a size that is still 0 the value of the radius a, so a shape never turns into an empty one. */
+static void setShapeKind(Physics::CollisionShape& rShape_, int kind_, bool sadx_)
+{
+	if(rShape_.a <= 0.0f) rShape_.a = 5.0f;
+	if(kind_ == ShapeSphere)
+	{
+		rShape_.form = 0;
+	}
+	else if(kind_ == ShapeBox)
+	{
+		if(shapeKindOf(rShape_) != ShapeBox) rShape_.form = 3;
+		if(rShape_.b <= 0.0f) rShape_.b = rShape_.a;
+		if(rShape_.c <= 0.0f) rShape_.c = rShape_.a;
+	}
+	else if(kind_ == ShapeCapsule)
+	{
+		rShape_.form = 6;
+		if(rShape_.b <= 0.0f) rShape_.b = rShape_.a;
+	}
+	else if(kind_ == ShapeCylinder)
+	{
+		if(shapeKindOf(rShape_) != ShapeCylinder) rShape_.form = sadx_ ? 1 : 11;
+		if(rShape_.b <= 0.0f) rShape_.b = rShape_.form == 11 ? rShape_.a : rShape_.a * 2.0f;
+	}
+}
+
+/* A new shape for the Add buttons: of the kind, size 5 at the entity's origin, no collision behaviour (counts as a Body); the rest is edited in the shape's fields. */
+static Physics::CollisionShape defaultShape(int kind_, bool sadx_)
 {
 	Physics::CollisionShape shape{};
 	shape.a = 5.0f;
 	shape.behavior = UninitializedPoolId;
+	setShapeKind(shape, kind_, sadx_);
 	return shape;
+}
+
+/* The picture of a shape kind (a circle with its equator, a cube, a cylinder, a pill) in a 28 x 28 cell around center_. */
+static void drawShapeGlyph(ImDrawList* pDraw, ImVec2 center, int kind_, ImU32 color)
+{
+	if(kind_ == ShapeSphere)
+	{
+		pDraw->AddCircle(center, 9.0f, color, 24, 1.5f);
+		ImVec2 equator[17];
+		for(int i = 0; i <= 16; i++)
+		{
+			float angle = 6.2831853f * i / 16.0f;
+			equator[i] = ImVec2(center.x + std::cos(angle) * 9.0f, center.y + std::sin(angle) * 3.0f);
+		}
+		pDraw->AddPolyline(equator, 17, color, ImDrawFlags_None, 1.0f);
+	}
+	else if(kind_ == ShapeBox)
+	{
+		ImVec2 frontMin(center.x - 9.0f, center.y - 5.0f);
+		ImVec2 frontMax(center.x + 5.0f, center.y + 9.0f);
+		ImVec2 shift(4.0f, -4.0f);
+		ImVec2 backMin(frontMin.x + shift.x, frontMin.y + shift.y);
+		ImVec2 backMax(frontMax.x + shift.x, frontMax.y + shift.y);
+		pDraw->AddRect(backMin, backMax, color, 0.0f, ImDrawFlags_None, 1.0f);
+		pDraw->AddRect(frontMin, frontMax, color, 0.0f, ImDrawFlags_None, 1.5f);
+		pDraw->AddLine(frontMin, backMin, color, 1.0f);
+		pDraw->AddLine(ImVec2(frontMax.x, frontMin.y), ImVec2(backMax.x, backMin.y), color, 1.0f);
+		pDraw->AddLine(ImVec2(frontMin.x, frontMax.y), ImVec2(backMin.x, backMax.y), color, 1.0f);
+		pDraw->AddLine(frontMax, backMax, color, 1.0f);
+	}
+	else if(kind_ == ShapeCylinder)
+	{
+		ImVec2 top[17];
+		ImVec2 bottom[9];
+		for(int i = 0; i <= 16; i++)
+		{
+			float angle = 6.2831853f * i / 16.0f;
+			top[i] = ImVec2(center.x + std::cos(angle) * 8.0f, center.y - 7.0f + std::sin(angle) * 3.0f);
+			if(i <= 8) bottom[i] = ImVec2(center.x + std::cos(angle) * 8.0f, center.y + 7.0f + std::sin(angle) * 3.0f);
+		}
+		pDraw->AddPolyline(top, 17, color, ImDrawFlags_None, 1.5f);
+		pDraw->AddPolyline(bottom, 9, color, ImDrawFlags_None, 1.5f);
+		pDraw->AddLine(ImVec2(center.x - 8.0f, center.y - 7.0f), ImVec2(center.x - 8.0f, center.y + 7.0f), color, 1.5f);
+		pDraw->AddLine(ImVec2(center.x + 8.0f, center.y - 7.0f), ImVec2(center.x + 8.0f, center.y + 7.0f), color, 1.5f);
+	}
+	else
+	{
+		pDraw->AddRect(ImVec2(center.x - 6.0f, center.y - 11.0f), ImVec2(center.x + 6.0f, center.y + 11.0f), color, 6.0f, ImDrawFlags_None, 1.5f);
+		pDraw->AddLine(ImVec2(center.x - 6.0f, center.y - 5.0f), ImVec2(center.x + 6.0f, center.y - 5.0f), color, 1.0f);
+		pDraw->AddLine(ImVec2(center.x - 6.0f, center.y + 5.0f), ImVec2(center.x + 6.0f, center.y + 5.0f), color, 1.0f);
+	}
+}
+
+/* A small, not clickable picture of a shape kind for a list entry (the glyph at 0.7 of its size), on the line of the entry that follows (SameLine); color_ tints it. */
+static void shapeBadge(int kind_, ImU32 color_)
+{
+	const float size = 20.0f;
+	ImVec2 origin = ImGui::GetCursorScreenPos();
+	ImVec2 center(origin.x + size * 0.5f, origin.y + size * 0.5f);
+	ImGui::Dummy(ImVec2(size, size));
+	ImDrawList* pDraw = ImGui::GetWindowDrawList();
+	int first = pDraw->VtxBuffer.Size;
+	drawShapeGlyph(pDraw, center, kind_, color_);
+	for(int v = first; v < pDraw->VtxBuffer.Size; v++)
+	{
+		ImVec2& rPos = pDraw->VtxBuffer[v].pos;
+		rPos = ImVec2(center.x + (rPos.x - center.x) * 0.7f, center.y + (rPos.y - center.y) * 0.7f);
+	}
+	ImGui::SameLine(0.0f, 4.0f);
+}
+
+/* One icon button of a shape kind, drawn with the draw list (a circle with its equator, a cube, a pill); true when clicked. selected_ highlights it. */
+static bool shapeIcon(const char* id_, int kind_, bool selected_)
+{
+	const ImVec2 size(28.0f, 28.0f);
+	ImVec2 origin = ImGui::GetCursorScreenPos();
+	bool pressed = ImGui::InvisibleButton(id_, size);
+	bool hovered = ImGui::IsItemHovered();
+	ImDrawList* pDraw = ImGui::GetWindowDrawList();
+	ImVec2 center(origin.x + size.x * 0.5f, origin.y + size.y * 0.5f);
+	ImU32 background = selected_ ? IM_COL32(80, 66, 24, 255) : hovered ? IM_COL32(64, 64, 64, 255) : IM_COL32(40, 40, 40, 255);
+	ImU32 color = selected_ ? IM_COL32(255, 200, 60, 255) : IM_COL32(190, 190, 190, 255);
+	pDraw->AddRectFilled(origin, ImVec2(origin.x + size.x, origin.y + size.y), background, 4.0f);
+
+	drawShapeGlyph(pDraw, center, kind_, color);
+	if(hovered) ImGui::SetTooltip("%s", shapeKindName(kind_));
+	return pressed;
+}
+
+/* The four shape icons in a row, none selected (selectedKind_ = ShapeOther) or the shape's kind highlighted; the kind clicked this frame, ShapeOther otherwise. */
+static int shapeIconRow(int selectedKind_)
+{
+	int clicked = ShapeOther;
+	for(int kind : {ShapeSphere, ShapeBox, ShapeCapsule, ShapeCylinder})
+	{
+		ImGui::PushID(kind);
+		if(kind != ShapeSphere) ImGui::SameLine();
+		if(shapeIcon("shape", kind, kind == selectedKind_)) clicked = kind;
+		ImGui::PopID();
+	}
+	return clicked;
+}
+
+/*
+The fields of one shape, for a shape of "This entity" and for a prefab-wide one: the kind icons (changing the kind keeps the sizes that are set), the size fields of the kind, center, angle, the raw fields, and the collision behaviour with its tags.
+sadx_ (the entity's game) decides the form a cylinder is given. True when anything was edited.
+*/
+static bool drawShapeFields(Physics::CollisionShape& rShape_, bool sadx_)
+{
+	bool changed = false;
+	int kind = shapeKindOf(rShape_);
+	int picked = shapeIconRow(kind);
+	if(picked != ShapeOther && picked != kind)
+	{
+		setShapeKind(rShape_, picked, sadx_);
+		kind = picked;
+		changed = true;
+	}
+	if(kind == ShapeSphere)
+	{
+		changed |= ImGui::DragFloat("radius", &rShape_.a, 0.1f, 0.0f, 100000.0f);
+	}
+	else if(kind == ShapeBox)
+	{
+		changed |= ImGui::DragFloat3("half size (x, y, z)", &rShape_.a, 0.1f, 0.0f, 100000.0f);
+	}
+	else if(kind == ShapeCapsule)
+	{
+		changed |= ImGui::DragFloat("radius", &rShape_.a, 0.1f, 0.0f, 100000.0f);
+		changed |= ImGui::DragFloat("half length", &rShape_.b, 0.1f, 0.0f, 100000.0f);
+		ImGui::TextDisabled("The segment lies along z (Shadow entities) or y (SADX entities).");
+	}
+	else if(kind == ShapeCylinder)
+	{
+		changed |= ImGui::DragFloat("radius", &rShape_.a, 0.1f, 0.0f, 100000.0f);
+		if(rShape_.form == 11)
+		{
+			changed |= ImGui::DragFloat("half length", &rShape_.b, 0.1f, 0.0f, 100000.0f);
+			ImGui::TextDisabled("Form 11: the axis lies along z.");
+		}
+		else
+		{
+			changed |= ImGui::DragFloat("height", &rShape_.b, 0.1f, 0.0f, 100000.0f);
+			ImGui::TextDisabled("Form %u: the axis stands along y, centered on the shape's center.", rShape_.form);
+		}
+	}
+	else
+	{
+		ImGui::TextDisabled("Form %u is none of the four: edit its raw fields below, or pick one above.", rShape_.form);
+	}
+	changed |= ImGui::DragFloat3("center", &rShape_.center.x, 0.1f);
+	changed |= ImGui::DragInt3("angle", &rShape_.angle.x, 16.0f);
+	if(ImGui::TreeNode("Raw fields"))
+	{
+		changed |= ImGui::InputScalar("form", ImGuiDataType_U8, &rShape_.form);
+		changed |= ImGui::DragFloat("a", &rShape_.a, 0.1f);
+		changed |= ImGui::DragFloat("b", &rShape_.b, 0.1f);
+		changed |= ImGui::DragFloat("c", &rShape_.c, 0.1f);
+		changed |= ImGui::DragFloat("d", &rShape_.d, 0.1f);
+		changed |= ImGui::InputScalar("kind", ImGuiDataType_U8, &rShape_.kind);
+		changed |= ImGui::InputScalar("push", ImGuiDataType_U8, &rShape_.push);
+		changed |= ImGui::InputScalar("damage", ImGuiDataType_U8, &rShape_.damage);
+		changed |= ImGui::InputScalar("attr", ImGuiDataType_U32, &rShape_.attr, nullptr, nullptr, "%08X", ImGuiInputTextFlags_CharsHexadecimal);
+		ImGui::TreePop();
+	}
+	const auto& rBehaviors = Globals::Game::behaviors;
+	const char* current = rShape_.behavior == UninitializedPoolId ? "(none: counts as a Body)" : rBehaviors.names[rShape_.behavior.id].c_str();
+	if(ImGui::BeginCombo("behaviour", current))
+	{
+		if(ImGui::Selectable("(none: counts as a Body)", rShape_.behavior == UninitializedPoolId))
+		{
+			rShape_.behavior = UninitializedPoolId;
+			changed = true;
+		}
+		for(uint32_t b = 0; b < rBehaviors.objects.size(); b++)
+		{
+			if(!rBehaviors.alive[b]) continue;
+			PoolId behaviorId(b, rBehaviors.generation[b]);
+			if(ImGui::Selectable(rBehaviors.names[b].c_str(), rShape_.behavior == behaviorId))
+			{
+				rShape_.behavior = behaviorId;
+				changed = true;
+			}
+		}
+		ImGui::EndCombo();
+	}
+	if(rShape_.behavior != UninitializedPoolId)
+	{
+		const BABehavior& rBehavior = rBehaviors[rShape_.behavior];
+		for(PoolId tag : rBehavior.tags) ImGui::BulletText("tag %s", Globals::Game::baTags.names[tag.id].c_str());
+		ImGui::Text("Collides with %u tags, interacts with %u", static_cast<uint32_t>(rBehavior.availableCollisions.size()), static_cast<uint32_t>(rBehavior.availableInteractions.size()));
+	}
+	return changed;
 }
 
 /*
 The bound area in two boxes. "This entity": the shapes of its collision, each editable in place (the raw fields of Physics::CollisionShape, the collision behaviour by combo; what the values mean is only what CollisionShape.h says), with Remove (this entity),
-Remove from all and Add to all (a copy, for every entity of the prefab) and an Add shape button. For an entity made from a prefab, "Every entity of <prefab>": the shapes the editor added to or took from all of them, which new entities get too, with Undo.
+Remove from all and Add to all (a copy, for every entity of the prefab) and Add shape icons (sphere, box, capsule, cylinder: the icon row of a shape node changes its kind; the size fields follow the kind, the raw fields are under Raw fields). For an entity made from a prefab, "Every entity of <prefab>" (This level / All levels): the shapes added to all of them, which new entities get too, edited in place there (and no longer listed under This entity), and the shapes taken from them, with Undo.
 An entity without a collision gets a hand-made one by its first shape. Shapes from the game's tables are read as the game has them; the shape's tags and interactions are those of its behaviour.
 */
 void InspectorPanel::drawBoundArea(PoolId entityId_)
@@ -202,57 +454,45 @@ void InspectorPanel::drawBoundArea(PoolId entityId_)
 		ImGui::Text("Shapes: %u", static_cast<uint32_t>(rCollision.shapes.size()));
 		ImGui::Text("Bounds: %.1f, %.1f, %.1f to %.1f, %.1f, %.1f", rCollision.boundsMin.x, rCollision.boundsMin.y, rCollision.boundsMin.z, rCollision.boundsMax.x, rCollision.boundsMax.y, rCollision.boundsMax.z);
 	}
+	/*
+	A shape the prefab-wide box below adds (in the scope it shows) is the prefab's, not the entity's own: it is listed and edited there, so a character's body shape is one place for every entity and level, and is not listed here.
+	Each added shape hides the first equal one of this entity.
+	*/
+	std::vector<bool> hidden(shapes.size(), false);
+	uint32_t hiddenCount = 0;
+	if(prefabId != UninitializedPoolId)
+	{
+		for(const Physics::CollisionShape& rAdded : editsOf(prefabId, scope).addedShapes)
+		{
+			for(uint32_t i = 0; i < shapes.size(); i++)
+			{
+				if(!hidden[i] && shapes[i] == rAdded)
+				{
+					hidden[i] = true;
+					hiddenCount++;
+					break;
+				}
+			}
+		}
+	}
 	ImGui::TextUnformatted("This entity:");
 	ImGui::BeginChild("EntityShapes", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY);
-	if(shapes.empty()) ImGui::TextDisabled("none");
+	if(shapes.size() == hiddenCount) ImGui::TextDisabled("none");
+	if(hiddenCount > 0) ImGui::TextDisabled("%u shape(s) of the whole prefab are in the box below.", hiddenCount);
 	int removeIndex = -1;
 	int removeAllIndex = -1;
 	int addAllIndex = -1;
 	bool changed = false;
 	for(uint32_t i = 0; i < shapes.size(); i++)
 	{
+		if(hidden[i]) continue;
 		Physics::CollisionShape& rShape = shapes[i];
 		ImGui::PushID(static_cast<int>(i));
-		if(ImGui::TreeNode("Shape", "Shape %u: form %u, attr 0x%08X", i, rShape.form, rShape.attr))
+		int kind = shapeKindOf(rShape);
+		shapeBadge(kind, IM_COL32(190, 190, 190, 255));
+		if(ImGui::TreeNode("Shape", "Shape %u: %s (form %u), attr 0x%08X", i, shapeKindName(kind), rShape.form, rShape.attr))
 		{
-			changed |= ImGui::InputScalar("form", ImGuiDataType_U8, &rShape.form);
-			changed |= ImGui::DragFloat3("center", &rShape.center.x, 0.1f);
-			changed |= ImGui::DragFloat("a", &rShape.a, 0.1f);
-			changed |= ImGui::DragFloat("b", &rShape.b, 0.1f);
-			changed |= ImGui::DragFloat("c", &rShape.c, 0.1f);
-			changed |= ImGui::DragFloat("d", &rShape.d, 0.1f);
-			changed |= ImGui::DragInt3("angle", &rShape.angle.x, 16.0f);
-			changed |= ImGui::InputScalar("kind", ImGuiDataType_U8, &rShape.kind);
-			changed |= ImGui::InputScalar("push", ImGuiDataType_U8, &rShape.push);
-			changed |= ImGui::InputScalar("damage", ImGuiDataType_U8, &rShape.damage);
-			changed |= ImGui::InputScalar("attr", ImGuiDataType_U32, &rShape.attr, nullptr, nullptr, "%08X", ImGuiInputTextFlags_CharsHexadecimal);
-			const auto& rBehaviors = Globals::Game::behaviors;
-			const char* current = rShape.behavior == UninitializedPoolId ? "(none: counts as a Body)" : rBehaviors.names[rShape.behavior.id].c_str();
-			if(ImGui::BeginCombo("behaviour", current))
-			{
-				if(ImGui::Selectable("(none: counts as a Body)", rShape.behavior == UninitializedPoolId))
-				{
-					rShape.behavior = UninitializedPoolId;
-					changed = true;
-				}
-				for(uint32_t b = 0; b < rBehaviors.objects.size(); b++)
-				{
-					if(!rBehaviors.alive[b]) continue;
-					PoolId behaviorId(b, rBehaviors.generation[b]);
-					if(ImGui::Selectable(rBehaviors.names[b].c_str(), rShape.behavior == behaviorId))
-					{
-						rShape.behavior = behaviorId;
-						changed = true;
-					}
-				}
-				ImGui::EndCombo();
-			}
-			if(rShape.behavior != UninitializedPoolId)
-			{
-				const BABehavior& rBehavior = rBehaviors[rShape.behavior];
-				for(PoolId tag : rBehavior.tags) ImGui::BulletText("tag %s", Globals::Game::baTags.names[tag.id].c_str());
-				ImGui::Text("Collides with %u tags, interacts with %u", static_cast<uint32_t>(rBehavior.availableCollisions.size()), static_cast<uint32_t>(rBehavior.availableInteractions.size()));
-			}
+			changed |= drawShapeFields(rShape, rEntity.sourceEngine == SA_NINJA);
 			if(ImGui::SmallButton("Remove")) removeIndex = static_cast<int>(i);
 			if(prefabId != UninitializedPoolId)
 			{
@@ -265,9 +505,14 @@ void InspectorPanel::drawBoundArea(PoolId entityId_)
 		}
 		ImGui::PopID();
 	}
-	if(ImGui::SmallButton("Add shape"))
+	ImGui::TextUnformatted("Add shape:");
+	ImGui::SameLine();
+	ImGui::PushID("addShape");
+	int addKind = shapeIconRow(ShapeOther);
+	ImGui::PopID();
+	if(addKind != ShapeOther)
 	{
-		shapes.push_back(defaultShape());
+		shapes.push_back(defaultShape(addKind, rEntity.sourceEngine == SA_NINJA));
 		changed = true;
 	}
 	ImGui::EndChild();
@@ -304,9 +549,26 @@ void InspectorPanel::drawBoundArea(PoolId entityId_)
 		for(uint32_t i = 0; i < added.size(); i++)
 		{
 			ImGui::PushID(static_cast<int>(i));
-			ImGui::Text("+ %s", shapeSummary(added[i]).c_str());
-			ImGui::SameLine();
-			if(ImGui::SmallButton("Undo")) this->tryEdit([&] { removePrefabShape(prefabId, added[i], scope); });
+			Physics::CollisionShape edited = added[i];
+			/* Blue: a shape every entity of the prefab has, so it stands out from the entity's own shapes. */
+			shapeBadge(shapeKindOf(added[i]), IM_COL32(90, 160, 255, 255));
+			ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.35f, 0.63f, 1.0f, 1.0f));
+			bool open = ImGui::TreeNode("Added", "+ %s", shapeSummary(added[i]).c_str());
+			ImGui::PopStyleColor();
+			if(open)
+			{
+				/* An edit is a removal of the old shape and an addition of the new one in the scope's set, so every entity of the prefab and the file follow at once. */
+				if(drawShapeFields(edited, rEntity.sourceEngine == SA_NINJA))
+				{
+					this->tryEdit([&]
+					{
+						removePrefabShape(prefabId, added[i], scope);
+						addPrefabShape(prefabId, edited, scope);
+					});
+				}
+				if(ImGui::SmallButton("Undo")) this->tryEdit([&] { removePrefabShape(prefabId, added[i], scope); });
+				ImGui::TreePop();
+			}
 			ImGui::PopID();
 		}
 		ImGui::PopID();
@@ -314,14 +576,294 @@ void InspectorPanel::drawBoundArea(PoolId entityId_)
 		for(uint32_t i = 0; i < removed.size(); i++)
 		{
 			ImGui::PushID(static_cast<int>(i));
+			shapeBadge(shapeKindOf(removed[i]), IM_COL32(190, 190, 190, 255));
 			ImGui::Text("- %s", shapeSummary(removed[i]).c_str());
 			ImGui::SameLine();
 			if(ImGui::SmallButton("Undo")) this->tryEdit([&] { addPrefabShape(prefabId, removed[i], scope); });
 			ImGui::PopID();
 		}
 		ImGui::PopID();
-		if(ImGui::SmallButton("Add shape to all")) this->tryEdit([&] { addPrefabShape(prefabId, defaultShape(), scope); });
+		ImGui::TextUnformatted("Add shape to all:");
+		ImGui::SameLine();
+		ImGui::PushID("addShapeToAll");
+		int addAllKind = shapeIconRow(ShapeOther);
+		ImGui::PopID();
+		if(addAllKind != ShapeOther) this->tryEdit([&] { addPrefabShape(prefabId, defaultShape(addAllKind, rEntity.sourceEngine == SA_NINJA), scope); });
 		ImGui::EndChild();
+	}
+
+	ImGui::Separator();
+	this->drawBoundAreaRules();
+}
+
+/* A combo that lists every tag as a check mark; the popup stays open while ticking. rSelected_ holds tag names, so a tag that is gone stays listed. True when it changed. */
+static bool tagChecklist(const char* label_, std::vector<std::string>& rSelected_)
+{
+	std::string summary;
+	for(const std::string& rName : rSelected_) summary += (summary.empty() ? "" : ", ") + rName;
+	if(summary.empty()) summary = "(none)";
+	bool changed = false;
+	if(ImGui::BeginCombo(label_, summary.c_str()))
+	{
+		const auto& rTags = Globals::Game::baTags;
+		for(uint32_t t = 0; t < rTags.objects.size(); t++)
+		{
+			if(!rTags.alive[t]) continue;
+			auto found = std::find(rSelected_.begin(), rSelected_.end(), rTags.names[t]);
+			bool on = found != rSelected_.end();
+			if(ImGui::Selectable(rTags.names[t].c_str(), on, ImGuiSelectableFlags_NoAutoClosePopups))
+			{
+				if(on) rSelected_.erase(found);
+				else rSelected_.push_back(rTags.names[t]);
+				changed = true;
+			}
+		}
+		ImGui::EndCombo();
+	}
+	return changed;
+}
+
+/*
+"Tags and behaviours": creates the project's own tags and bound area behaviours (BABehaviors::boundAreas, saved to External/Collision/BoundAreas.json at once) and edits their rules. A behaviour has the tags it is (what a shape
+that has it is), the tags it collides with, and a list of onTouch entries: a function (a sf.onTouch one from Globals::Game::boundAreaFunctions, by combo or by dropping a "TOUCH" tile of the Assets tab on the Add button) with the tags
+whose overlap calls it. The shape combo above lists the new behaviours at once. Editing one changes it for everything that uses it.
+Tags and behaviours made here can be renamed and deleted (a tag or behaviour that is still used is refused, the reason shown on the tab). The built-in behaviours and the ones a script made are listed under "Built-in and script behaviours": Customise copies one
+into the project's data (a script's functions are named "<behaviour>/<tag>" or by their sf.onTouch name), which then replaces the original rules at every start; Revert removes the copy.
+*/
+void InspectorPanel::drawBoundAreaRules()
+{
+	BABehaviors& rBehaviors = Globals::Game::baBehaviors;
+	if(!ImGui::CollapsingHeader("Tags and behaviours")) return;
+
+	ImGui::InputText("##newTag", this->newTagName, sizeof(this->newTagName));
+	ImGui::SameLine();
+	if(ImGui::Button("New tag"))
+	{
+		this->tryEdit([&]
+		{
+			rBehaviors.addBoundAreaTag(this->newTagName);
+			rBehaviors.saveBoundAreas();
+			this->newTagName[0] = '\0';
+		});
+	}
+	ImGui::InputText("##newBehavior", this->newBehaviorName, sizeof(this->newBehaviorName));
+	ImGui::SameLine();
+	if(ImGui::Button("New behaviour"))
+	{
+		this->tryEdit([&]
+		{
+			rBehaviors.addBoundAreaBehavior(this->newBehaviorName);
+			rBehaviors.saveBoundAreas();
+			this->newBehaviorName[0] = '\0';
+		});
+	}
+
+	/* The edits that change what exists wait until the lists are walked: they erase from what the rows walk. */
+	std::string removeTag;
+	int removeBehavior = -1;
+	int revertBehavior = -1;
+	bool openRename = false;
+
+	if(!rBehaviors.boundAreas.tags.empty() && ImGui::TreeNode("Tags"))
+	{
+		for(size_t t = 0; t < rBehaviors.boundAreas.tags.size(); t++)
+		{
+			const std::string& rTag = rBehaviors.boundAreas.tags[t];
+			bool fixed = std::find(rBehaviors.boundAreas.fixedTags.begin(), rBehaviors.boundAreas.fixedTags.end(), rTag) != rBehaviors.boundAreas.fixedTags.end();
+			ImGui::PushID(static_cast<int>(t));
+			ImGui::TextUnformatted(rTag.c_str());
+			if(fixed)
+			{
+				ImGui::SameLine();
+				ImGui::TextDisabled("(a script uses it)");
+			}
+			else
+			{
+				ImGui::SameLine();
+				if(ImGui::SmallButton("Rename"))
+				{
+					this->renameKind = 1;
+					this->renameTag = rTag;
+					std::snprintf(this->renameText, sizeof(this->renameText), "%s", rTag.c_str());
+					openRename = true;
+				}
+				ImGui::SameLine();
+				if(ImGui::SmallButton("Delete")) removeTag = rTag;
+			}
+			ImGui::PopID();
+		}
+		ImGui::TreePop();
+	}
+
+	const auto& rFunctions = Globals::Game::boundAreaFunctions;
+	for(size_t b = 0; b < rBehaviors.boundAreas.behaviors.size(); b++)
+	{
+		BoundAreaBehaviorData& rData = rBehaviors.boundAreas.behaviors[b];
+		ImGui::PushID(static_cast<int>(b));
+		bool fromScript = rBehaviors.scriptBehaviorNamed(rData.name) != nullptr;
+		if(ImGui::TreeNode("Behavior", "%s%s", rData.name.c_str(), fromScript ? " (customised built-in or script behaviour)" : ""))
+		{
+			bool changed = false;
+			changed |= tagChecklist("Tags (what it is)", rData.tags);
+			changed |= tagChecklist("Collides with", rData.collidesWith);
+
+			ImGui::TextUnformatted("onTouch:");
+			int removeRule = -1;
+			for(size_t r = 0; r < rData.onTouch.size(); r++)
+			{
+				BoundAreaRule& rRule = rData.onTouch[r];
+				ImGui::PushID(static_cast<int>(r));
+				bool missing = !rFunctions.nameToId.contains(rRule.function);
+				std::string current = missing ? std::format("{} (not registered)", rRule.function) : rRule.function;
+				if(ImGui::BeginCombo("function", current.c_str()))
+				{
+					for(uint32_t f = 0; f < rFunctions.objects.size(); f++)
+					{
+						if(!rFunctions.alive[f]) continue;
+						if(ImGui::Selectable(rFunctions.names[f].c_str(), rFunctions.names[f] == rRule.function))
+						{
+							rRule.function = rFunctions.names[f];
+							changed = true;
+						}
+					}
+					ImGui::EndCombo();
+				}
+				if(missing) ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Function %s is not registered (its script is not loaded): the entry is kept and does nothing.", rRule.function.c_str());
+				changed |= tagChecklist("when it touches", rRule.tags);
+				if(ImGui::SmallButton("Remove")) removeRule = static_cast<int>(r);
+				ImGui::PopID();
+			}
+			if(removeRule >= 0)
+			{
+				rData.onTouch.erase(rData.onTouch.begin() + removeRule);
+				changed = true;
+			}
+			ImGui::Button("Add onTouch (drop a function here)");
+			if(ImGui::BeginDragDropTarget())
+			{
+				if(const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload("TOUCH"))
+				{
+					rData.onTouch.push_back(BoundAreaRule{static_cast<const char*>(pPayload->Data), {}});
+					changed = true;
+				}
+				ImGui::EndDragDropTarget();
+			}
+			ImGui::SameLine();
+			if(ImGui::SmallButton("Add empty"))
+			{
+				rData.onTouch.push_back(BoundAreaRule{});
+				changed = true;
+			}
+
+			if(changed)
+			{
+				this->tryEdit([&]
+				{
+					rBehaviors.applyBoundArea(b);
+					rBehaviors.saveBoundAreas();
+				});
+			}
+
+			if(fromScript)
+			{
+				if(ImGui::SmallButton("Revert to original")) revertBehavior = static_cast<int>(b);
+			}
+			else
+			{
+				if(ImGui::SmallButton("Rename"))
+				{
+					this->renameKind = 2;
+					this->renameIndex = b;
+					std::snprintf(this->renameText, sizeof(this->renameText), "%s", rData.name.c_str());
+					openRename = true;
+				}
+				ImGui::SameLine();
+				if(ImGui::SmallButton("Delete")) removeBehavior = static_cast<int>(b);
+			}
+			ImGui::TreePop();
+		}
+		ImGui::PopID();
+	}
+
+	/* What code made (built-ins and scripts) and nobody customised yet: read only, with the button that copies it into the project's data. */
+	int customize = -1;
+	if(!rBehaviors.boundAreas.scriptBehaviors.empty() && ImGui::TreeNode("Built-in and script behaviours"))
+	{
+		for(size_t s = 0; s < rBehaviors.boundAreas.scriptBehaviors.size(); s++)
+		{
+			const BoundAreaBehaviorData& rData = rBehaviors.boundAreas.scriptBehaviors[s];
+			bool customised = std::any_of(rBehaviors.boundAreas.behaviors.begin(), rBehaviors.boundAreas.behaviors.end(), [&](const BoundAreaBehaviorData& rOther_) { return rOther_.name == rData.name; });
+			if(customised) continue;
+			ImGui::PushID(static_cast<int>(s));
+			if(ImGui::TreeNode("Script behavior", "%s", rData.name.c_str()))
+			{
+				for(const std::string& rTag : rData.tags) ImGui::BulletText("tag %s", rTag.c_str());
+				for(const std::string& rTag : rData.collidesWith) ImGui::BulletText("collides with %s", rTag.c_str());
+				for(const BoundAreaRule& rRule : rData.onTouch)
+				{
+					std::string tags;
+					for(const std::string& rTag : rRule.tags) tags += (tags.empty() ? "" : ", ") + rTag;
+					ImGui::BulletText("%s when it touches %s", rRule.function.c_str(), tags.c_str());
+				}
+				if(ImGui::SmallButton("Customise")) customize = static_cast<int>(s);
+				ImGui::TreePop();
+			}
+			ImGui::PopID();
+		}
+		ImGui::TreePop();
+	}
+
+	if(!removeTag.empty())
+	{
+		this->tryEdit([&]
+		{
+			rBehaviors.removeBoundAreaTag(removeTag);
+			rBehaviors.saveBoundAreas();
+		});
+	}
+	if(removeBehavior >= 0)
+	{
+		this->tryEdit([&]
+		{
+			rBehaviors.removeBoundAreaBehavior(static_cast<size_t>(removeBehavior));
+			rBehaviors.saveBoundAreas();
+		});
+	}
+	if(revertBehavior >= 0)
+	{
+		this->tryEdit([&]
+		{
+			rBehaviors.revertBoundAreaBehavior(static_cast<size_t>(revertBehavior));
+			rBehaviors.saveBoundAreas();
+		});
+	}
+	if(customize >= 0)
+	{
+		this->tryEdit([&]
+		{
+			rBehaviors.customizeScriptBehavior(static_cast<size_t>(customize));
+			rBehaviors.saveBoundAreas();
+		});
+	}
+
+	/* The rename popup of tags and behaviours (renameKind 1 / 2): opened here, outside the rows' ID scopes, with the text the row put in renameText. */
+	if(openRename) ImGui::OpenPopup("RenameBoundArea");
+	if(ImGui::BeginPopup("RenameBoundArea"))
+	{
+		ImGui::InputText("New name", this->renameText, sizeof(this->renameText));
+		if(ImGui::Button("Rename"))
+		{
+			this->tryEdit([&]
+			{
+				if(this->renameKind == 1) rBehaviors.renameBoundAreaTag(this->renameTag, this->renameText);
+				else rBehaviors.renameBoundAreaBehavior(this->renameIndex, this->renameText);
+				rBehaviors.saveBoundAreas();
+			});
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if(ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
 	}
 }
 

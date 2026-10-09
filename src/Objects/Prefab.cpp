@@ -7,8 +7,6 @@
 #include <algorithm>
 #include <cstdio>
 #include <format>
-#include <set>
-#include <string_view>
 #include <utility>
 
 static uint32_t prefabRevisionCounter = 0;
@@ -39,36 +37,6 @@ const char* prefabGroupFolder(PrefabGroup group_)
 	case PrefabGroup::InteractibleObjects: return "Interactible objects";
 	}
 	return "";
-}
-
-/*
-Which group a key name goes in (hypothesis, by what the names and the SA Tools / registry descriptions say they are; anything not listed is a static object). Enemies: SADX's E *, Shadow's GUN_*, BK_* and EGG_*
-(the enemies with an archive). Characters: the SET_CHARACTOR people of Shadow's stages. NPCs: Tikal and the Big Froggy. Interactible: what the player touches, uses or breaks.
-*/
-static PrefabGroup groupOf(SourceEngineEnum game_, std::string_view name_)
-{
-	static const std::set<std::string_view> saNpcs{"O TIKAL", "S KAERU"};
-	static const std::set<std::string_view> saInteractible{
-		"RING", "SPRING", "SPRINGB", "O AXPNL", "O IRONB", "O FeBJG", "O TOGE", "O EME P", "O RELEASE", "O SWITCH", "CMN_DRING", "O BALOON", "O ITEMBOX", "O ItemBoxAir",
-		"Rocket H", "Rocket HS", "Rocket V", "Rocket VS", "O JPanel", "O Save Point", "O BUBBLE", "O JUMP", "O BGIRO", "O BFLOOT", "S GENE"
-	};
-	static const std::set<std::string_view> oneCharacters{"Amy", "Charmy", "DoomsEye", "Eggman", "Espio", "Knuckles", "Maria", "Omega", "Rouge", "Sonic", "Tails", "Vector"};
-	static const std::set<std::string_view> oneInteractible{
-		"BALLOON", "BLASTBREAK", "BOMB", "BREAKOBJ", "CAPTURECAGE", "CONTAINER", "CONTAINERHARD", "CONTAINERSECRET", "CONTAINERUNBREAK", "CONTAINERWEAPON", "DASHPANEL", "DASHRING", "FAN", "FRUIT",
-		"GOALRING", "HEALINGUNIT", "HINTRING", "ITEMBOX", "JUMPBOARD", "LONGSPRING", "RING", "ROCKET", "SAVEPOINT", "SECRETDOOR", "SECRETKEY", "SETWEAPON", "SPRING", "SWITCH", "TANK", "TARGETSWITCH",
-		"TURNOVER", "UPDOWNREEL", "WEIGHT", "FOOTINGMOVABLE", "CITYLASER", "FALLBUILDING"
-	};
-	if(game_ == SA_NINJA)
-	{
-		if(name_.starts_with("E ")) return PrefabGroup::Enemies;
-		if(saNpcs.contains(name_)) return PrefabGroup::Npcs;
-		if(saInteractible.contains(name_)) return PrefabGroup::InteractibleObjects;
-		return PrefabGroup::StaticObjects;
-	}
-	if(name_.starts_with("GUN_") || name_.starts_with("BK_") || name_.starts_with("EGG_")) return PrefabGroup::Enemies;
-	if(oneCharacters.contains(name_)) return PrefabGroup::Characters;
-	if(oneInteractible.contains(name_)) return PrefabGroup::InteractibleObjects;
-	return PrefabGroup::StaticObjects;
 }
 
 PoolId findPrefab(SourceEngineEnum game_, const char* keyName_)
@@ -452,19 +420,20 @@ void removeLevelPrefabs()
 
 void registerPrefabs()
 {
-	/* The players: no entity key, they are made from the constants of ResourceKeys.h and the hand-made shapes of DebugSetup (spawnPrefab). A script attaches their behaviours (attachPlayer). */
+	/* The players: no entity key, they are made from the constants of ResourceKeys.h, and their body shape is their Changed file's (spawnPrefab). A script attaches their behaviours (attachPlayer). */
 	addPrefab(Prefab{"Sonic", SA_NINJA, PrefabGroup::Characters, PrefabKind::SonicPlayer, nullptr, nullptr, true, true, true});
 	addPrefab(Prefab{"Shadow", STH2005_ONE, PrefabGroup::Characters, PrefabKind::ShadowPlayer, nullptr, nullptr, true, true, true});
 
+	/* The groups of the key prefabs are given afterwards, from Groups.json (Loading::loadPrefabData). */
 	Loading::forEachSAEntityKey([](const SAEntityKey& rKey_)
 	{
 		bool hasModel = rKey_.model.rel != nullptr;
 		for(const SAModelKey& rVariant : rKey_.variantModels) hasModel = hasModel || rVariant.rel != nullptr;
 		bool hasCollision = !rKey_.collisions.empty() || !rKey_.variantCollisions.empty();
-		addPrefab(Prefab{rKey_.name, SA_NINJA, groupOf(SA_NINJA, rKey_.name), PrefabKind::SAObject, &rKey_, nullptr, hasModel, hasCollision, false});
+		addPrefab(Prefab{rKey_.name, SA_NINJA, PrefabGroup::StaticObjects, PrefabKind::SAObject, &rKey_, nullptr, hasModel, hasCollision, false});
 	});
 	Loading::forEachONEEntityKey([](const STH2005::EntityKey& rKey_)
 	{
-		addPrefab(Prefab{rKey_.name, STH2005_ONE, groupOf(STH2005_ONE, rKey_.name), PrefabKind::ONEObject, nullptr, &rKey_, !rKey_.models.empty(), !rKey_.collisions.empty(), false});
+		addPrefab(Prefab{rKey_.name, STH2005_ONE, PrefabGroup::StaticObjects, PrefabKind::ONEObject, nullptr, &rKey_, !rKey_.models.empty(), !rKey_.collisions.empty(), false});
 	});
 }

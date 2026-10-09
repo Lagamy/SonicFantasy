@@ -8,7 +8,7 @@
 /*
 The one place levels are made. loadLevel reads Assets/Levels/<name>/<name>.json (a level is a folder, copied from Levels/ at build: the file, and beside it the level's own Models, Textures, Collision and Prefabs), makes the Level with the engine the file names
 ("sadx": an SADX land table; "sth2005": a Shadow stage, "gltf": glTF files), gives it its instance, collision and placed entities, and returns it. The file format is in
-docs/ENGINE_USAGE.md. Generated tables (entity tables, type names, stage entities) are not in the file: it names them and LevelLoader.cpp holds the registry of those names.
+docs/ENGINE_USAGE.md. Generated tables (entity tables, type names) are not in the file: it names them and LevelLoader.cpp holds the registry of those names.
 A file that is missing or wrong, or a name the registry does not know, throws std::runtime_error with the level's name; a level that fails halfway is removed again.
 Loading a name twice reuses the keys made the first time (instances keep pointers into them).
 */
@@ -54,7 +54,6 @@ namespace Loading
         std::string placementFiles;
         std::string entityTable;
         std::string typeNames;
-        std::string stageEntities;
         std::string model;
         std::string collisions;
     };
@@ -78,6 +77,12 @@ namespace Loading
 #endif
 
     /*
+    Gives the prefabs built from a key what is not in the key: their group (Prefab::group, from Assets/External/Prefabs/Groups.json), for the Shadow objects Prefab::layout, variants and loopMotion (from Assets/External/Prefabs/STH2005/Placement.json,
+    written by tools/genEntityKeys.py) and for the SADX objects Prefab::rotation and variantField (from Assets/External/Prefabs/SADX/Placement.json, written by tools/genSAEntityKeys.py). The files are described in ENGINE_USAGE.md. A missing or bad file is printed to stderr and the prefabs keep StaticObjects / Single / the usual rotation. Once, after registerPrefabs; before any level or entity is made.
+    */
+    void loadPrefabData();
+
+    /*
     Reads the Changed file of every prefab built from a key (Assets/External/Prefabs/<game>/<KEY>/Changed/prefab.json, e.g. SADX/SPRING) into Prefab::changed: the same object as a level file's edits.prefabs entry (see ENGINE_USAGE.md). A missing file is no changes; a bad one is
     printed to stderr and skipped. Once, after registerPrefabs and the scripts (a behaviour is named); before any level or entity is made.
     */
@@ -89,7 +94,7 @@ namespace Loading
     */
     void loadSourcePrefabs(const std::string& levelName_);
 
-    /* Calls the function for every entity key of the generated entity tables the registry names (and of the stage entities), each table in turn: the source of the prefabs (Prefab.h). The keys live for the whole run. */
+    /* Calls the function for every entity key of the generated entity tables the registry names (and the ones a stage's own code creates), each table in turn: the source of the prefabs (Prefab.h). The keys live for the whole run. */
     void forEachSAEntityKey(const std::function<void(const SAEntityKey&)>& rFunction_);
     void forEachONEEntityKey(const std::function<void(const STH2005::EntityKey&)>& rFunction_);
 }

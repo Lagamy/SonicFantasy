@@ -4,18 +4,12 @@
 
 /*
 Test setup of the physics and collision systems that main.cpp calls while they are being worked on: what the triangle values do and
-the physics of the two test entities. Nothing here is needed by the systems themselves.
+the physics of the two test entities (their body shapes are their prefabs' Changed files). Nothing here is needed by the systems themselves.
 */
 namespace DebugSetup
 {
 /* Gives both test entities a physics of weight 1 (the gravity is Globals::Physics::gravity). */
 void enablePhysics(PoolId sonicId_, PoolId shadowId_);
-
-/* Gives Shadow a hand-made collision shape (the body capsule seen in a RAM dump, see DebugSetup.cpp). */
-void addShadowShape(PoolId shadowId_);
-
-/* Gives Sonic a hand-made body sphere (see DebugSetup.cpp). */
-void addSonicShape(PoolId sonicId_);
 
 #ifdef EDITOR
 /*

@@ -416,7 +416,7 @@ namespace Loading
     .rel), textured through the land table's texlist: a texture id of a piece is a name of the texlist, looked up in the
     TextureSet of rTextures_ (a name the set doesn't have throws). If a step fails, what this call loaded is removed again.
     */
-    PoolId addSALevelInstance(PoolId shaderId_, const SALandTableKey& rLandTable_, const SATextureSetKey& rTextures_)
+    PoolId addSALevelInstance(PoolId shaderId_, const SALandTableKey& rLandTable_, const SATextureSetKey& rTextures_, const std::vector<std::string>& rSkippedTextures_)
     {
         Ninja::SALandTable landTable;
         bool setCreated = false;
@@ -450,7 +450,7 @@ namespace Loading
             {
                 if(!(rCol.flags & LandTableVisible)) continue;
                 PoolId instanceId = createSAInstance(shaderId_, SAModelKey{rLandTable_.rel, rCol.modelOffset}, &rTextures_, &order);
-                if(isSkippedPiece(saMeshes[saInstances[instanceId].saMeshId], landTable.textureNames, rLandTable_.skippedTextures))
+                if(isSkippedPiece(saMeshes[saInstances[instanceId].saMeshId], landTable.textureNames, rSkippedTextures_))
                 {
                     saInstances.remove(instanceId);
                     continue;
@@ -476,7 +476,7 @@ namespace Loading
     its submeshes' texture names being looked up in the dictionary (a name it doesn't have throws). The instance holds one
     user of the texture archive until destroyed. If a step fails, what this call loaded is removed again.
     */
-    PoolId addONELevelInstance(PoolId shaderId_, const STH2005::LevelKey& rLevel_)
+    PoolId addONELevelInstance(PoolId shaderId_, const STH2005::LevelKey& rLevel_, const std::vector<std::string>& rSkippedEntries_)
     {
         bool archiveCreated = false;
         PoolId archiveId = findOrLoadONE(rLevel_.textures.archive, archiveCreated);
@@ -492,7 +492,7 @@ namespace Loading
                 {
                     if(rEntry.name.size() < 4 || !std::string_view(rEntry.name).ends_with(".RG1")) continue;
                     bool skipped = false;
-                    for(const std::string& rPart : rLevel_.skippedEntries)
+                    for(const std::string& rPart : rSkippedEntries_)
                     {
                         if(rEntry.name.find(rPart) != std::string::npos) skipped = true;
                     }
@@ -605,13 +605,13 @@ namespace Loading
         return gltfLevelInstances.add(std::move(level));
     }
 
-    /* The collision of a glTF level: the triangles of the collision files the key names (Collision/<name>.collision.json, CollisionFile.h) in one Collision, every piece solid (flags 0 is not listed in BARemapSADXLevel, whose fallback is Solid). */
+    /* The collision of a glTF level: the triangles of the collision files the key names (Collision/<name>.collision.json, CollisionFile.h) in one Collision, every piece solid (flags 0 is not listed in the SADXLevel remap, whose fallback is Solid). */
     PoolId addGLTFCollision(const GLTFLevelKey& rLevel_)
     {
         Physics::Collision collision;
         for(const std::string& rName : rLevel_.collisions) collision.mesh.append(readGLTFCollisionFile(rLevel_, rName));
         collision.computeBounds();
-        Globals::Game::baBehaviors.resolve(collision, BARemapSADXLevel);
+        Globals::Game::baBehaviors.resolve(collision, Globals::Game::baBehaviors.remapSADXLevel);
         return Globals::Physics::collisions.add(std::move(collision));
     }
 
@@ -624,7 +624,7 @@ namespace Loading
         rCollision.position = glm::vec3(0.0f);
         rCollision.computeBounds();
         rCollision.setPosition(position);
-        Globals::Game::baBehaviors.resolve(rCollision, BARemapSADXLevel);
+        Globals::Game::baBehaviors.resolve(rCollision, Globals::Game::baBehaviors.remapSADXLevel);
     }
 
     /* One collision file of a glTF level. */
@@ -657,7 +657,7 @@ namespace Loading
         }
         eraseRelModuleIfUnused(rLandTable_.rel);
         collision.computeBounds();
-        Globals::Game::baBehaviors.resolve(collision, BARemapSADXLevel);
+        Globals::Game::baBehaviors.resolve(collision, Globals::Game::baBehaviors.remapSADXLevel);
         return Globals::Physics::collisions.add(std::move(collision));
     }
 
@@ -684,7 +684,7 @@ namespace Loading
             }
             eraseRelModuleIfUnused(rKey.rel);
         }
-        Globals::Game::baBehaviors.resolve(collision, BARemapSADXShape);
+        Globals::Game::baBehaviors.resolve(collision, Globals::Game::baBehaviors.remapSADXShape);
         return Globals::Physics::collisions.add(std::move(collision));
     }
 
@@ -702,7 +702,7 @@ namespace Loading
             throw;
         }
         eraseRelModuleIfUnused(rShapes_.rel);
-        Globals::Game::baBehaviors.resolve(collision, BARemapSADXShape);
+        Globals::Game::baBehaviors.resolve(collision, Globals::Game::baBehaviors.remapSADXShape);
         return Globals::Physics::collisions.add(std::move(collision));
     }
 
@@ -716,7 +716,7 @@ namespace Loading
         Physics::Collision collision;
         collision.shapes = STH2005::readCCL(archive.readFile(rShapes_.entry));
         collision.name = rShapes_.entry;
-        Globals::Game::baBehaviors.resolve(collision, BARemapShadowShape);
+        Globals::Game::baBehaviors.resolve(collision, Globals::Game::baBehaviors.remapShadowShape);
         return Globals::Physics::collisions.add(std::move(collision));
     }
 
@@ -733,7 +733,7 @@ namespace Loading
             collision.shapes.insert(collision.shapes.end(), shapes.begin(), shapes.end());
             collision.name += std::format("{}{}", collision.name.empty() ? "" : ", ", rKey.entry);
         }
-        Globals::Game::baBehaviors.resolve(collision, BARemapShadowShape);
+        Globals::Game::baBehaviors.resolve(collision, Globals::Game::baBehaviors.remapShadowShape);
         return Globals::Physics::collisions.add(std::move(collision));
     }
 
@@ -760,7 +760,7 @@ namespace Loading
             }
         }
         collision.computeBounds();
-        Globals::Game::baBehaviors.resolve(collision, BARemapShadowLevel);
+        Globals::Game::baBehaviors.resolve(collision, Globals::Game::baBehaviors.remapShadowLevel);
         return Globals::Physics::collisions.add(std::move(collision));
     }
 

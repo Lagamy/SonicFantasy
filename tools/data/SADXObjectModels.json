@@ -1,0 +1,52 @@
+{
+ "note": "Hand-written object -> model choices of tools/genSAEntityKeys.py (read by it). The object list's names are the game's own; which INI model an object draws is a hypothesis from the names unless a note says it was read from the machine code. A model is the INI's model name of its module.",
+ "noModel": {
+  "note": "Objects that only spawn or remove other things at run time (hypothesis, from the names; their code names the Orca or the fish models without drawing them): no model, so they get a marker. O DOLSW: 'dolphin switch' (hypothesis, from the name): its code names the Dolphin model because it starts the jumping dolphin; the switch itself shows nothing. O MKUSA: the only model its code names is Parasol A, which cannot be a grass. O BEWIND: observed (user): its first guessed model, 'Floating Pier', showed up as a piece of a bridge where nothing is; that model belongs to the floating bridge the stage's own code creates (the level file's source.added, docs/EMERALD_COAST_OBJECTS.md), whose code sits in the same source file as BEWIND's (_Stg01.rel 0x16F0C to 0x1883C). BEWIND's own exec (0x16F0C, 104 bytes) checks the players, clamps its scale components and draws a debug volume only; its two records are high above the ground with scale (111, 0, 230) (hypothesis: an invisible volume).",
+  "names": [
+   "O AO KILL",
+   "O AO SUMMON",
+   "O BEWIND",
+   "O DOLSW",
+   "O MKUSA",
+   "O PO SUMMON"
+  ]
+ },
+ "stageModels": {
+  "note": "Stage objects whose model is named by hand, by the INI's model name of the stage module (hypothesis, from the names). O PARASOL: external, the decompile of _Stg01.rel (FUN_8040e364): the byte of the record's scale x modulo 5 picks one of 5 parasol kinds (its debug text is 'KIND OF PARASOL'). O PIER: its guessed model, 'Pier Collision', is a white collision plane and 'Floating Pier' belongs to O BEWIND's chain (observed, user); the pier's own models are the variant models' (the straight pier is the first). O BED and O KASA: display code seen in a RAM dump of Emerald Coast act 1 (machine code): O BED draws 'Beach Bed' (_Stg01.rel 0x41C4), O KASA draws 'Straw Umbrella' (0xB0B8).",
+  "values": {
+   "O PARASOL": "Parasol A",
+   "O PIER": "Pier (Straight)",
+   "O BED": "Beach Bed",
+   "O KASA": "Straw Umbrella"
+  }
+ },
+ "mainModels": {
+  "note": "Shared objects' models by the INI's model name of _Main.rel (hypothesis from the names). SPRINGB: the INI's 'Rotatable Spring' is object/bane_type_b (type B) and the records turn it about all three axes (hypothesis: the name); 'Triple Spring' is bane_yoko_body, a side spring.",
+  "values": {
+   "RING": "Ring",
+   "SPRING": "Spring",
+   "SPRINGB": "Rotatable Spring",
+   "O AXPNL": "Dash Panel",
+   "O IRONB": "Iron Ball (Joint)",
+   "O FeBJG": "Iron Ball",
+   "O TOGE": "Spikes",
+   "O EME P": "Master Emerald Shard",
+   "O RELEASE": "Capsule",
+   "O SWITCH": "Switch",
+   "CMN_DRING": "Dash Ring",
+   "O BALOON": "Balloon",
+   "O ITEMBOX": "Item Box",
+   "Rocket H": "Rocket Platform",
+   "Rocket HS": "Rocket Platform",
+   "Rocket V": "Rocket Platform",
+   "Rocket VS": "Rocket Platform",
+   "O JPanel": "Jump Panel",
+   "O Save Point": "Checkpoint",
+   "CMN KUSA": "Weed",
+   "O ItemBoxAir": "Item Box (Air)",
+   "E SARU": "Kiki",
+   "E SAITO": "Rhinotank",
+   "E AMEMB": "Sweeper"
+  }
+ }
+}

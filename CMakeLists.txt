@@ -105,6 +105,7 @@ add_executable(SonicSunset
 	src/Objects/SpatialIndex.cpp
 	src/Loading/ResourceLoader.cpp
 	src/Loading/LevelLoader.cpp
+	src/Loading/PlayerLoader.cpp
 	src/Loading/ExternalAssets.cpp
 	src/EngineEditor/Debug/DebugSetup.cpp
 	src/Physics/Collision.cpp

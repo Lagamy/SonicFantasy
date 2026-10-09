@@ -5,6 +5,7 @@
 #include "BABehaviors.h"
 #include "ResourceKeys.h"
 #include "LevelLoader.h"
+#include "PlayerLoader.h"
 #include "EntityBehavior.h"
 #include "GPU_Globals.h"
 #include "GPU_API.h"
@@ -18,6 +19,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <exception>
+#include <format>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -31,7 +33,7 @@ error if the handle is of an entity that is gone. Vectors are three numbers (x, 
 - entities: exists(e), name(e), position(e), setPosition(e, x, y, z), moveTo(e, x, y, z), turnY(e, radians), orient(e, yaw, nx, ny, nz), destroy(e), state(e), axis(e, x, y, z), setUncullable(e, bool), postEvent(name, e [, x, y, z]), setDashTrail(e, bool) (the jump dash ribbon, Graphics::DashTrail), setEffectBall(e, kind, bool) (Shadow's effect balls, Graphics::EffectBalls; kind "jumpA", "dashB" or "fallB")
 - bodies (an entity with a physics): hasBody(e), velocity(e), setVelocity(e, x, y, z), setGroundSnap(e, distance), setGroundSnapMode(e, {ray, radius, minNormalY, blockedByWall}), setMeanVelocityMove(e, on), setWeight(e, w), grounded(e), groundNormal(e), groundSurface(e), groundGap(e, maxGap), touchingWall(e), wallNormal(e)
 - behaviours: behavior(name, fn [, fields]) (fields = {name = {type = "number" | "bool" | "string" | "vec3" | "entity" | "prefab", default = v, external = bool}}: written into sf.state(e) before the first call; the external ones are set per entity in the editor's Inspector; a prefab field holds the prefab's name, an entity field a handle or sf.none, a vec3 {x, y, z}), give(e, name), prefabBehavior(prefabName, fn) (fn(entity, placement) is called for every entity made from that prefab, prefabName like "SADX/SPRING"; placement is the SET record {type, rotation, position, scale} or nil)
-- collision: tag(name), collisionBehavior(name, {tags, collidesWith, interactions}), setShapeBehavior(e, behavior)
+- collision: onTouch(name, fn), tag(name), collisionBehavior(name, {tags, collidesWith, interactions}), setShapeBehavior(e, behavior)
 - setup: spawn(prefabName, x, y, z) (makes an entity from a prefab by its name, "SADX/SPRING", "Global/Bullet"; returns it), loadLevel(name) (the name of a Levels/<name>/ folder: "EmeraldCoast", "Stg0100", "Stg0000"; returns the level), unloadLevel(level) (done at the start of the next tick), levelExists(level), spawnPlayer(character, x, y, z) ("sonic", "shadow"; returns the entity, which the script then attaches), setCamera(x, y, z)
 - scripts: include(path), rotateBamsZXY(x, y, z, az, ax, ay), none
 */
@@ -126,39 +128,22 @@ static int key(lua_State* pLua_)
 	return 1;
 }
 
-/* Makes an SA entity play one of Sonic's motions with the model it is made for, by the names of the table below (the keys are in ResourceKeys.h). Harmless to call every tick: the entity plays it when it differs from the one playing. */
-struct Animation
-{
-	const SAMotionKey* pMotion;
-	const SAModelKey* pMesh;
-};
+/*
+The motions an entity can be made to play by name: Sonic's (an SA entity: its motion and the model it is made for) and Shadow's (an STH2005 entity: its motion and whether it loops). Both tables are read from
+Assets/External/Players/Sonic.json and Shadow.json (Loading::loadPlayerKeys). animate picks the Shadow table for an entity of the STH2005_ONE engine.
+Harmless to call every tick: the entity plays a motion when it differs from the one playing.
+*/
+using Animation = Loading::SonicAnimation;
+using ShadowAnimation = Loading::ShadowAnimation;
 
 static const std::unordered_map<std::string, Animation>& animationTable()
 {
-	static const std::unordered_map<std::string, Animation> animations = {
-		{"stand", {&SonicStand, &SonicMesh}}, {"walk", {&SonicWalk, &SonicMesh}}, {"speedwalk", {&SonicSpeedwalk, &SonicMesh}}, {"jog", {&SonicJog, &SonicMesh}},
-		{"run", {&SonicRun, &SonicMesh}}, {"sprint", {&SonicSprint, &SonicMesh}}, {"brake", {&SonicBrake, &SonicMesh}}, {"turnAround", {&SonicTurnAround, &SonicMesh}},
-		{"springFall", {&SonicSpringFall, &SonicMesh}}, {"fall", {&SonicFall, &SonicMesh}}, {"landing", {&SonicLanding, &SonicMesh}}, {"damage", {&SonicDamage, &SonicMesh}},
-		{"jump", {&SonicJumpMotion, &SonicCurledMesh}}, {"ball", {&SonicBallMotion, &SonicJumpballMesh}}};
-	return animations;
+	return Loading::sonicKeys().animations;
 }
 
-/* The motions of a Shadow (Shadow the Hedgehog) entity, by name (the keys are in ResourceKeys.h); animate picks this table for an entity of the STH2005_ONE engine. */
-struct ShadowAnimation
-{
-	const STH2005::MotionKey* pMotion;
-	bool loop;
-};
-
-/* "jump" and "jumpB" play once and hold their last frame (sh_jump_a is a start motion, observed by you; b follows it, see ResourceKeys.h); the others loop, "jumpC" (the somersault, which ends in the pose it starts from) too. */
 static const std::unordered_map<std::string, ShadowAnimation>& shadowAnimationTable()
 {
-	static const std::unordered_map<std::string, ShadowAnimation> animations = {
-		{"stand", {&ShadowIdle, true}}, {"idle", {&ShadowIdle, true}}, {"walk", {&ShadowWalk, true}}, {"run", {&ShadowRun, true}}, {"jump", {&ShadowJump, false}}, {"jumpB", {&ShadowJumpB, false}}, {"jumpC", {&ShadowJumpC, true}}, {"fall", {&ShadowFall, true}},
-		{"brake", {&ShadowBrake, true}}, {"damage", {&ShadowDamage, true}}, {"skate", {&ShadowSlowSkate, true}}, {"highSkate", {&ShadowHighSkate, true}},
-		{"jumpFA", {&ShadowJumpFA, false}}, {"jumpFB", {&ShadowJumpFB, false}}, {"jumpD", {&ShadowJumpD, true}}, {"jumpE", {&ShadowJumpE, false}},
-		{"dash", {&ShadowFwJump, true}}};
-	return animations;
+	return Loading::shadowKeys().animations;
 }
 
 static int animate(lua_State* pLua_)
@@ -648,31 +633,82 @@ static int give(lua_State* pLua_)
 
 /* ---- collision ---- */
 
+/* The file the calling chunk was loaded from, as in behavior; empty if it was not loaded from one. */
+static std::string callerSourceFile(lua_State* pLua_)
+{
+	lua_Debug caller;
+	if(lua_getstack(pLua_, 1, &caller) && lua_getinfo(pLua_, "S", &caller) && caller.source != nullptr && caller.source[0] == '@') return caller.source + 1;
+	return "";
+}
+
+/* Registers the function at index_ under the name (Globals::Game::boundAreaFunctions); a name that is registered keeps its registry reference and gets the new function behind it. Returns the reference. */
+static int registerBoundAreaFunction(lua_State* pLua_, const std::string& rName_, int index_, const std::string& rSourceFile_)
+{
+	auto& rFunctions = Globals::Game::boundAreaFunctions;
+	auto found = rFunctions.nameToId.find(rName_);
+	lua_pushvalue(pLua_, index_);
+	if(found == rFunctions.nameToId.end())
+	{
+		BoundAreaFunction function;
+		function.scriptFunction = luaL_ref(pLua_, LUA_REGISTRYINDEX);
+		function.sourceFile = rSourceFile_;
+		rFunctions.add(rName_.c_str(), function);
+		return function.scriptFunction;
+	}
+	BoundAreaFunction& rFunction = rFunctions[found->second];
+	lua_rawseti(pLua_, LUA_REGISTRYINDEX, rFunction.scriptFunction);
+	rFunction.sourceFile = rSourceFile_;
+	return rFunction.scriptFunction;
+}
+
+/*
+Registers fn(parent, contact) under a name as an onTouch function of a bound area (BoundAreaFunction): the editor lists it and a bound area's rules name it. The same name again replaces the function behind the
+same registry reference. Returns the function, so it can also be used directly in the interactions of sf.collisionBehavior (which then names it by this name).
+*/
+static int onTouch(lua_State* pLua_)
+{
+	const char* pName = luaL_checkstring(pLua_, 1);
+	luaL_checktype(pLua_, 2, LUA_TFUNCTION);
+	registerBoundAreaFunction(pLua_, pName, 2, callerSourceFile(pLua_));
+	lua_pushvalue(pLua_, 2);
+	return 1;
+}
+
 /* The tag of that name; made if there is none (the built-in ones, Solid, Pickup, Hazard, Death and Body, are there already). */
 static int tag(lua_State* pLua_)
 {
 	const char* pName = luaL_checkstring(pLua_, 1);
 	PoolId id = Globals::Game::baBehaviors.findTag(pName);
-	if(id == UninitializedPoolId) id = Globals::Game::baBehaviors.addTag(BATagKey{pName});
+	if(id == UninitializedPoolId)
+	{
+		id = Globals::Game::baBehaviors.addTag(BATagKey{pName});
+		Globals::Game::baBehaviors.boundAreas.fixedTags.push_back(pName);
+	}
 	lua_pushinteger(pLua_, toHandle(id));
 	return 1;
 }
 
 /*
-Makes a collision behaviour (BABehavior.h) from {tags = {tag, ...}, collidesWith = {tag, ...}, interactions = {[tag] = fn(parent, contact), ...}}; each part may be left out. Returns its handle. An interaction is
+Makes a collision behaviour (BABehavior.h) from {tags = {tag, ...}, collidesWith = {tag, ...}, interactions = {[tag] = fn(parent, contact) or {fn, fn, ...}, ...}}; each part may be left out. Returns its handle. An interaction is
 called with the entity that owns the collision (parent) and the one it touched (contact), once per tick and pair.
+The behaviour's rules are also kept by name (BoundAreaData::scriptBehaviors) so the editor can show and customise it: a function that sf.onTouch registered is named by that name, any other is registered as
+"<behaviour>/<tag>" (with "#2", "#3" ... for a second one of the tag).
 */
 static int collisionBehavior(lua_State* pLua_)
 {
 	const char* pName = luaL_checkstring(pLua_, 1);
 	luaL_checktype(pLua_, 2, LUA_TTABLE);
 	BABehavior behavior;
+	BoundAreaBehaviorData data;
+	data.name = pName;
+	const auto& rTagNames = Globals::Game::baTags.names;
 
 	if(lua_getfield(pLua_, 2, "tags") == LUA_TTABLE)
 	{
 		for(lua_Integer i = 1; lua_rawgeti(pLua_, -1, i) != LUA_TNIL; i++)
 		{
 			behavior.tags.push_back(fromHandle(luaL_checkinteger(pLua_, -1)));
+			data.tags.push_back(rTagNames[behavior.tags.back().id]);
 			lua_pop(pLua_, 1);
 		}
 		lua_pop(pLua_, 1);
@@ -683,28 +719,72 @@ static int collisionBehavior(lua_State* pLua_)
 	{
 		for(lua_Integer i = 1; lua_rawgeti(pLua_, -1, i) != LUA_TNIL; i++)
 		{
-			behavior.availableCollisions.insert(fromHandle(luaL_checkinteger(pLua_, -1)).id);
+			PoolId tagId = fromHandle(luaL_checkinteger(pLua_, -1));
+			behavior.availableCollisions.insert(tagId.id);
+			data.collidesWith.push_back(rTagNames[tagId.id]);
 			lua_pop(pLua_, 1);
 		}
 		lua_pop(pLua_, 1);
 	}
 	lua_pop(pLua_, 1);
 
+	/* The function at index_, named and registered if it was not, added to the behaviour for the tag. */
+	std::string sourceFile = callerSourceFile(pLua_);
+	auto interact = [&](uint32_t tagId_, int index_)
+	{
+		auto& rFunctions = Globals::Game::boundAreaFunctions;
+		index_ = lua_absindex(pLua_, index_);
+		std::string name;
+		for(uint32_t f = 0; f < rFunctions.objects.size() && name.empty(); f++)
+		{
+			if(!rFunctions.alive[f]) continue;
+			lua_rawgeti(pLua_, LUA_REGISTRYINDEX, rFunctions.objects[f].scriptFunction);
+			if(lua_rawequal(pLua_, -1, index_)) name = rFunctions.names[f];
+			lua_pop(pLua_, 1);
+		}
+		if(name.empty())
+		{
+			name = std::format("{}/{}", pName, rTagNames[tagId_]);
+			for(int n = 2; rFunctions.nameToId.contains(name); n++) name = std::format("{}/{}#{}", pName, rTagNames[tagId_], n);
+			registerBoundAreaFunction(pLua_, name, index_, sourceFile);
+		}
+		behavior.availableInteractions[tagId_].push_back(BAInteraction::script(rFunctions[rFunctions.nameToId.at(name)].scriptFunction));
+
+		auto rule = std::find_if(data.onTouch.begin(), data.onTouch.end(), [&](const BoundAreaRule& rRule_) { return rRule_.function == name; });
+		if(rule == data.onTouch.end()) rule = data.onTouch.insert(data.onTouch.end(), BoundAreaRule{name, {}});
+		if(std::find(rule->tags.begin(), rule->tags.end(), rTagNames[tagId_]) == rule->tags.end()) rule->tags.push_back(rTagNames[tagId_]);
+	};
+
 	if(lua_getfield(pLua_, 2, "interactions") == LUA_TTABLE)
 	{
 		lua_pushnil(pLua_);
 		while(lua_next(pLua_, -2) != 0)
 		{
-			luaL_checktype(pLua_, -1, LUA_TFUNCTION);
 			uint32_t tagId = fromHandle(luaL_checkinteger(pLua_, -2)).id;
-			lua_pushvalue(pLua_, -1);
-			behavior.availableInteractions[tagId] = BAInteraction::script(luaL_ref(pLua_, LUA_REGISTRYINDEX));
+			/* A function, or a list of functions when a tag has several. */
+			if(lua_type(pLua_, -1) == LUA_TFUNCTION)
+			{
+				interact(tagId, -1);
+			}
+			else
+			{
+				luaL_checktype(pLua_, -1, LUA_TTABLE);
+				for(lua_Integer i = 1; lua_rawgeti(pLua_, -1, i) != LUA_TNIL; i++)
+				{
+					luaL_checktype(pLua_, -1, LUA_TFUNCTION);
+					interact(tagId, -1);
+					lua_pop(pLua_, 1);
+				}
+				lua_pop(pLua_, 1);
+			}
 			lua_pop(pLua_, 1);
 		}
 	}
 	lua_pop(pLua_, 1);
 
-	lua_pushinteger(pLua_, toHandle(Globals::Game::baBehaviors.add(BABehaviorKey{pName}, behavior)));
+	PoolId id = Globals::Game::baBehaviors.add(BABehaviorKey{pName}, behavior);
+	Globals::Game::baBehaviors.boundAreas.scriptBehaviors.push_back(std::move(data));
+	lua_pushinteger(pLua_, toHandle(id));
 	return 1;
 }
 
@@ -868,7 +948,7 @@ void registerAPI(lua_State* pLua_)
 		{"hasBody", guarded<hasBody>}, {"velocity", guarded<velocity>}, {"setVelocity", guarded<setVelocity>}, {"grounded", guarded<grounded>}, {"setGroundSnap", guarded<setGroundSnap>}, {"setWeight", guarded<setWeight>}, {"setGroundSnapMode", guarded<setGroundSnapMode>}, {"setMeanVelocityMove", guarded<setMeanVelocityMove>},
 		{"groundNormal", guarded<groundNormal>}, {"groundSurface", guarded<groundSurface>}, {"groundGap", guarded<groundGap>}, {"touchingWall", guarded<touchingWall>}, {"wallNormal", guarded<wallNormal>},
 		{"behavior", guarded<behavior>}, {"give", guarded<give>}, {"prefabBehavior", guarded<prefabBehavior>},
-		{"tag", guarded<tag>}, {"collisionBehavior", guarded<collisionBehavior>}, {"setShapeBehavior", guarded<setShapeBehavior>},
+		{"onTouch", guarded<onTouch>}, {"tag", guarded<tag>}, {"collisionBehavior", guarded<collisionBehavior>}, {"setShapeBehavior", guarded<setShapeBehavior>},
 		{"loadLevel", guarded<loadLevel>}, {"unloadLevel", guarded<unloadLevel>}, {"levelExists", guarded<levelExists>}, {"spawnPlayer", guarded<spawnPlayer>}, {"spawn", guarded<spawn>},{"setCamera", guarded<setCamera>},
 		{"include", guarded<include>}, {"rotateBamsZXY", guarded<rotateBamsZXY>},
 		{nullptr, nullptr}

@@ -80,24 +80,12 @@ struct TextureKey
 };
 
 /*
-How many objects of an EntityKey one placement record stands for, and where they are (see RingLine.h): Single is one at the record's position, RingLine
-is the layout of the ring object (a record is a count of rings along a line, or the other shapes of the game's ring code), Variant is for objects whose record
-names one of the BIN's variants: the u32 at the start of its parameters is an index into EntityKey::variants (observed on the stage art objects; hypothesis that it is
-the index of the .BIN's info), and the record makes one entity per model of that variant.
-*/
-enum class PlacementLayout
-{
-	Single,
-	RingLine,
-	Variant
-};
-
-/*
 A kind of object a stage places (the registry of main.dol, see readPlacements): everything an entity of it is made from, grouped from the keys above. All of
 them are in the stage's `*_gdt.one` archive (or stg_cmn_gdt.one for the objects common to every stage), which is also where the textures are.
 name is the registry's name for the type (e.g. "SPRING"), for reading; models are the object's models, in the order of its .BIN (the first is the one an entity is created
 with, the others are states it can switch to, see Entity::changeActiveMesh); textures.entry is nullptr for an object without a .TXD; motions and collisions are
-the motions and the .CCL shapes the .BIN names; layout says how many entities one placement record makes; variants (for the Variant layout) lists, per variant, the indices into models of the models it is made of, and the collision with the variant's index (if any) goes to the first of them; loopMotion makes the motion Level starts on the entity loop (set for living things, enemies and characters, whose idle goes on) instead of playing once. Which of them an entity uses at a time is not decided here (no behaviour yet).
+the motions and the .CCL shapes the .BIN names. How a placement record is made into entities (PlacementLayout, the .BIN's variants) and whether the motion loops are not here:
+they are the prefab's (Prefab::layout, variants, loopMotion), read from External/Prefabs/STH2005/Placement.json. Which of the models an entity uses at a time is not decided here (no behaviour yet).
 */
 struct EntityKey
 {
@@ -106,9 +94,6 @@ struct EntityKey
 	TextureKey textures;
 	std::vector<MotionKey> motions = {};
 	std::vector<CollisionKey> collisions = {};
-	PlacementLayout layout = PlacementLayout::Single;
-	std::vector<std::vector<uint32_t>> variants = {};
-	bool loopMotion = false;
 };
 
 /*
@@ -126,8 +111,6 @@ struct PlacedEntityKey
 A stage's level: the section archives that hold its worlds (every .RG1 entry of each is imported, the .BSP collision
 entries are not) and the .TXD entry its materials' textures are looked up in, which is in another archive (the stage's
 texture archive). Imported the first time a level needs it.
-skippedEntries are parts of entry names: an .RG1 whose name contains one is not imported (e.g. "_D_" for the worlds of a
-kind that is not wanted).
 placementFiles are the disc paths of the stage's placement files (stgNNNN_cmn.dat, ...) and entities what each object type id in them is made of: a
 placement whose type is not listed is not created.
 */
@@ -135,7 +118,6 @@ struct LevelKey
 {
 	std::vector<ArchiveKey> sections;
 	TextureKey textures;
-	std::vector<std::string> skippedEntries = {};
 	std::vector<const char*> placementFiles = {};
 	std::vector<PlacedEntityKey> entities = {};
 	const std::map<uint16_t, const char*>* typeNames = nullptr;

@@ -18,7 +18,7 @@ constexpr float RingStepDegrees = 36.0f;
 
 /*
 The original samples the player's position (player+0, live-checked as the position; the decompile passes the player pointer to FUN_802de4b4). The port's Entity::position is the model origin at his feet, and the
-game's body position is taken as the capsule's center (hypothesis, DebugSetup.cpp addShadowShape: 5.0 above the feet), so the samples are lifted by that. Observed by the user: at the feet the ribbon did not reach his head.
+game's body position is taken as the capsule's center (hypothesis, Shadow's Changed file External/Prefabs/STH2005/Shadow/Changed/prefab.json: 5.0 above the feet), so the samples are lifted by that. Observed by the user: at the feet the ribbon did not reach his head.
 */
 constexpr float BodyCenterHeight = 5.0f;
 

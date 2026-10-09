@@ -3,6 +3,7 @@
 #include "Level.h"
 #include "Scripting.h"
 #include "ResourceKeys.h"
+#include "PlayerLoader.h"
 #include "DebugSetup.h"
 #include "ExternalAssets.h"
 #include "GPU_API.h"
@@ -337,7 +338,7 @@ static void buildSAObject(Entity& rEntity_, PoolId shaderId_, const Prefab& rPre
 
 /*
 Shadow object, see spawnPrefab: one model of the key (SpawnParams::modelIndex, an index into EntityKey::models) with the key's textures and the collision shapes given (the key's if none are). The first motion the key lists is played on the first model
-(index 0) only, looping for living things (EntityKey::loopMotion) and otherwise once, holding its last frame (placeholder: for TANK and TURNOVER it is the "_on" one, a state change). A motion that can't be read is
+(index 0) only, looping for living things (Prefab::loopMotion) and otherwise once, holding its last frame (placeholder: for TANK and TURNOVER it is the "_on" one, a state change). A motion that can't be read is
 reported and the entity stays posed at rest: the .MTP layout was decoded from SHADOW.MTP only. Collision and the script behaviour only with inScene_ (see spawnPrefab).
 */
 static void buildONEObject(Entity& rEntity_, PoolId shaderId_, const Prefab& rPrefab_, const SpawnParams& rParams_, bool inScene_)
@@ -356,7 +357,7 @@ static void buildONEObject(Entity& rEntity_, PoolId shaderId_, const Prefab& rPr
     {
         try
         {
-            rEntity_.playONEMotion(rKey.motions[0], rKey.loopMotion);
+            rEntity_.playONEMotion(rKey.motions[0], rPrefab_.loopMotion);
         }
         catch(const std::runtime_error& rError)
         {
@@ -367,7 +368,7 @@ static void buildONEObject(Entity& rEntity_, PoolId shaderId_, const Prefab& rPr
 
 /*
 Makes one entity from a prefab at any time (the level's SET and placement records, a script's spawnPlayer, the editor): an entity named rParams_.name (the prefab's name if empty) at the position and rotation given, with Entity::prefabId set, built as the
-prefab's kind says (buildSAObject, buildONEObject; the players are Sonic's and Shadow's model, idle motions, hand-made shape (DebugSetup) and physics of weight 1, which the script then attaches with attachPlayer), and the behaviours the script registered for
+prefab's kind says (buildSAObject, buildONEObject; the players are Sonic's and Shadow's model, idle motions, body shape (their Changed file's) and physics of weight 1, which the script then attaches with attachPlayer), and the behaviours the script registered for
 the prefab (sf.prefabBehavior, called with rParams_.pPlacement, its SET record, null for an object that has none). Returns its id, or UninitializedPoolId if it could not be made: the entity is removed again and the reason, with rParams_.what naming where it came from,
 is printed on stderr, as for an object of a level. The entity is not owned by anything: whoever asks for it keeps its id.
 pPool_ is the pool the entity is made in (the game's by default). In any other pool (the editor's PrefabThumbnails) the entity is only what is drawn: its model, texture and motion. No collision, physics, script behaviour or spatial index entry, since the
@@ -399,22 +400,18 @@ PoolId spawnPrefab(PoolId prefabId_, PoolId shaderId_, const SpawnParams& rParam
             buildONEObject(rEntity, shaderId_, rPrefab, rParams_, inScene);
             break;
         case PrefabKind::SonicPlayer:
-            rEntity.setSAGPUInstance(shaderId_, SonicMesh, SonicTextures);
-            rEntity.playSAMotion(SonicIdle);
+            rEntity.setSAGPUInstance(shaderId_, Loading::sonicKeys().mesh, Loading::sonicKeys().textures);
+            rEntity.playSAMotion(Loading::sonicKeys().idle);
             if(inScene)
             {
-                DebugSetup::addSonicShape(id);
                 rEntity.setPhysics(1.0f);
             }
             break;
         case PrefabKind::ShadowPlayer:
-            rEntity.setONEGPUInstance(shaderId_, ShadowMesh, ShadowTextures);
-            rEntity.playONEMotion(ShadowIdle);
-            rEntity.playONEMotion(ShadowIdleLeftHand);
-            rEntity.playONEMotion(ShadowIdleRightHand);
+            rEntity.setONEGPUInstance(shaderId_, Loading::shadowKeys().mesh, Loading::shadowKeys().textures);
+            for(const STH2005::MotionKey& rMotion : Loading::shadowKeys().idle) rEntity.playONEMotion(rMotion);
             if(inScene)
             {
-                DebugSetup::addShadowShape(id);
                 rEntity.setPhysics(1.0f);
             }
             break;

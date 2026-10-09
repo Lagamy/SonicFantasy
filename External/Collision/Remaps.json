@@ -1,0 +1,32 @@
+{
+  "ShadowLevel": {
+    "note": "Shadow's level attributes (observed, from you, in the attribute view of stg0100): 0x2, 0x202, 0x20001, 0x8 and 0x28001 (the loop) are collision, 0x10 is some kind of bound or trigger (Passable until it is known) and 0x20 a death plane (Death; nothing acts on the tag yet). Any other value is ignored (None).",
+    "fallback": "None",
+    "values": {
+      "0x2": "Solid",
+      "0x202": "Solid",
+      "0x20001": "Solid",
+      "0x8": "Solid",
+      "0x28001": "Solid",
+      "0x10": "Passable",
+      "0x20": "Death"
+    }
+  },
+  "SADXLevel": {
+    "note": "SADX's level triangle values are the surface flags of the land table COL: what the bits mean is unknown (only 0x80000000, drawn, is a hypothesis, see ResourceLoader.cpp), so only what was observed is listed and the rest of its collision stays solid: 0x00200001 is not solid (observed, from you; Passable until it is known what it stands for). List a flags value here once you know it.",
+    "fallback": "Solid",
+    "values": {
+      "0x00200001": "Passable"
+    }
+  },
+  "SADXShape": {
+    "note": "The attributes of SADX's object shapes (its tables): their meaning is unknown, so every shape is an Object for now.",
+    "fallback": "Object",
+    "values": {}
+  },
+  "ShadowShape": {
+    "note": "The attributes of Shadow's object shapes (.CCL flags): their meaning is unknown, so every shape is an Object for now.",
+    "fallback": "Object",
+    "values": {}
+  }
+}

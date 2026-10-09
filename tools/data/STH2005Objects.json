@@ -1,0 +1,171 @@
+{
+ "note": "Hand-written object lists of tools/genEntityKeys.py (read by it).",
+ "archiveEntities": {
+  "note": "Objects with no .BIN whose archive holds the whole bundle: one archive with the model, its .BON, a .TXD, a .CCL and a .MTP (observed on the enemy archives and character/sonic.one, doomseye.one). Written from the file names alone (hypothesis): registry name -> [archive, main .DFF, its .BON]. Only the main model is used: the extra parts of these archives (SHIELDGUN.DFF, the eyes, BKSHIELD0/1.DFF, SONIC_*_TE*.DFF) name no bone to attach to. The gun soldier archive is the 'citii' one (hypothesis: the city stage's; the game formats enemy/GunSoldierData_%s.one). Not here: EGG_PIERROT (its three archives hold EGGPIERROT.DFF but only an EGGHORROR.BON: the pairing is unclear), the bosses and the other enemy types.",
+  "values": {
+   "GUN_SOLDIER": [
+    "enemy/gunsoldierdata_citii.one",
+    "SOLDIERGUN_CITII.DFF",
+    "SOLDIERGUN.BON"
+   ],
+   "BK_SOLDIER": [
+    "enemy/bksoldierdata.one",
+    "SOLDIERBK.DFF",
+    "SOLDIERBK.BON"
+   ],
+   "BK_WINGSMALL": [
+    "enemy/bkwingsmalldata.one",
+    "WINGBKSMALL.DFF",
+    "WINGBKSMALL.BON"
+   ],
+   "GUN_BEETLE": [
+    "enemy/gunbeetledata.one",
+    "BEETLEBOMB.DFF",
+    "BEETLEBOMB.BON"
+   ],
+   "GUN_BIGFOOT": [
+    "enemy/gunbigfootdata.one",
+    "BIGFOOTA.DFF",
+    "BIGFOOTA.BON"
+   ],
+   "GUN_ROBOT": [
+    "enemy/gunrobotdata.one",
+    "GUNROBOA.DFF",
+    "GUNROBOA.BON"
+   ],
+   "EGG_PAWN": [
+    "enemy/eggpawndata.one",
+    "PAWN.DFF",
+    "PAWN.BON"
+   ],
+   "EGG_SHADOWANDROID": [
+    "enemy/eggshadowandroiddata.one",
+    "SHADOW.DFF",
+    "SHADOW.BON"
+   ],
+   "BK_GIANT": [
+    "enemy/bkgiantdata.one",
+    "GIANTBK.DFF",
+    "GIANTBK.BON"
+   ],
+   "BK_WINGLARGE": [
+    "enemy/bkwinglargedata.one",
+    "WINGBKLARGE.DFF",
+    "WINGBKLARGE.BON"
+   ],
+   "BK_WORM": [
+    "enemy/bkwormdata.one",
+    "BKWORM.DFF",
+    "BKWORM.BON"
+   ],
+   "BK_LARVA": [
+    "enemy/bklarvadata.one",
+    "BKLARVA.DFF",
+    "BKLARVA.BON"
+   ],
+   "BK_CHAOS": [
+    "enemy/bkchaosdata.one",
+    "CHAOSBODY.DFF",
+    "CHAOS.BON"
+   ],
+   "BK_NINJA": [
+    "enemy/bkninjadata.one",
+    "NINJABK.DFF",
+    "NINJABK.BON"
+   ]
+  }
+ },
+ "characterType": 400,
+ "characters": {
+  "note": "SET_CHARACTOR (type 400): the record's first parameter u32 picks the character. Hypothesis: it is the registry id - 400 (401 Sonic ... 412 DoomsEye): the stg0100 records have 1 (3 of them), and 12 (4 of them, two at the same position), and Sonic and Doom's Eye are the characters of that stage. The other ids follow the registry's order (the files name each character; Eggman is the egg monitor's archive, a guess); none of them is placed by stg0100.",
+  "values": {
+   "1": [
+    "Sonic",
+    "character/sonic.one",
+    "SN.DFF",
+    "SN.BON"
+   ],
+   "2": [
+    "Tails",
+    "character/tails.one",
+    "TAILS.DFF",
+    "TAILS.BON"
+   ],
+   "3": [
+    "Knuckles",
+    "character/knuckles.one",
+    "KNUCKLES.DFF",
+    "KNUCKLES.BON"
+   ],
+   "4": [
+    "Amy",
+    "character/amy.one",
+    "AMY.DFF",
+    "AMY.BON"
+   ],
+   "5": [
+    "Rouge",
+    "character/rouge.one",
+    "ROUGE.DFF",
+    "ROUGE.BON"
+   ],
+   "6": [
+    "Omega",
+    "character/omega.one",
+    "OMEGA.DFF",
+    "OMEGA.BON"
+   ],
+   "7": [
+    "Vector",
+    "character/vector.one",
+    "VECTOR.DFF",
+    "VECTOR.BON"
+   ],
+   "8": [
+    "Espio",
+    "character/espio.one",
+    "ESPIO.DFF",
+    "ESPIO.BON"
+   ],
+   "9": [
+    "Maria",
+    "character/maria.one",
+    "MARIA.DFF",
+    "MARIA.BON"
+   ],
+   "10": [
+    "Charmy",
+    "character/bee.one",
+    "BEE.DFF",
+    "BEE.BON"
+   ],
+   "11": [
+    "Eggman",
+    "character/eggmonitor.one",
+    "EGGMONITOR.DFF",
+    "EGGMONITOR.BON"
+   ],
+   "12": [
+    "DoomsEye",
+    "character/doomseye.one",
+    "DOOMSEYE.DFF",
+    "DOOMSEYE.BON"
+   ]
+  }
+ },
+ "bundleParts": {
+  "note": "Extra parts of a bundle (name -> [[.DFF, bone of the main .BON to attach to]]): hands are separate files with no .BON of their own, attached by bone name the way ModelPart::bone works. Sonic's SN.BON has the hand bones j_l1te and j_r1te (HAnim ids 0x1C and 0x18, the ends of the arm chains j_l1ude1..3 / j_r1ude1..3); the TE1 file of each side is used (hypothesis: TE2 is another pose of the hand, it is longer). Only Sonic's are listed: the other characters' hand bones are not looked up.",
+  "values": {
+   "Sonic": [
+    [
+     "SONIC_L_TE1.DFF",
+     "j_l1te"
+    ],
+    [
+     "SONIC_R_TE1.DFF",
+     "j_r1te"
+    ]
+   ]
+  }
+ }
+}

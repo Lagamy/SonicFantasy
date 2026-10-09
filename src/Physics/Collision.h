@@ -33,7 +33,7 @@ struct Collision
 
 	/*
 	The behaviour of a triangle (Globals::Game::behaviors): that of its raw value (CollisionMesh::triangleValue) in behaviorByValue, which BABehaviors::resolve fills when the collision is loaded from the
-	remap of its source (BAKeys.h), or fallbackBehavior for a value that is not in it.
+	remap of its source (External/Collision/Remaps.json), or fallbackBehavior for a value that is not in it.
 	*/
 	PoolId behaviorOf(uint32_t triangle_) const
 	{

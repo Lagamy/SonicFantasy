@@ -1,0 +1,29 @@
+{
+  "added": [],
+  "removed": [],
+  "shapesAdded": [
+    {
+      "kind": 0,
+      "form": 0,
+      "push": 0,
+      "damage": 0,
+      "attr": 0,
+      "center": [
+        0.0,
+        0.09999990463256836,
+        0.0
+      ],
+      "a": 5.400000095367432,
+      "b": 0.0,
+      "c": 0.0,
+      "d": 0.0,
+      "angle": [
+        0,
+        0,
+        0
+      ],
+      "behavior": "Body"
+    }
+  ],
+  "shapesRemoved": []
+}

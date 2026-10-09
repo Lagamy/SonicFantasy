@@ -94,9 +94,9 @@ These read the discs in `build/Disks/` and write files. Run them only when the g
 | `genResourceMap.py` | `ResourceMap.txt` | Models, textures, audio, animations and collision on both discs, with paths and offsets. Downloads SA Tools INIs into `tools/.cache/` on first run. |
 | `genAssetCatalog.py` | `Catalog/AssetCatalog.tsv` | The models and textures of both discs, one row each (game, kind, group, name, source), for the editor's Assets tab; CMake copies it to `Assets/Catalog`. Groups guessed from names. Run `genResourceMap.py` first. `--ai` prints only the counts per game, kind and group instead of writing. |
 | `genCategoryMap.py` | `ResourceMapByCategory.txt` | The same, grouped per game into categories (grouping guessed from names). Run `genResourceMap.py` first. |
-| `genEntityKeys.py [stage ...]` | `src/STH2005EntityKeys.h` | Shadow object keys and per-stage placement tables (default stage `stg0100`). |
+| `genEntityKeys.py [stage ...]` | `src/STH2005EntityKeys.h`, `External/Prefabs/STH2005/Placement.json` | Shadow object keys (the layout, variants and loop flag go to the JSON) and per-stage placement tables (default stage `stg0100`). Reads `tools/data/STH2005Objects.json` (hand-written: objects with an archive of their own, the SET_CHARACTOR characters and the extra bundle parts, with the evidence). |
 | `genCCLKeys.py` | `src/STH2005ShapeKeys.h` | One collision key per `.CCL` entry on the Shadow disc. |
-| `genSAEntityKeys.py` | `src/SAEntityKeys.h` | SADX Emerald Coast object keys and tables. |
+| `genSAEntityKeys.py` | `src/SAEntityKeys.h`, `External/Prefabs/SADX/Placement.json` | SADX Emerald Coast object keys and tables (the rotation recipes and variant field go to the JSON). Reads `tools/data/SADXObjectModels.json` (hand-written: objects with no model, and the object-to-model-name choices, with the evidence). |
 | `genSAShapeKeys.py` | `src/SAShapeKeys.h` | SADX object collision tables; needs the `sadxDecomp/` pseudocode. |
 
 `dumpCCL.py` reads Shadow `.CCL` collision files: `[outDir]` dumps them all (a summary only without it), `-x NAME` hex dump, `-p NAME` parsed, `--check` lists the entries that break the known layout.

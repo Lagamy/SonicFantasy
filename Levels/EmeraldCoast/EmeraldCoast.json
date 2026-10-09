@@ -19,5 +19,416 @@
   ],
   "entityTable": "SAEntityTable_EmeraldCoast",
   "typeNames": "SAObjectTypeNames_EmeraldCoast",
-  "stageEntities": "EmeraldCoastStageEntities"
+  "source": {
+    "added": [
+      {
+        "prefab": "SADX/Floating Dock (Forward)",
+        "position": [
+          2803,
+          -1,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          2898,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          2938,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          2978,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3018,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3058,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3098,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3138,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3178,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3218,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3258,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3298,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3338,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3378,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3418,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3458,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3498,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3538,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3578,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3618,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3658,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3698,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3738,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3778,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3818,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier",
+        "position": [
+          3858,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          2918,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          2958,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          2998,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3038,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3078,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3118,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3158,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3198,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3238,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3278,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3318,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3358,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3398,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3438,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3478,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3518,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3558,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3598,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3638,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3678,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3718,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3758,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3798,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Pier Links",
+        "position": [
+          3838,
+          8.5,
+          365
+        ]
+      },
+      {
+        "prefab": "SADX/Floating Dock (Backward)",
+        "position": [
+          3953,
+          8.5,
+          365
+        ]
+      }
+    ]
+  }
 }
