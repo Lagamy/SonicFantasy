@@ -40,6 +40,7 @@ void Editor::loadSettings()
 	this->entityList.width = std::clamp(json.value("entityListWidth", this->entityList.width), 150.0f, 2000.0f);
 	this->inspector.width = std::clamp(json.value("inspectorWidth", this->inspector.width), 200.0f, 2000.0f);
 	this->prefabPanel.height = std::clamp(json.value("prefabPanelHeight", this->prefabPanel.height), 100.0f, 2000.0f);
+	if(json.contains("scriptEditor") && json["scriptEditor"].is_string()) std::snprintf(this->prefabPanel.assets.scriptEditorCommand, sizeof(this->prefabPanel.assets.scriptEditorCommand), "%s", json["scriptEditor"].get<std::string>().c_str());
 	if(!json.contains("camera") || !json["camera"].is_object()) return;
 	const Json& rCamera = json["camera"];
 	EditorCamera& rEditorCamera = this->camera;
@@ -61,6 +62,7 @@ void Editor::saveSettings()
 	json["entityListWidth"] = this->entityList.width;
 	json["inspectorWidth"] = this->inspector.width;
 	json["prefabPanelHeight"] = this->prefabPanel.height;
+	json["scriptEditor"] = std::string(this->prefabPanel.assets.scriptEditorCommand);
 	const EditorCamera& rCamera = this->camera;
 	json["camera"] = {
 		{"lookSensitivity", rCamera.lookSensitivity},

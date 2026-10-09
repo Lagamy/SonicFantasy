@@ -31,6 +31,7 @@ constexpr const char* CatalogPath = "Assets/Catalog/AssetCatalog.tsv";
 constexpr const char* FolderIconPath = "Assets/Catalog/folder_icon.png";
 constexpr const char* ScriptsPath = "Assets/Scripts";
 constexpr const char* ScriptFolders[2] = {"sadx", "shadow"};
+constexpr const char* SourceScriptsFolder = "Scripts";
 constexpr const char* KindFolders[3] = {"Models", "Textures", "Scripts"};
 constexpr const char* KindLabels[3] = {"MDL", "TEX", "LUA"};
 
@@ -46,6 +47,32 @@ ImVec4 kindColor(int kind_)
 const char* externalLabel(int game_)
 {
 	return game_ == 2 ? "Global" : "Level";
+}
+
+/* Where a game's scripts are in the build's Assets (game 2 = Global's External) and in the source tree, which the build copies over them (CopyScripts, CopyExternal); an edit has to be in both. */
+std::filesystem::path buildScriptRoot(int game_)
+{
+	return game_ == 2 ? std::filesystem::path(Scripting::ExternalScriptsRoot) : std::filesystem::path(ScriptsPath) / ScriptFolders[game_];
+}
+
+std::filesystem::path sourceScriptRoot(int game_)
+{
+	std::filesystem::path root = SF_SOURCE_DIR;
+	return game_ == 2 ? root / "External" / "Scripts" : root / SourceScriptsFolder / ScriptFolders[game_];
+}
+
+/* The game and the path inside its script root of a script file's path in the build's Assets (Asset::source); false if it is in none of the roots. */
+bool locateScript(const std::string& rSource_, int& rGame_, std::filesystem::path& rRelative_)
+{
+	for(int game = 0; game < 3; game++)
+	{
+		std::filesystem::path relative = std::filesystem::path(rSource_).lexically_relative(buildScriptRoot(game));
+		if(relative.empty() || *relative.begin() == "..") continue;
+		rGame_ = game;
+		rRelative_ = relative;
+		return true;
+	}
+	return false;
 }
 
 /* The text in lower case (ASCII), for comparing names without regard to case. */
@@ -277,6 +304,11 @@ void AssetPanel::loadScripts()
 		std::error_code error;
 		for(fs::recursive_directory_iterator it(rRoot_, error), end; !error && it != end; it.increment(error))
 		{
+			if(it->is_directory())
+			{
+				this->scriptDirs[game_].push_back(fs::relative(it->path(), rRoot_).generic_string());
+				continue;
+			}
 			if(!it->is_regular_file() || it->path().extension() != ".lua") continue;
 			fs::path relative = fs::relative(it->path(), rRoot_);
 			this->assets[game_][Script][0].push_back({relative.filename().generic_string(), it->path().generic_string(), relative.parent_path().generic_string()});
@@ -284,6 +316,251 @@ void AssetPanel::loadScripts()
 	};
 	for(int game = 0; game < 2; game++) scan(fs::path(ScriptsPath) / ScriptFolders[game], game);
 	scan(fs::path(Scripting::ExternalScriptsRoot), Global);
+}
+
+void AssetPanel::reloadScripts()
+{
+	for(int game = 0; game <= Global; game++)
+	{
+		this->assets[game][Script][0].clear();
+		this->scriptDirs[game].clear();
+	}
+	this->loadScripts();
+	for(int game = 0; game <= Global; game++) this->sortAndCount(game);
+	this->searchStale = true;
+	this->levelSeen = ~0ull;
+	this->selectedGame = -1;
+}
+
+/* A name that becomes a file or folder name: no path separators, not "." / "..". */
+static bool usableScriptName(const std::string& rName_)
+{
+	return !rName_.empty() && rName_.find_first_of("/\\") == std::string::npos && rName_ != "." && rName_ != "..";
+}
+
+/* Both copies are made, so the Assets one (what runs and what the panel lists) and the source one (what stays) agree; nothing is loaded by the game before the next start (Scripting::loadExternalScripts), and a new file is not read at all unless main.lua includes it or it is in Entity/ or BoundArea/. */
+void AssetPanel::createScript(bool folder_)
+{
+	namespace fs = std::filesystem;
+	std::string name = this->newName;
+	if(!usableScriptName(name))
+	{
+		this->scriptMessage = "Not a usable name.";
+		return;
+	}
+	if(!folder_ && fs::path(name).extension() != ".lua") name += ".lua";
+	fs::path relative = fs::path(this->dialogFolder) / name;
+	fs::path build = buildScriptRoot(this->dialogGame) / relative;
+	fs::path source = sourceScriptRoot(this->dialogGame) / relative;
+	std::error_code error;
+	if(fs::exists(build, error) || fs::exists(source, error))
+	{
+		this->scriptMessage = name + " exists already.";
+		return;
+	}
+	for(const fs::path& rPath : {build, source})
+	{
+		if(folder_) fs::create_directories(rPath, error);
+		else
+		{
+			fs::create_directories(rPath.parent_path(), error);
+			if(!error) std::ofstream(rPath).put('\n');
+		}
+		if(error)
+		{
+			this->scriptMessage = "Can't create " + rPath.generic_string() + ": " + error.message();
+			return;
+		}
+	}
+	this->scriptMessage = "Created " + relative.generic_string();
+	this->reloadScripts();
+}
+
+/* Only ever asked for in Global's External (the games' own folders are not deleted from here); the folder and everything in it goes, from Assets and from the source tree. */
+void AssetPanel::deleteScriptFolder()
+{
+	namespace fs = std::filesystem;
+	if(this->dialogGame != Global || this->deleteSource.empty())
+	{
+		this->scriptMessage = "Only External folders can be deleted.";
+		return;
+	}
+	std::error_code error;
+	std::error_code sourceError;
+	fs::remove_all(buildScriptRoot(Global) / this->deleteSource, error);
+	fs::remove_all(sourceScriptRoot(Global) / this->deleteSource, sourceError);
+	if(error || sourceError)
+	{
+		this->scriptMessage = "Delete failed: " + (error ? error : sourceError).message();
+		return;
+	}
+	if(this->scriptFolder == this->deleteSource || this->scriptFolder.starts_with(this->deleteSource + "/")) this->scriptFolder.clear();
+	this->scriptFile.clear();
+	this->scriptMessage = "Deleted folder " + this->deleteSource;
+	this->reloadScripts();
+}
+
+void AssetPanel::pasteScript()
+{
+	namespace fs = std::filesystem;
+	fs::path from = this->copiedSource;
+	std::error_code error;
+	if(!fs::is_regular_file(from, error))
+	{
+		this->scriptMessage = "The copied file is gone.";
+		return;
+	}
+	int game = this->nav.openGame;
+	fs::path folder = fs::path(this->scriptFolder);
+	std::string stem = from.stem().string();
+	fs::path name = from.filename();
+	for(int n = 1; fs::exists(buildScriptRoot(game) / folder / name, error) || fs::exists(sourceScriptRoot(game) / folder / name, error); n++)
+	{
+		name = stem + "_copy" + (n > 1 ? std::to_string(n) : "") + ".lua";
+	}
+	for(const fs::path& rRoot : {buildScriptRoot(game), sourceScriptRoot(game)})
+	{
+		fs::create_directories(rRoot / folder, error);
+		if(!error) fs::copy_file(from, rRoot / folder / name, error);
+		if(error)
+		{
+			this->scriptMessage = "Paste failed: " + error.message();
+			return;
+		}
+	}
+	this->scriptMessage = "Pasted " + (folder / name).generic_string();
+	this->reloadScripts();
+}
+
+void AssetPanel::deleteScript()
+{
+	namespace fs = std::filesystem;
+	int game = 0;
+	fs::path relative;
+	if(!locateScript(this->deleteSource, game, relative))
+	{
+		this->scriptMessage = "Not a script of the project.";
+		return;
+	}
+	std::error_code error;
+	fs::remove(buildScriptRoot(game) / relative, error);
+	std::error_code sourceError;
+	fs::remove(sourceScriptRoot(game) / relative, sourceError);
+	if(error || sourceError)
+	{
+		this->scriptMessage = "Delete failed: " + (error ? error : sourceError).message();
+		return;
+	}
+	if(this->scriptFile == this->deleteSource) this->scriptFile.clear();
+	this->scriptMessage = "Deleted " + relative.generic_string();
+	this->reloadScripts();
+}
+
+/* The source tree's copy is opened (the build's would be overwritten by the next build); the build's if the source one is missing. The command runs through the shell in the background with the path in quotes. */
+void AssetPanel::openScript(const std::string& source_)
+{
+	namespace fs = std::filesystem;
+	int game = 0;
+	fs::path relative;
+	fs::path path = source_;
+	if(locateScript(source_, game, relative) && fs::exists(sourceScriptRoot(game) / relative)) path = sourceScriptRoot(game) / relative;
+	std::string quoted;
+#ifdef _WIN32
+	quoted = "\"" + path.string() + "\"";
+	std::string command = this->scriptEditorCommand[0] == 0 ? "start \"\"" : std::string(this->scriptEditorCommand);
+	std::string line = command + " " + quoted;
+#else
+	quoted = "'";
+	for(char c : path.string()) quoted += c == '\'' ? std::string("'\\''") : std::string(1, c);
+	quoted += "'";
+	std::string command = this->scriptEditorCommand[0] == 0 ? "xdg-open" : std::string(this->scriptEditorCommand);
+	std::string line = command + " " + quoted + " >/dev/null 2>&1 &";
+#endif
+	if(std::system(line.c_str()) != 0) this->scriptMessage = "Could not run: " + command;
+}
+
+/* Buttons are only asked for here; the popups are opened in drawScriptDialogs, which is outside the tile child (a popup must be opened and drawn at the same ID stack level). */
+void AssetPanel::drawScriptToolbar()
+{
+	if(ImGui::SmallButton("New Lua file"))
+	{
+		this->dialogRequest = NewFile;
+		this->newIsFolder = false;
+		this->dialogGame = this->nav.openGame;
+		this->dialogFolder = this->scriptFolder;
+		this->newName[0] = 0;
+	}
+	ImGui::SameLine();
+	if(ImGui::SmallButton("New folder"))
+	{
+		this->dialogRequest = NewFolder;
+		this->newIsFolder = true;
+		this->dialogGame = this->nav.openGame;
+		this->dialogFolder = this->scriptFolder;
+		this->newName[0] = 0;
+	}
+	ImGui::SameLine();
+	ImGui::BeginDisabled(this->copiedSource.empty());
+	if(ImGui::SmallButton("Paste") && !this->copiedSource.empty()) this->pasteScript();
+	ImGui::EndDisabled();
+	if(!this->copiedSource.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", this->copiedSource.c_str());
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(160.0f);
+	ImGui::InputTextWithHint("##scriptEditor", "open with (system default)", this->scriptEditorCommand, sizeof(this->scriptEditorCommand));
+	if(!this->scriptMessage.empty())
+	{
+		ImGui::SameLine();
+		ImGui::TextUnformatted(this->scriptMessage.c_str());
+	}
+}
+
+void AssetPanel::drawScriptDialogs()
+{
+	if(this->dialogRequest == NewFile || this->dialogRequest == NewFolder) ImGui::OpenPopup("New script item");
+	if(this->dialogRequest == Delete) ImGui::OpenPopup("Delete script");
+	if(this->dialogRequest == DeleteFolder) ImGui::OpenPopup("Delete script folder");
+	if(this->dialogRequest == NewFile || this->dialogRequest == NewFolder) this->scriptMessage.clear();
+	this->dialogRequest = None;
+	if(ImGui::BeginPopupModal("New script item", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		ImGui::Text("New %s in %s", this->newIsFolder ? "folder" : "Lua file", this->dialogFolder.empty() ? "the root" : this->dialogFolder.c_str());
+		bool entered = ImGui::InputText("##name", this->newName, sizeof(this->newName), ImGuiInputTextFlags_EnterReturnsTrue);
+		if(ImGui::IsWindowAppearing()) ImGui::SetKeyboardFocusHere(-1);
+		if(ImGui::Button("Create") || entered)
+		{
+			this->createScript(this->newIsFolder);
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if(ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
+	}
+	if(ImGui::BeginPopupModal("Delete script folder", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		ImGui::TextUnformatted(this->deleteSource.c_str());
+		ImGui::TextUnformatted("Deletes the folder and every file in it from Assets and from the source tree. It cannot be undone here.");
+		if(ImGui::Button("Delete"))
+		{
+			this->deleteScriptFolder();
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if(ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
+	}
+	if(ImGui::BeginPopupModal("Delete script", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		ImGui::TextUnformatted(std::filesystem::path(this->deleteSource).filename().generic_string().c_str());
+		ImGui::TextUnformatted("Deletes the file from Assets and from the source tree. It cannot be undone here.");
+		if(ImGui::Button("Delete"))
+		{
+			this->deleteScript();
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::SameLine();
+		if(ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
+	}
 }
 
 /* The tiles of one list as a grid of rows; only the rows on screen are drawn (the lists have thousands of tiles). Each tile: a flat picture of the kind's colour with its short label, the name under it, a tooltip with the source. */
@@ -321,11 +598,19 @@ void AssetPanel::drawTiles(int game_, int kind_, int group_, const std::vector<i
 				if(rList[i].spawned) color = ImVec4(1.0f, 0.5f, 0.0f, 1.0f);
 				if(selected) color = ImVec4(0.2f, 0.4f, 0.8f, 1.0f);
 				GLuint texture = 0;
-				if(kind_ == Script) texture = this->folderTexture;
-				else if(game_ >= Global) texture = kind_ == Texture ? rList[i].glTexture : 0;
+				if(game_ >= Global) texture = kind_ == Texture ? rList[i].glTexture : 0;
 				else if(kind_ != Script && ImGui::IsRectVisible(ImVec2(TileSize, TileSize))) texture = this->thumbnails.get(game_, rList[i].source, kind_ == Model);
 				/* A tile of a script-spawned entity's asset has orange button, hover and press colors (blue by default; a thumbnail's frame shows through its background, so the button color matters at rest too), unless selected. */
 				bool orange = rList[i].spawned && !selected;
+				/* A script file is the label "LUA" on light green, with dark text so it reads on it (blue when selected, like the others). */
+				bool lua = kind_ == Script && !selected;
+				if(lua)
+				{
+					ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.85f, 0.55f, 1.0f));
+					ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.92f, 0.65f, 1.0f));
+					ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.8f, 0.97f, 0.75f, 1.0f));
+					ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.1f, 0.2f, 0.1f, 1.0f));
+				}
 				if(orange)
 				{
 					ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(1.0f, 0.5f, 0.0f, 1.0f));
@@ -340,14 +625,15 @@ void AssetPanel::drawTiles(int game_, int kind_, int group_, const std::vector<i
 				}
 				else
 				{
-					ImGui::PushStyleColor(ImGuiCol_Button, color);
+					if(!lua) ImGui::PushStyleColor(ImGuiCol_Button, color);
 					clicked = ImGui::Button(KindLabels[kind_], ImVec2(cell, TileSize + 2.0f * rStyle.FramePadding.y));
-					ImGui::PopStyleColor();
+					if(!lua) ImGui::PopStyleColor();
 				}
 				if(orange)
 				{
 					ImGui::PopStyleColor(3);
 				}
+				if(lua) ImGui::PopStyleColor(4);
 				if(clicked)
 				{
 					this->selectedGame = game_;
@@ -360,6 +646,18 @@ void AssetPanel::drawTiles(int game_, int kind_, int group_, const std::vector<i
 						this->scriptFile = rList[i].source;
 						this->scriptFolder = rList[i].folder;
 					}
+				}
+				/* A script tile's menu: open it with the chosen application, or ask to delete it (the dialog is drawn by drawScriptDialogs). */
+				if(kind_ == Script && ImGui::BeginPopupContextItem("##scriptMenu"))
+				{
+					if(ImGui::MenuItem("Open in editor")) this->openScript(rList[i].source);
+					if(ImGui::MenuItem("Copy")) this->copiedSource = rList[i].source;
+					if(ImGui::MenuItem("Delete"))
+					{
+						this->dialogRequest = Delete;
+						this->deleteSource = rList[i].source;
+					}
+					ImGui::EndPopup();
 				}
 				/* A script tile can be dropped on the inspector's Behaviour tab: the payload is the file's path, with the '\0'. */
 				if(kind_ == Script && ImGui::BeginDragDropSource())
@@ -456,6 +754,7 @@ void AssetPanel::unload()
 	this->loaded = false;
 	this->searchStale = true;
 	this->assets = {};
+	this->scriptDirs = {};
 	this->counts = {};
 	this->levelCounts = {};
 	this->levelSeen = ~0ull;
@@ -518,8 +817,8 @@ void AssetPanel::drawBehaviours()
 		if(i % columns != 0) ImGui::SameLine();
 		ImGui::PushID(i);
 		ImGui::BeginGroup();
-		ImGui::PushStyleColor(ImGuiCol_Button, kindColor(Script));
 		bool isTouch = static_cast<size_t>(i) >= behaviourCount;
+		ImGui::PushStyleColor(ImGuiCol_Button, isTouch ? kindColor(Script) : ImVec4(0.5f, 0.3f, 0.65f, 1.0f));
 		ImGui::Button(isTouch ? "TCH" : "BHV", ImVec2(cell, TileSize + 2.0f * rStyle.FramePadding.y));
 		ImGui::PopStyleColor();
 		if(ImGui::BeginDragDropSource())
@@ -536,8 +835,9 @@ void AssetPanel::drawBehaviours()
 }
 
 /* Folder tiles wrapped into rows of the width of the tab, the same size as the asset tiles. */
-int AssetPanel::drawFolders(const std::vector<std::string>& labels_)
+int AssetPanel::drawFolders(const std::vector<std::string>& labels_, int* pRightClicked_)
 {
+	if(pRightClicked_ != nullptr) *pRightClicked_ = -1;
 	const ImGuiStyle& rStyle = ImGui::GetStyle();
 	float cell = TileSize + 2.0f * rStyle.FramePadding.x;
 	int columns = std::max(1, static_cast<int>((ImGui::GetContentRegionAvail().x + rStyle.ItemSpacing.x) / (cell + rStyle.ItemSpacing.x)));
@@ -557,6 +857,7 @@ int AssetPanel::drawFolders(const std::vector<std::string>& labels_)
 			pressed = ImGui::Button("DIR", ImVec2(cell, TileSize + 2.0f * rStyle.FramePadding.y));
 		}
 		if(pressed) clicked = i;
+		if(pRightClicked_ != nullptr && ImGui::IsItemClicked(ImGuiMouseButton_Right)) *pRightClicked_ = i;
 		if(ImGui::IsItemHovered()) ImGui::SetTooltip("%s", labels_[i].c_str());
 		ImGui::TextUnformatted(fitText(labels_[i], cell).c_str());
 		ImGui::EndGroup();
@@ -651,6 +952,7 @@ void AssetPanel::draw(const std::string& filter_)
 	else if(this->externalSeen != Loading::externalRevision()) this->loadExternal();
 	this->loadFolderIcon();
 	if(this->nav.inLevel()) this->refreshLevel();
+	this->drawScriptDialogs();
 	if(this->selectedGame >= 0)
 	{
 		const Asset& rSelected = this->assets[this->selectedGame][this->selectedKind][this->selectedGroup][this->selectedIndex];
@@ -721,6 +1023,13 @@ void AssetPanel::draw(const std::string& filter_)
 	}
 	else if(this->openKind == Script && !this->scriptFile.empty())
 	{
+		if(ImGui::SmallButton("Open in editor")) this->openScript(this->scriptFile);
+		ImGui::SameLine();
+		if(ImGui::SmallButton("Delete"))
+		{
+			this->dialogRequest = Delete;
+			this->deleteSource = this->scriptFile;
+		}
 		this->drawBehaviours();
 	}
 	else if(this->openKind == Script)
@@ -745,8 +1054,38 @@ void AssetPanel::draw(const std::string& filter_)
 			std::string child = rest.substr(0, rest.find('/'));
 			if(std::find(folders.begin(), folders.end(), child) == folders.end()) folders.push_back(child);
 		}
+		/* The folders with no file in them are not in any asset's folder: they come from the directories found. A level view lists only what the level uses, so it has none. */
+		if(!inLevel)
+		{
+			for(const std::string& rDir : this->scriptDirs[this->nav.openGame])
+			{
+				if(!rDir.starts_with(prefix) || rDir.size() == prefix.size()) continue;
+				std::string rest = rDir.substr(prefix.size());
+				std::string child = rest.substr(0, rest.find('/'));
+				if(std::find(folders.begin(), folders.end(), child) == folders.end()) folders.push_back(child);
+			}
+			this->drawScriptToolbar();
+		}
 		std::sort(folders.begin(), folders.end());
-		int clicked = this->drawFolders(folders);
+		/* Ctrl+C copies the selected script tile, Ctrl+V pastes into the open folder; not while a text field has the keyboard. */
+		ImGuiIO& rIo = ImGui::GetIO();
+		if(!inLevel && rIo.KeyCtrl && !rIo.WantTextInput && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows))
+		{
+			if(ImGui::IsKeyPressed(ImGuiKey_C, false) && this->selectedGame >= 0 && this->selectedKind == Script && this->selectedGame <= Global)
+			{
+				this->copiedSource = this->assets[this->selectedGame][Script][0][this->selectedIndex].source;
+			}
+			if(ImGui::IsKeyPressed(ImGuiKey_V, false) && !this->copiedSource.empty()) this->pasteScript();
+		}
+		/* A right click on a folder of Global's External asks to delete it (the games' own folders are not deleted from here). */
+		int rightClicked = -1;
+		int clicked = this->drawFolders(folders, &rightClicked);
+		if(rightClicked >= 0 && this->nav.openGame == Global)
+		{
+			this->dialogRequest = DeleteFolder;
+			this->dialogGame = Global;
+			this->deleteSource = prefix + folders[rightClicked];
+		}
 		if(clicked >= 0) this->scriptFolder = prefix + folders[clicked];
 		else this->drawTiles(this->nav.openGame, Script, 0, &files);
 	}

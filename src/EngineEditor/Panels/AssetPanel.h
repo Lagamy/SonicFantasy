@@ -31,8 +31,8 @@ struct AssetPanel
 	void endFrame();
 	void destroy();
 
-	/* The icon-and-label folder tiles of the browser, in rows (made public for the Prefabs tab, which looks the same); returns the index of the clicked one or -1. loadFolderIcon first (it reads the icon once). */
-	int drawFolders(const std::vector<std::string>& labels_);
+	/* The icon-and-label folder tiles of the browser, in rows (made public for the Prefabs tab, which looks the same); returns the index of the clicked one or -1 (pRightClicked_, if given, gets the index of the right-clicked one or -1). loadFolderIcon first (it reads the icon once). */
+	int drawFolders(const std::vector<std::string>& labels_, int* pRightClicked_ = nullptr);
 	void loadFolderIcon();
 
 	/* The first loaded level (the one the editor edits), nullptr if none. Public for the Prefabs tab, whose Level folder lists the prefabs of its entities. */
@@ -40,6 +40,9 @@ struct AssetPanel
 
 	/* Frees the lists and the selection; PrefabPanel calls it every frame the tab is not the shown one, so nothing is held (or read) while the tab is closed. Does nothing if not loaded. */
 	void unload();
+
+	/* The command that opens a script file ("code", "kate"; run as <command> '<file>'); empty = the system's default application. Saved in the editor settings by Editor (scriptEditor). */
+	char scriptEditorCommand[256] = {};
 
 private:
 	/* The game indices of the External assets: Global (the project's) and Level (the open level's); GameCount counts them with the two games. */
@@ -84,6 +87,27 @@ private:
 	std::string scriptFolder;
 	/* The open script file (its path, Asset::source) while the browser is inside it showing its behaviours; empty = none open. */
 	std::string scriptFile;
+	/* Every folder below each script root (relative to it, "replays/old"), per game 0..Global: a folder with no file in it has no asset to show it by. */
+	std::array<std::vector<std::string>, 3> scriptDirs;
+	/* The script dialog asked for by a toolbar button or a tile's menu (NewFile, NewFolder, Delete; None = no), for drawScriptDialogs to open outside the tile child's ID stack; what it works on (the game and folder it was asked in, or the file to delete); the name field; the last result. */
+	enum Dialog
+	{
+		None,
+		NewFile,
+		NewFolder,
+		Delete,
+		DeleteFolder
+	};
+	Dialog dialogRequest = None;
+	bool newIsFolder = false;
+	int dialogGame = 0;
+	std::string dialogFolder;
+	/* Delete: the script file's path (Asset::source); DeleteFolder: the folder's path inside Global's External scripts. */
+	std::string deleteSource;
+	/* The copied script file (its Asset::source path); empty = none. */
+	std::string copiedSource;
+	char newName[128] = {};
+	std::string scriptMessage;
 	/* True while drawSearch draws the tiles: a script tile then only selects instead of opening, so the search stays on screen. */
 	bool searching = false;
 
@@ -117,6 +141,18 @@ private:
 	/* The Global and Level folders' lists from the external pools (Loading::externalRevision says when they changed: draw rebuilds them then, so an import shows at once with no closing and reopening). */
 	void loadExternal();
 	void sortAndCount(int game_);
+	/* Finds the scripts again after a file or folder was added or deleted. */
+	void reloadScripts();
+	/* The toolbar above a script folder's tiles (new Lua file, new folder, the opening command) and the dialogs it and a tile's menu ask for. */
+	void drawScriptToolbar();
+	void drawScriptDialogs();
+	/* Creates the file or folder newName in dialogFolder of dialogGame's scripts, in the build's Assets and in the source tree; deletes the file deleteSource from both; opens a script file (the source tree's copy) with scriptEditorCommand. Each puts what went wrong in scriptMessage. */
+	void createScript(bool folder_);
+	void deleteScript();
+	void deleteScriptFolder();
+	/* Copies copiedSource into the open folder under a free name (name_copy.lua, name_copy2.lua ... if the name is taken), in both trees. */
+	void pasteScript();
+	void openScript(const std::string& source_);
 	/* Marks the disc assets the open level uses (Asset::inLevel) and counts them (levelCounts); drawn again only when the level or its entity count changed. */
 	void refreshLevel();
 	/* The indices of the list that the open level uses, for the Level folder. */
