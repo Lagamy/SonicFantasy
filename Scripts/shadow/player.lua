@@ -547,7 +547,7 @@ function attachShadowPlayer(entity)
 	sf.give(entity, "ShadowPlayer")
 	sf.setWeight(entity, 0)
 	-- His ground snap is the game's probe (PhysicsBody::snapByRay): a ray along minus the last floor's normal from his center, 2.37 times his sphere radius (5.0 in the live record) plus the frame's move long, accepting a surface within 80 degrees of that normal. blockedByWall (hypothesis, the fence kick of live_slopes): a wall stopping that snap move before a floor leaves him not grounded, so the air branch (Fall) runs.
-	sf.setGroundSnapMode(entity, {ray = true, radius = 5.0, minNormalY = math.cos(math.rad(80)), blockedByWall = true})
+	sf.setGroundSnapMode(entity, {ray = true, radius = 5.0, minNormalY = math.cos(math.rad(80)), blockedByWall = true, whileRising = true})
 	-- His move is the mean of the old and new velocity (observed, live_jumpdash_stick: every height step = (old vy + new vy) / 120 within 0.0005).
 	sf.setMeanVelocityMove(entity, true)
 	sf.setUncullable(entity, true)

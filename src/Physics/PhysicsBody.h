@@ -42,11 +42,22 @@ struct PhysicsBody
 	*/
 	bool snapBlockedByWall = false;
 	/*
+	Both snaps (the ray probe too: without it a rising body is not snapped, so a jump leaves the floor; Shadow's script sets true to keep his probe as it was). Observed (recording sadx_3 0.8 to 0.82 s, the original at a ramp's lip): SADX Sonic is put down on the floor in the same tick while his velocity still points up the ramp.
+	true: the snap also acts on a body whose velocity points up. Set by the gameplay each tick (false = the body not rising rule above); a script sets it only for a tick where the ground step ran without a jump or a spring.
+	*/
+	bool snapWhileRising = false;
+	/*
 	How a tick's move uses the velocity, per character (set by the gameplay). false: by the velocity at the end of the tick (after the behaviours and the gravity). true: by the mean of tickStartVelocity and that one, as Shadow the Hedgehog
 	moves (observed, tools/live_jumpdash_stick.csv 0.727 to 0.943 s: every height step of the jump equals (old vy + new vy) / 120 within 0.0005, the new vy alone is 0.02 to 0.05 short). Whether SADX does the same is unknown, so Sonic keeps false.
 	tickStartVelocity is the velocity at the start of the tick, before the behaviours (GameplaySystem::tick keeps it); a teleport (Entity::setPosition) sets it to zero, so the first move after one starts from rest.
 	*/
 	bool moveByMeanVelocity = false;
+	/*
+	How the move's push-out finds what a shape touches, per character (set by the gameplay). false: the closest point of the triangle to the shape (faces, edges and corners). true: SADX Sonic's rule (decompile, FUN_8043d5a0 as called by
+	FUN_804d8ccc): a triangle touches the shape only by its face, when the shape's center is within its radius of the triangle's plane and its projection on the plane is inside the triangle; edges and corners never touch. The push and the ground normal
+	are then the face's own normal. Uses the capsule's center only (Sonic's shape is a sphere). Off by default: Shadow keeps the closest-point rule.
+	*/
+	bool contactByFace = false;
 	/* With moveByMeanVelocity, the part of the move into a floor the body stands on is made straight down (PhysicsSystem::update). */
 	glm::vec3 tickStartVelocity = glm::vec3(0.0f);
 	/*

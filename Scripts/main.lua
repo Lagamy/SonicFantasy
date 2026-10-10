@@ -42,6 +42,14 @@ sf.behavior("PlayerSwitch", function(entity)
 				end
 			end
 		end
+		if SadxReplay.enabled then
+			for i, player in ipairs(players) do
+				if sf.name(player) == "SASonic" then
+					activate(i)
+					SadxReplay.start(player)
+				end
+			end
+		end
 	end
 end)
 

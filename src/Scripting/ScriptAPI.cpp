@@ -31,7 +31,7 @@ error if the handle is of an entity that is gone. Vectors are three numbers (x, 
 - time and game: tickRate(), tickTime(), rings(), setRings(n), debugMode(), key(name), cameraForward(), followCamera(e)
 - animation: animate(e, name [, framesPerGameFrame]) (Sonic's motions by name: stand, walk, speedwalk, jog, run, sprint, brake, turnAround, springFall, fall, landing, damage, jump (curled model), ball (jumpball model); for a Shadow entity: stand, walk, run, jump, jumpB (play once), jumpC, fall, brake, damage, skate, highSkate; it loops), pose(e, {{name, frame, weight}, ...}), setAnimationScaleMode(n), setAnimationEulerOrder(n), motionRange(e, name) and bone(e, name) (a Shadow entity's mixed pose, see below), lowestPoint(e) (the lowest y of a Shadow entity's vertices, posed and at rest), blink(e, name | false) (draws that animation in place of the animate one while it is on; the animate one keeps its own clock)
 - entities: exists(e), name(e), position(e), setPosition(e, x, y, z), moveTo(e, x, y, z), turnY(e, radians), orient(e, yaw, nx, ny, nz), destroy(e), state(e), axis(e, x, y, z), setUncullable(e, bool), postEvent(name, e [, x, y, z]), setDashTrail(e, bool) (the jump dash ribbon, Graphics::DashTrail), setEffectBall(e, kind, bool) (Shadow's effect balls, Graphics::EffectBalls; kind "jumpA", "dashB" or "fallB")
-- bodies (an entity with a physics): hasBody(e), velocity(e), setVelocity(e, x, y, z), setGroundSnap(e, distance), setGroundSnapMode(e, {ray, radius, minNormalY, blockedByWall}), setMeanVelocityMove(e, on), setWeight(e, w), grounded(e), groundNormal(e), groundSurface(e), groundGap(e, maxGap), touchingWall(e), wallNormal(e)
+- bodies (an entity with a physics): hasBody(e), velocity(e), setVelocity(e, x, y, z), setGroundSnap(e, distance), setGroundSnapMode(e, {ray, radius, minNormalY, blockedByWall, whileRising}), setMeanVelocityMove(e, on), setFaceContact(e, on), setWeight(e, w), grounded(e), groundNormal(e), groundSurface(e), groundGap(e, maxGap), touchingWall(e), wallNormal(e)
 - behaviours: behavior(name, fn [, fields]) (fields = {name = {type = "number" | "bool" | "string" | "vec3" | "entity" | "prefab", default = v, external = bool}}: written into sf.state(e) before the first call; the external ones are set per entity in the editor's Inspector; a prefab field holds the prefab's name, an entity field a handle or sf.none, a vec3 {x, y, z}), give(e, name), prefabBehavior(prefabName, fn) (fn(entity, placement) is called for every entity made from that prefab, prefabName like "SADX/SPRING"; placement is the SET record {type, rotation, position, scale} or nil)
 - collision: onTouch(name, fn), tag(name), collisionBehavior(name, {tags, collidesWith, interactions}), setShapeBehavior(e, behavior)
 - setup: spawn(prefabName, x, y, z) (makes an entity from a prefab by its name, "SADX/SPRING", "Global/Bullet"; returns it), loadLevel(name) (the name of a Levels/<name>/ folder: "EmeraldCoast", "Stg0100", "Stg0000"; returns the level), unloadLevel(level) (done at the start of the next tick), levelExists(level), spawnPlayer(character, x, y, z) ("sonic", "shadow"; returns the entity, which the script then attaches), setCamera(x, y, z)
@@ -434,7 +434,7 @@ static int grounded(lua_State* pLua_)
 	return 1;
 }
 
-/* setGroundSnapMode(e, {ray = bool, radius = number, minNormalY = number, blockedByWall = bool}): how the snap finds the ground (PhysicsBody::snapByRay, snapRadius, snapMinNormalY, snapBlockedByWall); a field left out keeps its value. */
+/* setGroundSnapMode(e, {ray = bool, radius = number, minNormalY = number, blockedByWall = bool, whileRising = bool}): how the snap finds the ground (PhysicsBody::snapByRay, snapRadius, snapMinNormalY, snapBlockedByWall, snapWhileRising); a field left out keeps its value. */
 static int setGroundSnapMode(lua_State* pLua_)
 {
 	Physics::PhysicsBody& rBody = checkBody(pLua_, 1);
@@ -446,6 +446,8 @@ static int setGroundSnapMode(lua_State* pLua_)
 	if(lua_getfield(pLua_, 2, "minNormalY") != LUA_TNIL) rBody.snapMinNormalY = static_cast<float>(luaL_checknumber(pLua_, -1));
 	lua_pop(pLua_, 1);
 	if(lua_getfield(pLua_, 2, "blockedByWall") != LUA_TNIL) rBody.snapBlockedByWall = lua_toboolean(pLua_, -1) != 0;
+	lua_pop(pLua_, 1);
+	if(lua_getfield(pLua_, 2, "whileRising") != LUA_TNIL) rBody.snapWhileRising = lua_toboolean(pLua_, -1) != 0;
 	lua_pop(pLua_, 1);
 	return 0;
 }
@@ -461,6 +463,13 @@ static int setWeight(lua_State* pLua_)
 static int setMeanVelocityMove(lua_State* pLua_)
 {
 	checkBody(pLua_, 1).moveByMeanVelocity = lua_toboolean(pLua_, 2) != 0;
+	return 0;
+}
+
+/* setFaceContact(e, on): whether the body's push-out touches triangles only by their face, as SADX Sonic's does (PhysicsBody::contactByFace). */
+static int setFaceContact(lua_State* pLua_)
+{
+	checkBody(pLua_, 1).contactByFace = lua_toboolean(pLua_, 2) != 0;
 	return 0;
 }
 
@@ -945,7 +954,7 @@ void registerAPI(lua_State* pLua_)
 		{"exists", guarded<exists>}, {"name", guarded<name>}, {"position", guarded<position>}, {"setPosition", guarded<setPosition>},
 		{"moveTo", guarded<moveTo>}, {"turnY", guarded<turnY>}, {"orient", guarded<orient>}, {"destroy", guarded<destroy>}, {"state", guarded<state>}, {"axis", guarded<axis>},
 		{"setUncullable", guarded<setUncullable>}, {"postEvent", guarded<postEvent>}, {"setDashTrail", guarded<setDashTrail>}, {"setEffectBall", guarded<setEffectBall>},
-		{"hasBody", guarded<hasBody>}, {"velocity", guarded<velocity>}, {"setVelocity", guarded<setVelocity>}, {"grounded", guarded<grounded>}, {"setGroundSnap", guarded<setGroundSnap>}, {"setWeight", guarded<setWeight>}, {"setGroundSnapMode", guarded<setGroundSnapMode>}, {"setMeanVelocityMove", guarded<setMeanVelocityMove>},
+		{"hasBody", guarded<hasBody>}, {"velocity", guarded<velocity>}, {"setVelocity", guarded<setVelocity>}, {"grounded", guarded<grounded>}, {"setGroundSnap", guarded<setGroundSnap>}, {"setWeight", guarded<setWeight>}, {"setGroundSnapMode", guarded<setGroundSnapMode>}, {"setMeanVelocityMove", guarded<setMeanVelocityMove>}, {"setFaceContact", guarded<setFaceContact>},
 		{"groundNormal", guarded<groundNormal>}, {"groundSurface", guarded<groundSurface>}, {"groundGap", guarded<groundGap>}, {"touchingWall", guarded<touchingWall>}, {"wallNormal", guarded<wallNormal>},
 		{"behavior", guarded<behavior>}, {"give", guarded<give>}, {"prefabBehavior", guarded<prefabBehavior>},
 		{"onTouch", guarded<onTouch>}, {"tag", guarded<tag>}, {"collisionBehavior", guarded<collisionBehavior>}, {"setShapeBehavior", guarded<setShapeBehavior>},

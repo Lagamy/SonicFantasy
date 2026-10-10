@@ -5,11 +5,13 @@ local START = "EmeraldCoast"
 local ORDER = {"EmeraldCoast", "Stg0100"}
 local LEVELS = {
 	EmeraldCoast = {
+		game = "sadx",
 		camera = {-12.0, 30.0, 142.0},
 		players = {sonic = {0, 10, 5}, shadow = {0, 4, -5}},
 	},
 	-- The camera starts at the middle of the largest sector of the first section of stg0100 (observed in its world, with the 90 degree yaw of ONEInstance.h applied); the real start of the stage is not known.
 	Stg0100 = {
+		game = "sth2005",
 		camera = {-3440, -4860, 0},
 		players = {sonic = {-3430, -4542 + 5.3, 5}, shadow = {-3430, -4541.5, -5}},
 	},
@@ -21,6 +23,42 @@ local CHARACTERS = {"sonic", "shadow"}
 local current = START
 local level = sf.none
 local players = {}
+
+-- Experimental: the ground snap also depends on the game the loaded level belongs to. A character in a level of its own game keeps the snap its script sets. In a level of the other game the behaviour GroundSnap is given to it (once, on
+-- the level load that needs it) and applies that game's snap mode after the character's own behaviour every tick (sf.setGroundSnapMode: a field left out keeps the character's value). Hypothesis, not observed: the other game's
+-- character in a level uses the snap of the level's game. A level with no `game` (a file of Levels/ loaded from the editor) changes nothing.
+local CHARACTER_GAME = {SASonic = "sadx", Shadow = "sth2005"}
+local SNAP_OF_GAME = {
+	-- The stepped probe straight down (PhysicsBody::snapDistance) of SADX Sonic, without his rising rule.
+	sadx = {ray = false, blockedByWall = false, whileRising = false},
+	-- The game's ray probe along the last floor's normal, as Shadow's: radius 0 = the body's own shape, accepts within 80 degrees of the normal (docs/ai/STH2005_COLLISION.md).
+	sth2005 = {ray = true, radius = 0.0, minNormalY = math.cos(math.rad(80)), blockedByWall = true, whileRising = false},
+}
+-- What the character's script sets itself (attachShadowPlayer; Sonic: the engine's defaults, his rising rule is set by his script each tick). Written once when a level of the character's own game loads, because the foreign mode above stays in the body
+-- after GroundSnap stops applying it.
+local NATIVE_SNAP = {
+	SASonic = {ray = false, radius = 0.0, minNormalY = math.cos(math.rad(80)), blockedByWall = false},
+	Shadow = {ray = true, radius = 5.0, minNormalY = math.cos(math.rad(80)), blockedByWall = true, whileRising = true},
+}
+local snapGiven = {}
+local snapMode = {}
+
+sf.behavior("GroundSnap", function(entity)
+	local mode = snapMode[entity]
+	if mode ~= nil then sf.setGroundSnapMode(entity, mode) end
+end)
+
+-- Called on every level load for one player: attaches GroundSnap on demand and sets which mode it applies (nil = the character's own).
+local function setLevelSnap(entity, levelGame)
+	local own = CHARACTER_GAME[sf.name(entity)]
+	local foreign = levelGame ~= nil and own ~= nil and levelGame ~= own
+	snapMode[entity] = foreign and SNAP_OF_GAME[levelGame] or nil
+	if not foreign and NATIVE_SNAP[sf.name(entity)] ~= nil then sf.setGroundSnapMode(entity, NATIVE_SNAP[sf.name(entity)]) end
+	if foreign and not snapGiven[entity] then
+		snapGiven[entity] = true
+		sf.give(entity, "GroundSnap")
+	end
+end
 
 -- Loads the level and puts the camera and the players at its start.
 local function enter(name)
@@ -38,6 +76,7 @@ local function enter(name)
 			sf.setVelocity(players[i], 0, 0, 0)
 		end
 	end
+	for _, player in ipairs(players) do setLevelSnap(player, data.game) end
 	recordPlayerStarts()
 end
 

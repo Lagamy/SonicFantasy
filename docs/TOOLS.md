@@ -30,20 +30,22 @@ python3 tools/shadowEffectLog.py --digest out.csv
 ```
 Dolphin running, Shadow in a stage; start it before the jump, Ctrl+C after (overwrites the CSV; reads only, can run next to `shadowLiveLog.py`). It finds the effect objects of the model-effect class (vtable word 0x8053c934, FUN_801d1238) with a background memory scan, tells Jump_ballA / Jump_ballB from other model effects by the EFD record address in the object, and writes one row per object per change: the player's behavior and pose, the animation object's ball handle slots, joint 0's node, the current behavior's first 0x70 bytes, and the whole object (91 words) plus its colour floats. `--digest` writes `out.ai.txt` (compact) and `out.txt` (readable) with each object's life, the behaviors around it, its colour / alpha track and which words changed (a counter shows as one that only goes up). Hypothesis, not run yet: the vtable word and the record matching may need `--vtable` or a second recording. Layout and what is known of the effect: `docs/STH2005_PLAYER_REFERENCE.md` section 21.
 
-### sadxLiveLog.py: record the original SADX Sonic (you run it, Claude never does; added 2026-10-07, not run yet)
+### sadxLiveLog.py: record the original SADX Sonic (you run it, Claude never does; added 2026-10-07, columns decoded 2026-10-10, not run live yet)
 
 ```
-.venv/bin/python tools/sadxLiveLog.py [out.csv] [--seconds N] [--buttons HEX]
-.venv/bin/python tools/sadxLiveLog.py --find-buttons
+.venv/bin/python tools/sadxLiveLog.py [out.csv] [--seconds N]
 ```
 
-The SADX counterpart of `shadowLiveLog.py` (Dolphin running SADX GC, Sonic in a stage; same venv, same Ctrl+C, overwrites `out.csv`). It finds Sonic's task itself (three function pointers side by side) and writes one row per change of his position, velocity, state or stick. Core columns keep the Shadow names (`frame, t, behavior, substate, pos_*, rot_*, vel_*, planar, speed3d, pad_buttons, vi_count`) so the replay tools can read both. Values are as read: `vel_*`, `planar`, `speed3d`, `fwd_speed` are per game frame, `rot_*` are 16 bit angles. Layout and the evidence for it: `docs/SADX_SONIC_REFERENCE.md`.
+The SADX counterpart of `shadowLiveLog.py` (Dolphin running SADX GC, Sonic in a stage; same venv, same Ctrl+C, overwrites `out.csv`). It finds Sonic's task itself (three function pointers side by side), derives the module's code and BSS address shifts from the running game, and writes one row per change of his position, velocity, state, stick, pad or camera. Core columns keep the Shadow names (`frame, t, behavior, substate, pos_*, rot_*, vel_*, planar, speed3d, vi_count`) so the replay tools can read both. Values are as read: `vel_*`, `planar`, `speed3d`, `fwd_speed` are per game frame, `rot_*` are 16 bit angles. Layout and the evidence for it: `docs/SADX_SONIC_REFERENCE.md`.
 
-- The game's own processed stick is always logged: `stick_angle` (world direction, camera already applied) and `stick_mag`. Hypothesis: a replay can feed that directly, no camera and no raw pad needed for the stick.
-- `--buttons HEX` also logs the u32 at that address as `pad_buttons` (the button word; the replay's jump needs it). Its address is not known yet: `--find-buttons` finds it (release everything, hold A, then tap A; it prints candidate addresses with the bit mask of A).
-- The camera (`cam_rot_x/y`, `cam_x/y/z`) comes from the pointer at `0x808B3D10` (hypothesis); the cells are empty when it is null.
-- `vi_count` is the u32 at `0x800C44E4` (the VI retrace count). Whether SADX runs one game frame per retrace is not known: a first recording shows it.
-- Raw blocks for decoding later: `w1_raw`, `w2_raw`, `w3_raw`, `col_raw`, `stick_raw` (words, hex).
+- The game's own processed stick: `stick_angle` (world direction, camera already applied) and `stick_mag`. A replay feeds that directly, no camera and no raw pad needed for the stick.
+- The pad record (static address, no search flag): `pad_buttons` (held), `pad_pressed`, `pad_released`, `pad_l`, `pad_r`, `pad_sx`, `pad_sy` (signed stick x / y, -127 = forward). The replay's jump needs `pad_pressed` / `pad_buttons` bit 0x4.
+- The camera: `cam_rot_x/y` (signed 16 bit angles, y = yaw), `cam_eye_*`, `cam_target_*` (the look-at point); cells empty when the camera is not created yet.
+- Named fields of the player's blocks: `up_speed, side_speed, work0, grip_excess, ground_nx/ny/nz, slope_cos, wall_nx/ny/nz, flags_04, flags_5c, flags_60, flags_1e4, counter_7e, anim_id, anim_prev, anim_frame, col_flags`. `status` bits 0x3 = on the ground.
+- `vi_count` is the u32 at `0x800C44E4` (the VI retrace count). Observed on sadx_1 (2026-10-10): one game step per retrace (+1 per tick, the last row of a tick is after the step).
+- Replay tools for it (2026-10-10, not run on a port run): `makeReplay.py --game sadx <csv> Scripts/sadx/replays/<name>.lua`, `compareReplay.py --game sadx <csv> tools/port_run.txt <name> [step] [--ai]`, `digestRun.py --game sadx <csv>` / `... tools/port_run.txt <name> [--from T --to T --every N]`, `sh tools/regenReplays.sh --game sadx [name ...]`. They work in the original's own axes with velocities per second; details in `docs/REPLAY_COMPARISON.md` "SADX Sonic".
+- Raw blocks for decoding later: `w1_raw`, `w2_raw`, `w3_raw` (0x200 bytes), `col_raw`, `stick_raw`, `pad_raw` (words, hex).
+- Removed 2026-10-10: `--buttons HEX` and `--find-buttons` (the pad record's address is static).
 
 ### makeReplay.py: recording to replay, and the camera check
 

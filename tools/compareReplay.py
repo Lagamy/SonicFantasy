@@ -2,6 +2,7 @@
 Compares a recording of the original with the port's replay of it.
 
     python3 tools/compareReplay.py tools/live_run.csv port_stdout.txt live_run [step_seconds] [--ai]
+    python3 tools/compareReplay.py --game sadx tools/sadx_1.csv port_stdout.txt sadx_1 [step_seconds] [--ai]
 
 --ai prints a compact form instead of the tables (for Claude, see print_compact): one summary line, then one row per step with only the original's values and the port's differences, quiet stretches collapsed.
 
@@ -9,6 +10,7 @@ The port's lines are the tab separated REPLAY lines of Scripts/shadow/replay.lua
 is the original's turned (docs/ARCHITECTURE.md): planar speed, vertical speed and height above the start (the port's height is taken at SETTLE_TIME, after the spawn has dropped onto the ground), and the path drift: the port's horizontal distance from the start minus the original's, with the original's (x, z) turned into the port's axes ((x, z) goes to (z, -x), hypothesis, see replay.lua), as dx, dz and their length. The original's rows are put on a frame clock (frame_times: gaps rounded to whole 1/60 s frames, rows of one frame share a time) instead of the wall clock; the port's are per tick.
 """
 import csv
+import math
 import sys
 
 
@@ -172,10 +174,100 @@ def print_compact(name, step, samples, reversals, worst, worst_drift):
         print(f"{run_start:.2f}-{previous[0]:.2f} ok")
 
 
+SADX_ANGLE_UNIT = 2 * math.pi / 65536
+SADX_SETTLE_TICKS = 15
+
+
+def sadx_original(path):
+    """Rows of a sadxLiveLog.py recording, one per game tick: the last row of each vi_count (it is after the tick's step; observed sadx_1), as dicts with tick (from the first tick), t, beh (behavior/substate), x y z, v (3, units per
+    SECOND = the logged per-frame value x 60, as the port's engine holds them), rot (rot_y in radians), work0 (per frame), stick (angle radians, magnitude), buttons (jump bit, action bit)."""
+    last = {}
+    for r in csv.DictReader(open(path)):
+        last[int(r["vi_count"])] = r
+    first = min(last)
+    out = []
+    for vi in sorted(last):
+        r = last[vi]
+        buttons = int(r["pad_buttons"], 16)
+        out.append({"tick": vi - first, "t": (vi - first) / 60, "beh": f"{r['behavior']}/{r['substate']}",
+                    "pos": [float(r[k]) for k in ("pos_x", "pos_y", "pos_z")], "v": [float(r[k]) * 60 for k in ("vel_x", "vel_y", "vel_z")],
+                    "rot": int(r["rot_y"]) * SADX_ANGLE_UNIT, "work0": float(r["work0"]), "g": [float(r[k]) for k in ("ground_nx", "ground_ny", "ground_nz")],
+                    "stick": (int(r["stick_angle"]) * SADX_ANGLE_UNIT, float(r["stick_mag"])), "buttons": (int(bool(buttons & 0x4)), int(bool(buttons & 0x402)))})
+    return out
+
+
+def sadx_port(path, name):
+    """The last replay `name` in the port's stdout as {tick: dict}: key k + 1 holds the port's result of step k (REPLAY line k), which pairs with the original's tick k + 1 (makeReplay.py --game sadx: the start row is the original's
+    tick 0). Position, grounded, ground and wall normals are those of line k + 1 (printed before that tick's move, so after step k's engine move); velocity (units per second), motion, heading, work0 and the input are line k's.
+    The dict has the keys of sadx_original; the last line has no successor and is dropped."""
+    lines = {}
+    for line in open(path):
+        f = line.rstrip("\n").split("\t")
+        if f[0] == "REPLAY" and f[1] == "begin" and f[2] == name:
+            lines = {}
+        elif f[0] == "REPLAY" and f[1] == name and len(f) >= 29:
+            lines[int(f[2])] = f
+    if not lines:
+        sys.exit("no REPLAY lines for " + name)
+    out = {}
+    for k, f in lines.items():
+        after = lines.get(k + 1)
+        if after is None:
+            continue
+        wx, wz = float(f[24]), float(f[25])
+        out[k + 1] = {"tick": k + 1, "beh": f[10], "pos": [float(v) for v in after[4:7]], "v": [float(v) for v in f[7:10]], "rot": float(f[11]), "work0": float(f[20]),
+                      "grounded": after[12], "g": [float(v) for v in after[13:16]], "wall": after[16], "wn": [float(v) for v in after[17:20]],
+                      "stick": (math.atan2(wz, wx), float(f[26])), "buttons": (int(f[27]), int(f[28])), "v0": [float(v) for v in f[21:24]]}
+    return out
+
+
+def sadx_compare(source, port_path, name, step, compact):
+    """--game sadx: the same tables as the Shadow form (print_compact), per original tick, in the original's own axes (hypothesis: the port's world is the original's; the drift says so at once if not). The port's height is
+    compared after aligning both at tick SADX_SETTLE_TICKS (the offset is printed: it is the START_LIFT of replay.lua, how far the port's body sits from the original's task position). Facing = port heading - original rot_y."""
+    original = sadx_original(source)
+    port = sadx_port(port_path, name)
+    by_tick = {o["tick"]: o for o in original}
+    common = [t for t in sorted(by_tick) if t in port]
+    if not common:
+        sys.exit("no tick of the recording is in the port's replay")
+    settle = min(common, key=lambda t: abs(t - SADX_SETTLE_TICKS))
+    offset = port[settle]["pos"][1] - by_tick[settle]["pos"][1]
+    y0 = original[0]["pos"][1]
+    stride = max(1, round(step * 60))
+    samples = []
+    worst = [0.0, 0.0, 0.0]
+    worst_drift = 0.0
+    for tick in common:
+        if tick % stride:
+            continue
+        o, p = by_tick[tick], port[tick]
+        opl, ppl = math.hypot(o["v"][0], o["v"][2]), math.hypot(p["v"][0], p["v"][2])
+        d = (ppl - opl, p["v"][1] - o["v"][1], p["pos"][1] - offset - o["pos"][1])
+        worst = [max(w, abs(v)) for w, v in zip(worst, d)]
+        dist = math.hypot(p["pos"][0] - o["pos"][0], p["pos"][2] - o["pos"][2])
+        worst_drift = max(worst_drift, dist)
+        face = (math.degrees(p["rot"] - o["rot"]) + 180) % 360 - 180 if opl >= FACING_FROM else None
+        samples.append((o["t"], opl, d[0], o["v"][1], d[1], o["pos"][1] - y0, d[2], dist, o["beh"], p["beh"], face))
+        if not compact:
+            print(f"{o['t']:6.3f} | planar {opl:8.2f} {ppl:8.2f} {d[0]:7.2f} | vy {o['v'][1]:8.2f} {p['v'][1]:8.2f} {d[1]:7.2f} | h {o['pos'][1] - y0:7.2f} {d[2]:6.2f} | drift {dist:7.2f} | {o['beh']} / {p['beh']}")
+    if compact:
+        print(f"# sadx: {len(common)} ticks compared, port body y - original at tick {settle}: {offset:.3f}")
+        print_compact(name, step, samples, [], worst, worst_drift)
+        return
+    print(f"largest differences: planar speed {worst[0]:.2f}, vertical speed {worst[1]:.2f}, height {worst[2]:.2f}, path drift {worst_drift:.1f}; port body y - original at tick {settle}: {offset:.3f}")
+
+
 def main():
     compact = "--ai" in sys.argv
     if compact:
         sys.argv.remove("--ai")
+    if "--game" in sys.argv:
+        i = sys.argv.index("--game")
+        if sys.argv[i + 1] != "sadx" or len(sys.argv) < i + 5:
+            sys.exit(__doc__)
+        del sys.argv[i:i + 2]
+        sadx_compare(sys.argv[1], sys.argv[2], sys.argv[3], float(sys.argv[4]) if len(sys.argv) > 4 else 0.1, compact)
+        return
     if len(sys.argv) < 4:
         sys.exit(__doc__)
     step = float(sys.argv[4]) if len(sys.argv) > 4 else 0.1

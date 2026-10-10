@@ -11,6 +11,8 @@ local INVULNERABLE_TICKS = 90     -- placeholder
 local DAMAGE_TICKS = 40           -- placeholder: ticks the player plays his damage motion
 local DASH_PANEL_DEFAULT_SPEED = 14
 local DASH_PANEL_DEFAULT_DISABLE_TICKS = 60
+-- Whether an enemy reacts to a body touching it (hurts, is defeated). False: the enemy's shapes keep the inert Object behaviour, so nothing touches or blocks the player; it can still be homed on.
+local ENEMIES_TOUCHABLE = false
 
 local tagBody = sf.tag("Body")
 local tagPickup = sf.tag("Pickup")
@@ -142,8 +144,9 @@ sf.prefabBehavior("SADX/O AXPNL", function(entity, placement)
 end)
 
 local function setupEnemy(entity)
-	sf.setShapeBehavior(entity, enemyBehavior)
-	homingTargets[entity] = true
+	if ENEMIES_TOUCHABLE then sf.setShapeBehavior(entity, enemyBehavior) end
+	-- Switched off by request: enemies are not registered as homing targets, so the jump button in the air gives the homing attack's forward dash with no target (homingCandidates finds none).
+	-- homingTargets[entity] = true
 end
 sf.prefabBehavior("SADX/E SARU", setupEnemy)
 sf.prefabBehavior("SADX/E SAITO", setupEnemy)

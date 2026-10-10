@@ -278,6 +278,7 @@ static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCap
 
 	glm::vec3 position = rEntity.position;
 	glm::vec3 delta = rEntity.stagingPosition - position;
+	bool faceContact = Globals::Physics::bodies[bodyId].contactByFace;
 	float smallest = rCapsules_[0].radius;
 	for(const Capsule& rCapsule : rCapsules_) smallest = std::min(smallest, rCapsule.radius);
 	int steps = smallest > 0.0f ? static_cast<int>(std::ceil(glm::length(delta) / smallest)) : 1;
@@ -340,8 +341,36 @@ static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCap
 					glm::vec3 offset = rCollision.position;
 					glm::vec3 onSegment;
 					glm::vec3 onTriangle;
-					closestPointsOfSegmentAndTriangle(center - axis - offset, center + axis - offset, a, b, c, onSegment, onTriangle);
-					glm::vec3 away = onSegment - onTriangle;
+					glm::vec3 away;
+					if(faceContact)
+					{
+						/*
+						PhysicsBody::contactByFace: the center's projection on the triangle's plane must be inside the triangle (edges inclusive); away is the face normal scaled by the signed distance, on the side the center is on.
+						*/
+						glm::vec3 faceNormal = glm::normalize(normal);
+						glm::vec3 local = center - offset;
+						float signedDistance = glm::dot(faceNormal, local - a);
+						if(std::abs(signedDistance) >= rCapsule.radius) continue;
+						onTriangle = local - faceNormal * signedDistance;
+						glm::vec3 toPoint = onTriangle - a;
+						glm::vec3 edgeAB = b - a;
+						glm::vec3 edgeAC = c - a;
+						float d00 = glm::dot(edgeAB, edgeAB);
+						float d01 = glm::dot(edgeAB, edgeAC);
+						float d11 = glm::dot(edgeAC, edgeAC);
+						float d20 = glm::dot(toPoint, edgeAB);
+						float d21 = glm::dot(toPoint, edgeAC);
+						float inverse = 1.0f / (d00 * d11 - d01 * d01);
+						float v = (d11 * d20 - d01 * d21) * inverse;
+						float w = (d00 * d21 - d01 * d20) * inverse;
+						if(v < 0.0f || w < 0.0f || v + w > 1.0f) continue;
+						away = faceNormal * signedDistance;
+					}
+					else
+					{
+						closestPointsOfSegmentAndTriangle(center - axis - offset, center + axis - offset, a, b, c, onSegment, onTriangle);
+						away = onSegment - onTriangle;
+					}
 					float distance = glm::length(away);
 					if(distance >= rCapsule.radius) continue;
 
@@ -398,7 +427,7 @@ static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCap
 		}
 	};
 	/*
-	The snap (PhysicsBody::snapDistance) is more steps, straight down and no longer than the smallest shape radius each like the move's, after the move: they go on only while the body is not on a walkable floor and not rising, and stop at the
+	The snap (PhysicsBody::snapDistance) is more steps, straight down and no longer than the smallest shape radius each like the move's, after the move: they go on only while the body is not on a walkable floor and not rising (unless PhysicsBody::snapWhileRising), and stop at the
 	first step that touches one (the shape then rests on it, pushed out like any step). If none does, the position and the body's state of the move are restored.
 	*/
 	glm::vec3 positionBeforeSnap(0.0f);
@@ -412,7 +441,7 @@ static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCap
 		if(snapping)
 		{
 			const Physics::PhysicsBody& rBody = Globals::Physics::bodies[bodyId];
-			if(rBody.grounded || rBody.velocity.y > 0.0f) break;
+			if(rBody.grounded || (rBody.velocity.y > 0.0f && !rBody.snapWhileRising)) break;
 			if(!snapped)
 			{
 				positionBeforeSnap = position;
@@ -432,7 +461,7 @@ static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCap
 
 	/*
 	The game's ground probe (PhysicsBody::snapByRay), external, FUN_8009728c, the part after its first sweep (this system's move stands for that sweep): it runs only if the body was on the floor the tick before (the game's flag 2) and
-	the move did not end on one. N is the previous floor's normal (the game's +0x1c8; up if there was none). A ray from the body's center along -N, GroundRayRangeFactor x radius plus the length of the intended move long, finds the
+	the move did not end on one, and not on a rising body unless PhysicsBody::snapWhileRising (the stepped snap's rule: a jump must be able to leave the floor; Shadow's script sets it). N is the previous floor's normal (the game's +0x1c8; up if there was none). A ray from the body's center along -N, GroundRayRangeFactor x radius plus the length of the intended move long, finds the
 	nearest triangle at distance d (none: no ground). d up to GroundRayNearFactor x radius is accepted; a farther one needs a second ray from the point HalfFactor x (d + radius) down along -N, backwards along the move (the game's
 	last sweep displacement, the intended move here; at least a radius long), whose nearest hit has a normal within minNormalY of N. If accepted, the body moves along -N towards the hit but stops Backoff before it, or where its sphere
 	touches the surface (a sphere of the radius meets a plane when it is radius / cos(angle) from it, my computation: the game sweeps the sphere along that vector with its own collision), and is on the floor if the surface it touches has
@@ -440,7 +469,7 @@ static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCap
 	*/
 	{
 		Physics::PhysicsBody& rBody = Globals::Physics::bodies[bodyId];
-		if(rBody.snapByRay && rBody.snapDistance > 0.0f && wasGrounded && !rBody.grounded)
+		if(rBody.snapByRay && rBody.snapDistance > 0.0f && wasGrounded && !rBody.grounded && (rBody.velocity.y <= 0.0f || rBody.snapWhileRising))
 		{
 			float radius = rBody.snapRadius > 0.0f ? rBody.snapRadius : rCapsules_[0].radius;
 			glm::vec3 center = position + rCapsules_[0].center;

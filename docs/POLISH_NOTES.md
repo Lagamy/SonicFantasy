@@ -41,3 +41,41 @@ Flat ground (start, acceleration, run, speed word), the stick swing at speed (ho
 Camera behaviour, animation, sound.
 
 - Deliberate difference: slope no-idle rule and Ground weight limit (animation.lua mixGround, player.lua SLOPE_*) are the user's own smoothing. Not a bug.
+
+## SADX Sonic: decoded but not ported, not visible (2026-10-10, air / jump / spin dash / roll / homing task)
+Visibility rule (CLAUDE.md): not chased now. Evidence and numbers: `docs/SADX_SONIC_REFERENCE.md` ("Air", "Jump", "Spin dash and roll", "Homing attack").
+- **Frame tilt levelling in the air** (`FUN_804dd970`: w1+0x14/+0x1c move 0x800 a frame to level, world velocity kept): only the local axes of the first frames after a slope launch differ; the port's air step uses flat axes. Not visible (a 1 to 2 degree change of the stick's push axis for a few frames).
+- **Local speeds within +-0.001 zeroed after the move** (`FUN_804d0974`, air): below a pixel a second. Not visible.
+- **Homing target's collision centre**: the game aims at the collision record's centre (+8..+0x10, transformed by the entity matrix); the port uses the entity's position. The vertical share of the aim differs by the centre's height (a few units over 5.4 per frame): not visible unless a tall enemy is homed at point blank (then: look at the vertical share first).
+- **Speed jitter after 180 homing frames** (0.7 + 0.1 x rand): ported with `math.random`, the sequence is not the game's. Not visible (3 s of homing).
+- **Aim assist `FUN_804c7e7c`** (air cases 8, 0xC, 0x1C, 0x1D; list `w3+0x78`, count `w3+0x12` = 0 in the dump): needs the stage's points; not ported. Unknown whether any stage of the port fills it.
+- **Object push in the roll and the friction states** (`w3+0x64` + 0x78..0x80, moving platforms): not visible until moving platforms exist in the port.
+- **Roll upside down** (gravity y x -8 above RUN_SPEED when the normal's y < 0): needs loops / ceilings, which are not ported (wall running).
+- **Light Speed Attack** (case 6): needs the two upgrades (`w3+4`), which the stages here don't give. Not visible. (The old port's homing was its rules.)
+
+## SADX Sonic animation: decoded but not ported, not (clearly) visible (2026-10-10, animation task)
+Evidence: `docs/SADX_SONIC_REFERENCE.md` "Animation".
+- **Blend between motions**: the game blends 1 / step frames (4 for most, 16 for Stand, 1 for Landing and Turn Around); the port cuts. A few frames of pose change.
+- **Idle ids 1, 2, 4 to 8**: standing after a landing is id 2 (jump) or 1 (fall), a wait after 30 s id 4; `Sonic.json` has only id 0 (Stand). Port stands with id 0 everywhere. Unknown whether 0 and 2 look different.
+- **Surface flag 4 -> id 0x47** (coasting without a stick on such a surface) and the status 0x800 motions 0x22 / 0x26: need surface flags / that status, which the port does not have.
+- **Id 0x92 and the effect objects** (byte `DAT_809a9269`, H Super Sonic): not in the port.
+- **Negative speed**: the game plays the running motion backwards at a negative forward speed; the port plays it forwards (the engine's rate is not tried with a negative).
+
+## SADX Sonic brake state 0xD: not exact, not (clearly) visible (2026-10-10, brake state task)
+Evidence: `docs/SADX_SONIC_REFERENCE.md` "Brake state".
+- **Brake motion loops**: the game plays it once (33 frames, 4 of blend, the state lasts 36 steps); the port's motions loop, so the first frame shows again for the last 3 steps. A play-once option for `sf.animate` would fix it (an API change: propose first). The Turn Around motion (16 frames, 18 steps to the 0.46) loops the same way for 1 to 2 steps.
+- **Landing into the state**: the port decides it from its own ground contact (`ROLL_GAP_TICKS` ticks in the air before it counts); the game from the ground bit of the step. Only differs on the short hops of uneven ground, where the game's landing brake is a single frame of 0.18 deceleration.
+- **Heading snap at the stop** (`FUN_804de8a0`'s blend before the direct write): the forward speed is 0 there, so the local side speed is the only thing that could differ; not visible.
+
+## SADX Sonic replay comparison, task 5: not visible (2026-10-10)
+Evidence: `docs/SADX_SONIC_REFERENCE.md` "Replay comparison, task 5".
+- **dvy +4.8 on every tick**: log convention (the port's line holds the velocity before the engine's gravity step); positions agree. If it is in the way, subtract 4.8 in `compareReplay.py --game sadx`.
+- **Landing 1 tick late and -2.3 planar on the landing tick** (4.5 s): the game's floor snap catches him from 3.5 above (post-move gap about 2), the port touches next tick; dpl -6 afterwards, drift 3 to 5. Not noticeable.
+- **Port motion after a landing at speed**: `fall` for 4 ticks after the contact, `jump` for 1, then `run` (original: run at once). About 0.08 s of the wrong pose.
+- **Slope rows 1.6 to 2.4 s**: port height 0.2 to 0.5 below the original (dh -0.5), vy 0.0 on a ground slope where the original logs -6. Under half a unit.
+
+## SADX Sonic replay comparison, rerun 3: not judged visible (2026-10-11)
+Evidence: `docs/SADX_SONIC_REFERENCE.md` "Air speed in the first 0.5 s of a ramp jump".
+- **sadx_3 wall landing 11.9 to 12.1 s**: dpl -14 and -23 a second for 0.2 s; looked at 2026-10-11, not changed (see "Ground wall hit" in SADX_SONIC_REFERENCE.md): the original keeps sliding for 5 ticks with the heading turning 45 to 75 degrees a tick, the port stops in 3; one event at the end of the recording; the wall branch of FUN_804dac14 was decoded the same day and does not produce the observed turn (see the reference), so the sadx_3 case stays. The decoded rules themselves (stop at 15, head-on stop at 3.7, slide under 1.39) were ported the same day as `wallHit`, untested against a recording; its call site is commented out in player.lua (off).
+- **sadx_1 landing 4.5 s**: dpl -4.2, drift 9.8 units by 8 s (documented under "Landing speed on a changed normal"); one event. Looked at 2026-10-11: the port lands on the same tick but 0.6 units further along, on the next triangle's normal, so no landing rule differs; the 0.6 comes from a dpl blip at 2.9 to 3.2 s.
+- **sadx_1 7.5 to 9 s**: air speed within 2 %, final drift 3.8 units.

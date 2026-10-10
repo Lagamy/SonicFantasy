@@ -2,12 +2,11 @@
 Live logger of the original SADX (GameCube) Sonic, read from a running Dolphin through dolphin-memory-engine (pip install dolphin-memory-engine, in a venv; Linux needs
 kernel.yama.ptrace_scope=0 or root). Run with the game running, Sonic in a stage:
 
-    .venv/bin/python tools/sadxLiveLog.py [out.csv] [--seconds N] [--buttons HEX]
-    .venv/bin/python tools/sadxLiveLog.py --find-buttons
+    .venv/bin/python tools/sadxLiveLog.py [out.csv] [--seconds N]
 
 Stop with Ctrl+C. One row is written whenever the player's position, velocity, state, stick or logged raw words change (a new game frame, polled every 2 ms; every 0.25 s while he stands still).
 The columns that tools/makeReplay.py, compareReplay.py and digestRun.py share with tools/shadowLiveLog.py keep their names (frame, t, behavior, substate, pos_*, rot_*, vel_*, planar, speed3d, vi_count,
-pad_buttons); every value is as read, nothing is converted, so vel_* / planar / speed3d / fwd_speed are per game frame (not per second) and rot_* are the game's 16 bit angles (65536 = a turn).
+pad_buttons, pad_pressed, pad_sx, pad_sy, cam_*); every value is as read, nothing is converted, so vel_* / planar / speed3d / fwd_speed are per game frame (not per second) and rot_* are the game's 16 bit angles (65536 = a turn).
 Layout (external: decompile of _Main.rel in sadxDecomp/decompiled/pseudocode.c, FUN_805af2b0 = Sonic's main function, and the same function's callees FUN_804dac14, FUN_804e4e00, FUN_804de8a0, FUN_804e6230;
 checked on the RAM dump sadxDecomp/mem1.raw, Emerald Coast act 1, at rest; hypotheses marked):
 - the task (found by the three function pointers at +0x10 / +0x14 / +0x18, see find_sonic) has the entity at +0x20 (w1) and the movement block at +0x24 (w2).
@@ -18,13 +17,29 @@ checked on the RAM dump sadxDecomp/mem1.raw, Emerald Coast act 1, at rest; hypot
   and y was one frame of the 0.08 gravity), +0x10.. the acceleration vector (hypothesis), +0x20 u16 the target heading the stick asks for (FUN_804de8a0 copies the stick's angle there).
 - w3 (= *w2): +0x38 forward speed per frame (FUN_804dac14 multiplies the heading direction by it), +0x3c / +0x40 the other local speed components (hypothesis), +0x7e a counter bumped while the ball flag is set,
   +0x9c.. the per-character physics record (33 words copied from _Main 0x2C61E8, Sonic's is id 0), +0x114 the gravity (0.08), +0x10c / +0x11c collision size and center height.
-- The game's own stick: 8 byte records at 0x8094C330 + 8 x character index: u32 angle (the stick's direction in the world, the camera already applied; FUN_804e6230 returns it and the magnitude for
-  FUN_804de8a0) and float magnitude. Logged as stick_angle (0..65535) and stick_mag. Hypothesis: that is what Sonic's steering reads, so a replay can feed it without the camera.
-- The camera: the pointer at 0x808B3D10 (FUN_804de8a0 rotates by its +0x18 y and +0x14 x angles; hypothesis: it is an entity like w1, position at +0x20); it was null on the RAM dump, so the cam_* columns
-  are empty until a stage runs it. cam_rot_x / cam_rot_y are the u32 words at +0x14 / +0x18 (raw), cam_x / cam_y / cam_z the floats at +0x20..+0x28.
+- Two address spaces (external: tools/decomp/sadx/buildRelImage.py; decompile addresses of _Main.rel are image address = 0x80400000 + file offset, its sections placed one after another, the bss
+  after the file): code and data sections of the module sit at decompile address - CODE_SHIFT (0x133FC0 on the RAM dump: exec 0x8047B2F0 vs 0x805AF2B0), the module's BSS is allocated elsewhere
+  (observed on the dump: 0x1FF860 lower than the decompile; it holds the stick table, pad records, the camera pointer and the per-player blocks). The logger takes CODE_SHIFT from Sonic's
+  exec pointer and BSS_SHIFT from the lis/addi pair at +0x2c / +0x38 of FUN_804799ec (the function that fills the stick table, which loads decompile address 0x8094C110 there). DOL globals
+  (vi_count) are absolute.
+- The game's own stick (decompile FUN_804799ec, FUN_804e6230; BSS 0x8094C330 + 8 x character index): u32 angle, float magnitude. FUN_804799ec turns the pad's s16 stick x / y (from the pad record's
+  +0x1c / +0x1e, a signed byte shifted left 8) into atan2(...) minus the camera entity's yaw (+0x18), after a dead zone of 3072 per axis; magnitude = (length / 29440)^3 capped at 1.0 (decompile
+  constants 3072.0, 2.55e13 = 29440^3, 1.0). So the angle is the stick's direction in the WORLD, the camera already applied: a replay feeds it without the camera. Logged as stick_angle (0..65535)
+  and stick_mag. Observed on the dump: 0x3f8d (= Sonic's heading) and 0.9999 (full stick).
+- The pad record (decompile FUN_80479cbc copies the pad block *0x8094C510 there, FUN_8045xxxx the replay path; BSS 0x8094C370 + 0x34 x character index; held mask of the buttons = (&DAT_8094c378)
+  [index x 0xd]): +0x08 buttons held, +0x0c their complement, +0x10 pressed this frame, +0x14 released, +0x18 / +0x1a u16 (0..255: the analog triggers, hypothesis), +0x1c / +0x1e s16 main stick x / y
+  (y -127 = up on the dump: the stick pushed forward), +0x2c the previous frame's held word. The game's own button masks: jump 0x4, action 0x402 (decompile constants). Logged as pad_buttons,
+  pad_pressed, pad_released, pad_l, pad_r, pad_sx, pad_sy and the whole 13 words as pad_raw.
+- The camera: entity pointer BSS 0x808B3D10 (non-null on the dump, 0x807E3240): +0x14 / +0x18 rotation x / y (16 bit angles, y = yaw the stick is turned by), +0x20 / +0x24 / +0x28 position = the eye.
+  The look-at point is in the camera output block that the pointer at module data 0x80614A1C holds (dump: 0x806B4960; +0x0c eye (= the entity's position), +0x18 look-at, which lay 8.4 above and
+  70 behind the eye's player on the dump; hypothesis for the target being the look-at point). Logged raw as cam_rot_x / cam_rot_y (signed) and cam_eye_* / cam_target_* floats.
+- Named w3 columns (decompile FUN_804d0974, FUN_804dac14, FUN_804cf4f4; values on the dump): +0x3c up speed, +0x40 side speed (the frame's local axes), +0x00 work0 (3.416 = fwd + 20 x w2+0x38; the
+  animation rate input), w2 +0x38 grip_excess, +0x50 / +0x54 / +0x58 ground normal (0, 1, -0 on the dump), +0x1c slope_cos (= minus the dot of gravity direction and that normal; 1.0 in the air),
+  +0x44 / +0x48 / +0x4c wall normal (FUN_804dac14 writes it every step: zero without a wall; filled when the collision record's flags +4 have 0x10 and 0x4 and status 0x4 is clear),
+  +0x5c / +0x60 flags_5c / flags_60 (this step's and the previous step's surface/state flags, 0x80100001 on the dump), +0x1e4 flags_1e4, +0x04 flags_04, +0x7e counter_7e, the motion struct at +0x120
+  (+0x124 u16 motion id now, +0x126 the id of the step before, +0x130 f32 frame; dump: id 0xc run, frame 11.55) and the collision record's u16 flags at +4 (col_flags).
 - vi_count: the SDK's VI retrace count, u32 at 0x800C44E4 (external: FUN_80046210, the VI interrupt handler, does DAT_800c44e4 += 1 once per retrace; the dump read 27211). Unknown whether SADX runs one
   game frame per retrace (it may run 30 a second): the first recording shows it (count steps per position change).
-- pad_buttons (only with --buttons ADDR): the u32 at ADDR, raw. The address of the controller's button word is not known: --find-buttons finds it (hold A / release A / tap A).
 """
 import array
 import csv
@@ -38,13 +53,21 @@ import dolphin_memory_engine as dme
 MEM1_BASE = 0x80000000
 MEM1_SIZE = 0x01800000
 VI_RETRACE_COUNT = 0x800C44E4
+# Decompile addresses (module image, see the docstring); the BSS ones need BSS_SHIFT, the module data one CODE_SHIFT.
+EXEC_ADDRESS = 0x805AF2B0
 STICK_TABLE = 0x8094C330
+PAD_RECORDS = 0x8094C370
+PAD_RECORD_SIZE = 0x34
 CAMERA_POINTER = 0x808B3D10
+CAMERA_BLOCK_POINTER = 0x80614A1C
+# FUN_804799ec loads decompile address 0x8094C110 into r6 with a lis (+0x2c) / addi (+0x38) pair: the module's relocated BSS shows there.
+STICK_FUNCTION = 0x804799EC
+BSS_ANCHOR = 0x8094C110
 # Sonic's display and destroy functions lie 0x5320 and 0x4CB4 below his main function in the module (0x805AF2B0 exec, 0x805A9F90 display, 0x805AA5FC destroy in the decompile's addresses); the three words
 # side by side in the task (+0x10, +0x14, +0x18) are a signature that does not need the module's load address (observed on the RAM dump: 0x8047B2F0 / 0x80475FD0 / 0x8047663C).
 DISPLAY_BELOW_EXEC = 0x5320
 DESTROY_BELOW_EXEC = 0x4CB4
-W1_SIZE, W2_SIZE, W3_SIZE, COL_SIZE = 0x60, 0x30, 0x130, 0x100
+W1_SIZE, W2_SIZE, W3_SIZE, COL_SIZE = 0x60, 0x40, 0x200, 0x100
 
 
 def u32(data, offset):
@@ -61,11 +84,6 @@ def f32(data, offset):
 
 def valid(address):
     return MEM1_BASE <= address < MEM1_BASE + MEM1_SIZE
-
-
-def read_mem1():
-    chunk = 0x100000
-    return b"".join(dme.read_bytes(MEM1_BASE + start, chunk) for start in range(0, MEM1_SIZE, chunk))
 
 
 def find_sonic():
@@ -87,78 +105,40 @@ def find_sonic():
     return None
 
 
-def read_camera():
-    # The camera pointer's target: rotation words +0x14 / +0x18 and position floats +0x20..+0x28; empty cells when the pointer is null or outside MEM1.
-    pointer = u32(dme.read_bytes(CAMERA_POINTER, 4), 0)
-    if not valid(pointer) or not valid(pointer + 0x30):
+def bss_shift(code_shift):
+    # Decompile address minus runtime address of the module's BSS, read from the relocated lis r6 / addi r6, r6 pair in FUN_804799ec; None if the words are not that pair.
+    function = STICK_FUNCTION - code_shift
+    lis, addi = u32(dme.read_bytes(function + 0x2C, 4), 0), u32(dme.read_bytes(function + 0x38, 4), 0)
+    if lis >> 16 != 0x3CC0 or addi >> 16 != 0x38C6:
         return None
-    blob = dme.read_bytes(pointer, 0x30)
-    return u32(blob, 0x14), u32(blob, 0x18), f32(blob, 0x20), f32(blob, 0x24), f32(blob, 0x28)
+    low = addi & 0xFFFF
+    return BSS_ANCHOR - (((lis & 0xFFFF) << 16) + (low - 0x10000 if low & 0x8000 else low))
+
+
+def read_camera(bss, code):
+    # The camera entity (pointer in BSS): rotation words +0x14 / +0x18, eye +0x20..+0x28; the look-at point is +0x18..+0x20 of the block the module-data pointer names. None when a pointer is not
+    # in MEM1 (no camera yet).
+    pointer = u32(dme.read_bytes(CAMERA_POINTER - bss, 4), 0)
+    block = u32(dme.read_bytes(CAMERA_BLOCK_POINTER - code, 4), 0)
+    if not valid(pointer) or not valid(pointer + 0x30) or not valid(block) or not valid(block + 0x24):
+        return None
+    entity = dme.read_bytes(pointer, 0x30)
+    target = struct.unpack_from(">fff", dme.read_bytes(block, 0x24), 0x18)
+    return (s32(entity, 0x14), s32(entity, 0x18)) + struct.unpack_from(">fff", entity, 0x20) + target
 
 
 def words_hex(blob):
     return " ".join(f"{u32(blob, o):08x}" for o in range(0, len(blob) - len(blob) % 4, 4))
 
 
-def find_buttons():
-    # Finds the controller's button word from MEM1 snapshots: one with every button released, one with A held; a candidate is an aligned u32 that differs by exactly one bit that is set while A is held. Then A
-    # is tapped for 8 seconds, MEM1 is sampled over and over, and the candidates are listed by how often that bit toggled (the busiest first; a real button word toggles once per tap). The bit is A's mask for
-    # makeReplay, the address is --buttons.
-    snapshots = []
-    for prompt in ("release every button and the stick", "hold the A (jump) button"):
-        input(f"{prompt}. Press Enter here, then click the Dolphin window and hold it for the 5 seconds that follow: ")
-        time.sleep(5)
-        snapshots.append(read_mem1())
-    released, held = (array.array("I", s[: MEM1_SIZE - MEM1_SIZE % 4]) for s in snapshots)
-    if sys.byteorder == "little":
-        released.byteswap()
-        held.byteswap()
-    candidates = []
-    for k in range(len(released)):
-        a, b = released[k], held[k]
-        diff = a ^ b
-        if diff and diff & (diff - 1) == 0 and b & diff:
-            candidates.append((k, diff))
-    print(f"{len(candidates)} candidates after the two snapshots")
-    input("now press Enter here, click the Dolphin window and tap A about once a second (sampling starts after 3 seconds and lasts 8): ")
-    time.sleep(3)
-    toggles = {c: 0 for c in candidates}
-    last = {}
-    end = time.time() + 8
-    samples = 0
-    while time.time() < end:
-        now = array.array("I", read_mem1())
-        if sys.byteorder == "little":
-            now.byteswap()
-        for k, bit in candidates:
-            state = bool(now[k] & bit)
-            if (k, bit) in last and last[(k, bit)] != state:
-                toggles[(k, bit)] += 1
-            last[(k, bit)] = state
-        samples += 1
-    rows = sorted(((n, c) for c, n in toggles.items() if n >= 2), reverse=True)
-    print(f"{samples} samples; {len(rows)} candidates whose bit toggled at least twice (toggles, address, bit mask)")
-    for n, (k, bit) in rows[:30]:
-        print(f"{n:3d}  0x{MEM1_BASE + 4 * k:08x}  mask 0x{bit:08x}")
-
-
 def main():
     out_path = "sadx_live.csv"
     seconds = None
-    buttons = None
     args = sys.argv[1:]
     while args:
         arg = args.pop(0)
         if arg == "--seconds":
             seconds = float(args.pop(0))
-        elif arg == "--buttons":
-            buttons = int(args.pop(0), 16)
-        elif arg == "--find-buttons":
-            dme.hook()
-            if not dme.is_hooked():
-                sys.exit("Dolphin is not hooked.")
-            find_buttons()
-            return
         else:
             out_path = arg
 
@@ -169,13 +149,19 @@ def main():
     task = find_sonic()
     if task is None:
         sys.exit("No Sonic task found (is a stage running with Sonic?).")
-    print(f"Sonic's task at 0x{task:08x}")
+    code = EXEC_ADDRESS - u32(dme.read_bytes(task + 0x10, 4), 0)
+    bss = bss_shift(code)
+    if bss is None:
+        sys.exit("The module's BSS shift was not found (FUN_804799ec does not start with the expected lis/addi).")
+    print(f"Sonic's task at 0x{task:08x}, code shift 0x{code:x}, bss shift 0x{bss:x}")
 
     header = ["frame", "t", "behavior", "substate", "status", "pos_x", "pos_y", "pos_z", "rot_x", "rot_y", "rot_z", "vel_x", "vel_y", "vel_z", "planar", "speed3d", "fwd_speed",
-              "acc_x", "acc_y", "acc_z", "target_angle", "char_index", "stick_angle", "stick_mag"]
-    if buttons is not None:
-        header += ["pad_buttons"]
-    header += ["cam_rot_x", "cam_rot_y", "cam_x", "cam_y", "cam_z", "vi_count", "w1_raw", "w2_raw", "w3_raw", "col_raw", "stick_raw"]
+              "acc_x", "acc_y", "acc_z", "target_angle", "char_index", "stick_angle", "stick_mag",
+              "pad_buttons", "pad_pressed", "pad_released", "pad_l", "pad_r", "pad_sx", "pad_sy",
+              "cam_rot_x", "cam_rot_y", "cam_eye_x", "cam_eye_y", "cam_eye_z", "cam_target_x", "cam_target_y", "cam_target_z",
+              "up_speed", "side_speed", "work0", "grip_excess", "ground_nx", "ground_ny", "ground_nz", "slope_cos", "wall_nx", "wall_ny", "wall_nz",
+              "flags_04", "flags_5c", "flags_60", "flags_1e4", "counter_7e", "anim_id", "anim_prev", "anim_frame", "col_flags",
+              "vi_count", "w1_raw", "w2_raw", "w3_raw", "col_raw", "stick_raw", "pad_raw"]
     start = time.time()
     last_key = None
     last_write = 0.0
@@ -196,9 +182,9 @@ def main():
                 w3 = dme.read_bytes(w3_address, W3_SIZE) if valid(w3_address) else b"\0" * W3_SIZE
                 col = dme.read_bytes(col_address, COL_SIZE) if valid(col_address) else b"\0" * COL_SIZE
                 character = w1[8]
-                stick = dme.read_bytes(STICK_TABLE + 8 * character, 8)
-                pad = u32(dme.read_bytes(buttons, 4), 0) if buttons is not None else None
-                camera = read_camera()
+                stick = dme.read_bytes(STICK_TABLE - bss + 8 * character, 8)
+                pad = dme.read_bytes(PAD_RECORDS - bss + PAD_RECORD_SIZE * character, PAD_RECORD_SIZE)
+                camera = read_camera(bss, code)
                 key = (w1, w2, w3, col, stick, pad, camera)
                 now = time.time()
                 if key != last_key or now - last_write > 0.25:
@@ -209,10 +195,13 @@ def main():
                     row += [f"{x:.4f}" for x in position] + [s32(w1, 0x14), s32(w1, 0x18), s32(w1, 0x1C)]
                     row += [f"{x:.5f}" for x in velocity] + [f"{math.hypot(velocity[0], velocity[2]):.5f}", f"{math.sqrt(sum(v * v for v in velocity)):.5f}", f"{f32(w3, 0x38):.5f}"]
                     row += [f"{x:.5f}" for x in struct.unpack_from(">fff", w2, 0x10)] + [struct.unpack_from(">H", w2, 0x20)[0], character, u32(stick, 0) & 0xFFFF, f"{f32(stick, 4):.4f}"]
-                    if buttons is not None:
-                        row += [f"{pad:08x}"]
-                    row += [camera[0], camera[1], f"{camera[2]:.4f}", f"{camera[3]:.4f}", f"{camera[4]:.4f}"] if camera else [""] * 5
-                    row += [u32(dme.read_bytes(VI_RETRACE_COUNT, 4), 0), words_hex(w1), words_hex(w2), words_hex(w3), words_hex(col), words_hex(stick)]
+                    row += [f"{u32(pad, 8):08x}", f"{u32(pad, 0x10):08x}", f"{u32(pad, 0x14):08x}"] + list(struct.unpack_from(">HH", pad, 0x18)) + list(struct.unpack_from(">hh", pad, 0x1C))
+                    row += [camera[0], camera[1]] + [f"{x:.4f}" for x in camera[2:]] if camera else [""] * 8
+                    row += [f"{f32(w3, 0x3C):.5f}", f"{f32(w3, 0x40):.5f}", f"{f32(w3, 0x00):.5f}", f"{f32(w2, 0x38):.5f}"]
+                    row += [f"{x:.4f}" for x in struct.unpack_from(">fff", w3, 0x50)] + [f"{f32(w3, 0x1C):.4f}"] + [f"{x:.4f}" for x in struct.unpack_from(">fff", w3, 0x44)]
+                    row += [f"{u32(w3, 0x04):08x}", f"{u32(w3, 0x5C):08x}", f"{u32(w3, 0x60):08x}", f"{u32(w3, 0x1E4):08x}", struct.unpack_from(">H", w3, 0x7E)[0]]
+                    row += list(struct.unpack_from(">HH", w3, 0x124)) + [f"{f32(w3, 0x130):.4f}", f"{struct.unpack_from('>H', col, 4)[0]:04x}"]
+                    row += [u32(dme.read_bytes(VI_RETRACE_COUNT, 4), 0), words_hex(w1), words_hex(w2), words_hex(w3), words_hex(col), words_hex(stick), words_hex(pad)]
                     writer.writerow(row)
                     rows += 1
                     if rows % 120 == 0:
