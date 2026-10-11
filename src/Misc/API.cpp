@@ -76,11 +76,11 @@ void changeAnimation(PoolId entityId_, const SAMotionKey& rKey_)
     rEntity.animationIntent = AnimationIntent{&rKey_, nullptr, true};
 }
 
-/* The same with the mesh the motion is for: the entity draws that mesh from then on (the motion's node count has to match it). */
-void changeAnimation(PoolId entityId_, const SAMotionKey& rKey_, const SAModelKey& rMesh_)
+/* The same with the mesh the motion is for: the entity draws that mesh from then on (the motion's node count has to match it); loop_ false = the motion plays once and holds its last frame. */
+void changeAnimation(PoolId entityId_, const SAMotionKey& rKey_, const SAModelKey& rMesh_, bool loop_)
 {
     Entity& rEntity = Globals::Game::entities[entityId_];
-    rEntity.animationIntent = AnimationIntent{&rKey_, nullptr, true, &rMesh_};
+    rEntity.animationIntent = AnimationIntent{&rKey_, nullptr, loop_, &rMesh_};
 }
 
 /* An SA entity draws this motion and mesh in place of the wanted animation while it is set (nullptr clears it); the wanted one keeps its own clock meanwhile (Entity::blinkIntent). */

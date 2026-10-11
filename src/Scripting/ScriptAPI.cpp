@@ -29,7 +29,7 @@
 The global table `sf`: what a script can ask of the engine. Every function is a thin wrapper over the engine's own API (API.h and the pools), written to stay simple; each one that takes an entity fails with a Lua
 error if the handle is of an entity that is gone. Vectors are three numbers (x, y, z) both ways. Angles are in BAMS (65536 = a turn) where the games use them. The list, grouped:
 - time and game: tickRate(), tickTime(), rings(), setRings(n), debugMode(), key(name), cameraForward(), followCamera(e)
-- animation: animate(e, name [, framesPerGameFrame]) (Sonic's motions by name: stand, walk, speedwalk, jog, run, sprint, brake, turnAround, springFall, fall, landing, damage, jump (curled model), ball (jumpball model); for a Shadow entity: stand, walk, run, jump, jumpB (play once), jumpC, fall, brake, damage, skate, highSkate; it loops), pose(e, {{name, frame, weight}, ...}), setAnimationScaleMode(n), setAnimationEulerOrder(n), motionRange(e, name) and bone(e, name) (a Shadow entity's mixed pose, see below), lowestPoint(e) (the lowest y of a Shadow entity's vertices, posed and at rest), blink(e, name | false) (draws that animation in place of the animate one while it is on; the animate one keeps its own clock)
+- animation: animate(e, name [, framesPerGameFrame]) (Sonic's motions by name: stand, walk, speedwalk, jog, run, sprint, brake, turnAround, springFall, fall, landing, damage, jump and roll (curled model), standAlt, landFall, waitA, waitB, waitBack (waitA backwards: give it a negative rate), rollEnd, ball (jumpball model); for a Shadow entity: stand, walk, run, jump, jumpB (play once), jumpC, fall, brake, damage, skate, highSkate; it loops), pose(e, {{name, frame, weight}, ...}), setAnimationScaleMode(n), setAnimationEulerOrder(n), motionRange(e, name) and bone(e, name) (a Shadow entity's mixed pose, see below), lowestPoint(e) (the lowest y of a Shadow entity's vertices, posed and at rest), blink(e, name | false) (draws that animation in place of the animate one while it is on; the animate one keeps its own clock)
 - entities: exists(e), name(e), position(e), setPosition(e, x, y, z), moveTo(e, x, y, z), turnY(e, radians), orient(e, yaw, nx, ny, nz), destroy(e), state(e), axis(e, x, y, z), setUncullable(e, bool), postEvent(name, e [, x, y, z]), setDashTrail(e, bool) (the jump dash ribbon, Graphics::DashTrail), setEffectBall(e, kind, bool) (Shadow's effect balls, Graphics::EffectBalls; kind "jumpA", "dashB" or "fallB")
 - bodies (an entity with a physics): hasBody(e), velocity(e), setVelocity(e, x, y, z), setGroundSnap(e, distance), setGroundSnapMode(e, {ray, radius, minNormalY, blockedByWall, whileRising}), setMeanVelocityMove(e, on), setFaceContact(e, on), setWeight(e, w), grounded(e), groundNormal(e), groundSurface(e), groundGap(e, maxGap), touchingWall(e), wallNormal(e)
 - behaviours: behavior(name, fn [, fields]) (fields = {name = {type = "number" | "bool" | "string" | "vec3" | "entity" | "prefab", default = v, external = bool}}: written into sf.state(e) before the first call; the external ones are set per entity in the editor's Inspector; a prefab field holds the prefab's name, an entity field a handle or sf.none, a vec3 {x, y, z}), give(e, name), prefabBehavior(prefabName, fn) (fn(entity, placement) is called for every entity made from that prefab, prefabName like "SADX/SPRING"; placement is the SET record {type, rotation, position, scale} or nil)
@@ -129,7 +129,7 @@ static int key(lua_State* pLua_)
 }
 
 /*
-The motions an entity can be made to play by name: Sonic's (an SA entity: its motion and the model it is made for) and Shadow's (an STH2005 entity: its motion and whether it loops). Both tables are read from
+The motions an entity can be made to play by name: Sonic's (an SA entity: its motion and the model it is made for) and Shadow's (an STH2005 entity: its motion and whether it loops; Sonic's entries loop unless the file says "loop": false). Both tables are read from
 Assets/External/Players/Sonic.json and Shadow.json (Loading::loadPlayerKeys). animate picks the Shadow table for an entity of the STH2005_ONE engine.
 Harmless to call every tick: the entity plays a motion when it differs from the one playing.
 */
@@ -163,9 +163,12 @@ static int animate(lua_State* pLua_)
 	}
 	auto found = animations.find(name);
 	if(found == animations.end()) return luaL_error(pLua_, "unknown animation '%s'", name.c_str());
-	changeAnimation(id, *found->second.pMotion, *found->second.pMesh);
-	/* The optional third argument is the playback speed in motion frames per game frame (the game's own unit: external, FUN_804cf4f4 adds speed times a table value each game frame); 0 or none = the default rate. */
+	changeAnimation(id, *found->second.pMotion, *found->second.pMesh, found->second.loop);
+	/* The optional third argument is the playback speed in motion frames per game frame (the game's own unit: external, FUN_804cf4f4 adds speed times a table value each game frame); 0 or none = the default rate, negative = backwards (an SA motion: from its last frame). */
 	Globals::Game::entities[id].animationRate = static_cast<float>(luaL_optnumber(pLua_, 3, 0.0)) * Globals::Game::gameplaySystem.tickRate;
+	/* The optional fourth argument is the blend step of the motion table entry (external, FUN_804cf4f4: the share of the way from the old pose to the new motion's first frame added each game frame): over 0 and under 1 the motion change blends, 0, 1 or none = a cut. */
+	float blendStep = static_cast<float>(luaL_optnumber(pLua_, 4, 0.0));
+	Globals::Game::entities[id].animationBlendRate = blendStep > 0.0f && blendStep < 1.0f ? blendStep * Globals::Game::gameplaySystem.tickRate : 0.0f;
 	return 0;
 }
 

@@ -17,7 +17,7 @@ PoolId addBATag(const BATagKey& rKey_);
 PoolId addBehavior(const BABehaviorKey& rKey_, BABehavior behavior_);
 bool entityExists(PoolId entityId_);
 void changeAnimation(PoolId entityId_, const SAMotionKey& rKey_);
-void changeAnimation(PoolId entityId_, const SAMotionKey& rKey_, const SAModelKey& rMesh_);
+void changeAnimation(PoolId entityId_, const SAMotionKey& rKey_, const SAModelKey& rMesh_, bool loop_ = true);
 void changeAnimation(PoolId entityId_, const STH2005::MotionKey& rKey_, bool loop_ = true);
 void blinkAnimation(PoolId entityId_, const SAMotionKey* pKey_, const SAModelKey* pMesh_);
 void postGameEvent(const char* name_, PoolId entityId_, const glm::vec3& rPosition_);

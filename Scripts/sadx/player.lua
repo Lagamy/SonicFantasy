@@ -52,6 +52,13 @@ local SKID_FRAMES = 36                                  -- external (state 0xD, 
 local LANDING_SKID_FRAMES = 1                           -- external (FUN_805aa66c, state 8 and others): a landing into state 0xD writes another motion than 0x14, so the next frame leaves it
 local TURN_AROUND_FRAMES = 18                           -- external (FUN_805aa66c state 0xD, FUN_804cf4f4, table entry 0x1E): the frames after the skid's stop until the Turn Around motion (16 frames, 0.9 a frame) has ended, derived
 local TURN_AROUND_RATE = 0.9                            -- external (table entry 0x1E): the Turn Around motion's frames a game frame
+-- Standing poses (table entries 0x1 Land after a fall, 0x2 Alternate Stand after a jump, 0x4 and 0x5 the idle waiting, 0x1D the roll's end; FUN_805a3e58, FUN_805a9c28, FUN_804cf4f4). A motion that plays once ends at its
+-- last frame (frame >= count - 1, at the table's rate) after its blend; its value is the game frames from the change to the end, derived: blend frames (1 / step) + (frames - 1) / rate. Land 4 + 19 / 0.25, Wait A the same,
+-- Wait B 4 + 38 / 0.25, Roll End 16 + 15 / 1. The entry after each is the table's next id (Land to Alternate Stand, Wait A to Wait B, Roll End to Land).
+local POSE_END = {rollEnd = 31, landFall = 80, waitA = 80, waitB = 156, waitBack = 81}
+local POSE_NEXT = {rollEnd = "landFall", landFall = "standAlt", waitA = "waitB", waitB = "waitBack"}
+local POSE_RATE = {standAlt = 0.25, landFall = 0.25, waitA = 0.25, waitB = 0.25, waitBack = 0.25, rollEnd = 1.0} -- external (table +0xC); waitBack (id 6) plays backwards: its rate is sent negative
+local IDLE_WAIT_FRAMES = 0x708                          -- external (FUN_805a9c28): the state 1 steps (work+0xE) after which the idle waiting (Wait A) starts, 1800 = 30 s at 60 a second
 local HOMING_SPEED = 5.0                                -- external (FUN_805a8958, FUN_805a8310): units per frame
 local HOMING_CONE = 0x5000 / 0x10000 * 2 * math.pi      -- external (FUN_805a8310): a target must be within this of his heading, radians
 local HOMING_TURN = 0x800 / 0x10000 * 2 * math.pi       -- external (FUN_805a8310): the most his heading turns towards the target a frame
@@ -89,6 +96,10 @@ local SNAP_SPEED = 0.87 * WALK_SPEED                      -- external (FUN_804dc
 -- a speed. Walk, Speedwalk, Jog, Run and the curled Jump use work[0] (mode 10): the forward speed plus 20 times the excess (what FUN_805a99f0 writes there, the spin dash's charge while it charges); Sprint and the roll use the
 -- forward speed (mode 9).
 local RATES = {walk = 3.4, speedwalk = 1.4, jog = 0.8, run = 0.5, sprint = 0.5}
+-- Blend steps. External (the animation table at _Main.rel 0x3544E0, confirmed on a RAM dump: entry +8; FUN_804cf4f4 mode 2): the share of the way from the old pose to the new motion's first frame added each game frame on a change
+-- to that motion; 1.0 is a cut. The jump entry and the roll entry (the same motion data) have 0.25, the ball (the blink, sf.blink) 0.5 but it is not a change of the wanted motion, so it does not blend.
+local BLEND_STEPS = {stand = 1 / 16, walk = 0.25, speedwalk = 0.25, jog = 0.25, run = 0.25, sprint = 0.5, jump = 0.25, roll = 0.25, springFall = 0.125, fall = 0.25, landing = 1.0, brake = 0.25, damage = 1.0, turnAround = 1.0,
+	standAlt = 0.25, landFall = 0.25, waitA = 0.25, waitB = 0.25, waitBack = 0.25, rollEnd = 0.0625}
 local JUMP_RATE = 0.2                                      -- external (table entry 0xE: the jump and the charge): times work[0]
 local ROLL_RATE = 0.7                                      -- external (table entry 0xF: the roll): times the forward speed
 local PICK_EXCESS_FACTOR = 5.0                             -- external (FUN_805a99f0, DAT_8065efbc): times the excess, added to the forward speed that picks the ground motion
@@ -608,7 +619,7 @@ local function playerStep(entity, replay)
 		local _, lockedVy = sf.velocity(entity)
 		sf.blink(entity, false)
 		local lockedMotion = sf.grounded(entity) and "sprint" or lockedVy > 0 and "springFall" or "fall"
-		sf.animate(entity, lockedMotion)
+		sf.animate(entity, lockedMotion, 0, BLEND_STEPS[lockedMotion])
 		return lockedMotion
 	end
 
@@ -720,6 +731,7 @@ local function playerStep(entity, replay)
 		local rollEnded = false
 		if state.rolling and not justPressed and (groundSpeed < RUN_SPEED or actionPressed) then
 			state.rolling, rollEnded = false, true
+			state.pose = {name = "rollEnd", frames = 0}
 		end
 		if not (state.rolling or state.charge ~= nil) then state.ball = false end
 		if justPressed and state.charge == nil then
@@ -894,7 +906,7 @@ local function playerStep(entity, replay)
 	if state.wasGrounded ~= false and not animGrounded then state.contacts = {} end
 	local motion
 	-- The playback rate (nil: the motion's own, as before): the table's value times a speed (RATES, JUMP_RATE, ROLL_RATE). Table modes 9 and 10 advance by that product, so a rate of zero holds the pose; the engine's 0 means
-	-- its default rate, hence the small floor. The sign is dropped (a negative speed would play backwards in the game; the engine's rate is not tried with a negative).
+	-- its default rate, hence the small floor. The sign is dropped (a negative speed would play backwards in the game; the engine's rate is not tried with a negative there); only Wait Back (table id 6, mode 6) is sent negative, below.
 	local rate = nil
 	if (state.damaged or 0) > 0 then
 		state.damaged = state.damaged - 1
@@ -905,6 +917,7 @@ local function playerStep(entity, replay)
 		motion = "jump"
 		rate = JUMP_RATE * (state.work0 or 0)
 	elseif animGrounded then
+		local cameFromJump, cameFromSpring = state.jumped, state.springed
 		state.springed, state.jumped = false, false
 		-- Landing (FUN_805aa66c states 8 and 0xC): with the brake state's condition false, no stick and a forward speed of exactly 0 he stands (state 1) and the table's Landing plays only when his vertical speed was
 		-- HARD_LANDING_VY or lower (else the motion is 2 after a jump, 1 after a fall: standing poses without an entry in Sonic.json, Stand here); any other landing goes to the running state and picks the motion by
@@ -914,6 +927,27 @@ local function playerStep(entity, replay)
 			state.landing = (standing and (state.airVy or 0) / FRAMES_PER_SECOND <= HARD_LANDING_VY) and LANDING_TICKS or 0
 		end
 		if not standing then state.landing = 0 end
+		-- Standing poses (FUN_805aa66c states 8 and 0xC write the motion 2 after a jump and 1 after a fall when the landing is not the hard one; FUN_805a9c28 keeps the motions 0 to 6 in state 1 and after 0x708 steps
+		-- of standing writes 4, Wait A, which runs on to 5, Wait B; FUN_805a3e58 writes 0x1D on the roll's end, which FUN_805a99f0 leaves alone until it has ended). Placeholders: the landing from a spring stays Stand (not read),
+		-- the step counter (work+0xE) is taken to restart whenever he is not standing (hypothesis), and Wait B runs on to Wait Back (id 6, mode 6: Wait A's data played backwards from its last frame, 4 blend frames + 77 steps of 0.25, then Stand; the engine plays it with a negative rate).
+		if state.wasGrounded == false then
+			state.pose = standing and state.landing == 0 and not cameFromSpring and {name = cameFromJump and "standAlt" or "landFall", frames = 0} or nil
+		end
+		local pose = state.pose
+		if charging or state.rolling or (pose ~= nil and pose.name ~= "rollEnd" and not standing) then pose = nil end
+		if pose ~= nil then
+			pose.frames = pose.frames + frames
+			if POSE_END[pose.name] ~= nil and pose.frames >= POSE_END[pose.name] then
+				local nextName = POSE_NEXT[pose.name]
+				pose = nextName ~= nil and (standing or pose.name ~= "rollEnd") and {name = nextName, frames = 0} or nil
+			end
+		end
+		state.idleFrames = standing and (state.idleFrames or 0) + frames or 0
+		if state.idleFrames > IDLE_WAIT_FRAMES and (state.landing or 0) == 0 and (pose == nil or POSE_NEXT[pose.name] == "standAlt" or pose.name == "standAlt") then
+			pose = {name = "waitA", frames = 0}
+			state.idleFrames = 0
+		end
+		state.pose = pose
 		if (state.landing or 0) > 0 then
 			state.landing = state.landing - 1
 			motion = "landing"
@@ -923,14 +957,17 @@ local function playerStep(entity, replay)
 			state.work0 = state.charge
 			rate = JUMP_RATE * state.work0
 		elseif state.rolling then
-			-- The roll (state 5, table entry 0xF, FUN_805a3eb8): the curled Jump at ROLL_RATE times the forward speed.
-			motion = "jump"
+			-- The roll (state 5, table entry 0xF, FUN_805a3eb8): the curled Jump's motion data at ROLL_RATE times the forward speed, under its own entry ("roll" in Sonic.json: the change from the charge's entry blends).
+			motion = "roll"
 			rate = ROLL_RATE * forward
 		elseif turnAway then motion = "brake"
 		elseif state.turnFrames ~= nil then
 			-- FUN_805aa66c state 0xD: the stop with the stick still far off writes motion 0x1E (Turn Around, 0.9 a frame); FUN_805a99f0 leaves it alone until it has ended.
 			motion = "turnAround"
 			rate = TURN_AROUND_RATE
+		elseif pose ~= nil and (standing or pose.name == "rollEnd") then
+			motion = pose.name
+			rate = POSE_RATE[motion]
 		elseif standing then motion = "stand"
 		else
 			-- FUN_805a99f0: the forward speed plus PICK_EXCESS_FACTOR times the excess against the four speeds, not its size (a negative forward speed picks Walk), and work[0] is that speed with RATE_EXCESS_FACTOR.
@@ -948,7 +985,7 @@ local function playerStep(entity, replay)
 		if state.springed then state.jumped = false end
 		motion = state.springed and "springFall" or state.jumped and "jump" or "fall"
 		if motion == "jump" then rate = JUMP_RATE * (state.work0 or 0) end
-		state.landing = 0
+		state.landing, state.pose, state.idleFrames = 0, nil, 0
 	end
 	state.wasGrounded = animGrounded
 
@@ -960,7 +997,7 @@ local function playerStep(entity, replay)
 	-- The port steps it on every tick with state.ball (ballBlinkStep), the roll and the homing flight included, whatever motion plays.
 	local blink = state.ball and ballBlinkStep(state)
 	sf.blink(entity, blink and "ball" or false)
-	sf.animate(entity, motion, rate and math.max(math.abs(rate), 1e-6) or 0)
+	sf.animate(entity, motion, rate and math.max(math.abs(rate), 1e-6) * (motion == "waitBack" and -1 or 1) or 0, BLEND_STEPS[motion] or 0)
 	face(entity, state.heading)
 	-- Observed (recording sadx_3, 0.8 to 0.82 s): at a ramp's lip the original puts him down on the floor in the same tick although his velocity still points up. The snap may therefore act on a rising body while the
 	-- ground step ran without a jump or a spring. Hypothesis (recording sadx_3, 4.68 to 4.72 s the roll and 7.98 to 8.02 s the run, both at a crest where the surface's slope turns): the same for the ticks after the

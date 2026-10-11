@@ -12,11 +12,12 @@ in character/shadow.one (Assets/External/Players/Shadow.json). The animation nam
 */
 namespace Loading
 {
-    /* A motion of Sonic's by script name and the model it is drawn with (the body's, or the curled / jumpball one: pMesh points into SonicKeys::models). */
+    /* A motion of Sonic's by script name and the model it is drawn with (the body's, or the curled / jumpball one: pMesh points into SonicKeys::models); loop false = it plays once and holds its last frame. */
     struct SonicAnimation
     {
         const SAMotionKey* pMotion;
         const SAModelKey* pMesh;
+        bool loop;
     };
 
     struct SonicKeys

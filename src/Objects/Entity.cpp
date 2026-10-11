@@ -347,9 +347,26 @@ void Entity::update(float deltaTime_)
 		{
 			if(rWanted.pSAMotion != nullptr && this->sourceEngine == SA_NINJA)
 			{
+				/*
+				A change of the wanted motion blends from the pose shown now (SAInstance::beginBlend); the start or end of a blink doesn't. The game doesn't blend between motions of different models
+				(external, decomp FUN_804cf4f4), so a mesh that changes with the motion cancels it.
+				*/
+				Graphics::SAInstance& rInstance = Graphics::getSAInstance(this->instanceId);
+				const bool blend = baseChanged && !blinking && this->animationBlendRate > 0.0f;
+				const std::string previousMesh = blend ? this->discMesh() : std::string();
+				if(blend) rInstance.beginBlend(this->animationBlendRate);
+				else rInstance.cancelBlend();
 				if(rWanted.pSAMesh != nullptr) this->changeSAMesh(*rWanted.pSAMesh);
 				this->playSAMotion(*rWanted.pSAMotion);
-				if(!blinking) Graphics::getSAInstance(this->instanceId).animationFrame = this->baseFrame;
+				rInstance.loop = rWanted.loop;
+				if(blend && this->discMesh() != previousMesh) rInstance.cancelBlend();
+				if(!blinking)
+				{
+					Graphics::SAInstance& rPlaying = Graphics::getSAInstance(this->instanceId);
+					rPlaying.animationFrame = this->baseFrame;
+					/* A motion asked for backwards without a blend starts at its last frame (the blend case: SAInstance::update). */
+					if(rPlaying.blendRate <= 0.0f && baseChanged && this->animationRate < 0.0f && rPlaying.currentSAAnimation != UninitializedPoolId) rPlaying.animationFrame = static_cast<float>(Graphics::saMotions[rPlaying.currentSAAnimation].frameCount - 1);
+				}
 			}
 			else if(rWanted.pONEMotion != nullptr && this->sourceEngine == STH2005_ONE) this->playONEMotion(*rWanted.pONEMotion, rWanted.loop);
 		}
@@ -370,7 +387,7 @@ void Entity::update(float deltaTime_)
 			this->baseFrame = rInstance.animationFrame;
 			if(rInstance.currentSAAnimation != UninitializedPoolId) this->baseFrameCount = Graphics::saMotions[rInstance.currentSAAnimation].frameCount;
 		}
-		else if(this->baseFrameCount != 0) this->baseFrame = std::fmod(this->baseFrame + deltaTime_ * rInstance.playbackRate(), static_cast<float>(this->baseFrameCount));
+		else if(this->baseFrameCount != 0) this->baseFrame = Graphics::advanceMotionFrame(this->baseFrame, deltaTime_ * rInstance.playbackRate(), this->baseFrameCount, this->animationIntent.loop);
 		break;
 	}
 	case STH2005_ONE:

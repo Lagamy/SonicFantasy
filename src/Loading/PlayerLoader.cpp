@@ -73,7 +73,7 @@ void loadSonic(const std::string& rPath_)
 		std::string modelName = rAnimation.at("model").get<std::string>();
 		auto model = keys->models.find(modelName);
 		if(model == keys->models.end()) throw std::runtime_error(std::format("animation '{}' names the unknown model '{}'", name, modelName));
-		keys->animations.emplace(name, SonicAnimation{&sonicMotions.back(), &model->second});
+		keys->animations.emplace(name, SonicAnimation{&sonicMotions.back(), &model->second, rAnimation.value("loop", true)});
 	}
 	sonic = std::move(keys);
 }

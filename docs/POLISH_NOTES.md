@@ -55,15 +55,15 @@ Visibility rule (CLAUDE.md): not chased now. Evidence and numbers: `docs/SADX_SO
 
 ## SADX Sonic animation: decoded but not ported, not (clearly) visible (2026-10-10, animation task)
 Evidence: `docs/SADX_SONIC_REFERENCE.md` "Animation".
-- **Blend between motions**: the game blends 1 / step frames (4 for most, 16 for Stand, 1 for Landing and Turn Around); the port cuts. A few frames of pose change.
+- ~~**Blend between motions**~~ ported 2026-10-11 (SAInstance::beginBlend, sf.animate's fourth argument; not run): 1 / step frames (4 for most, 16 for Stand, 1 for Landing and Turn Around). Remaining: the looping modes' "frame2" start (0 used) is unknown.
 - **Idle ids 1, 2, 4 to 8**: standing after a landing is id 2 (jump) or 1 (fall), a wait after 30 s id 4; `Sonic.json` has only id 0 (Stand). Port stands with id 0 everywhere. Unknown whether 0 and 2 look different.
 - **Surface flag 4 -> id 0x47** (coasting without a stick on such a surface) and the status 0x800 motions 0x22 / 0x26: need surface flags / that status, which the port does not have.
 - **Id 0x92 and the effect objects** (byte `DAT_809a9269`, H Super Sonic): not in the port.
-- **Negative speed**: the game plays the running motion backwards at a negative forward speed; the port plays it forwards (the engine's rate is not tried with a negative).
+- **Negative speed**: the game plays the running motion backwards at a negative forward speed; the port plays it forwards (the engine now plays a negative rate backwards, used for Wait Back only; not tried for the run).
 
 ## SADX Sonic brake state 0xD: not exact, not (clearly) visible (2026-10-10, brake state task)
 Evidence: `docs/SADX_SONIC_REFERENCE.md` "Brake state".
-- **Brake motion loops**: the game plays it once (33 frames, 4 of blend, the state lasts 36 steps); the port's motions loop, so the first frame shows again for the last 3 steps. A play-once option for `sf.animate` would fix it (an API change: propose first). The Turn Around motion (16 frames, 18 steps to the 0.46) loops the same way for 1 to 2 steps.
+- ~~**Brake motion loops**~~ fixed 2026-10-11 (not run): `"loop": false` in `Sonic.json` for `brake`, `turnAround` and `landing` (16 frames, 16 ticks); the instance plays them once and holds the last frame (hypothesis: the game holds the last frame too; the brake state lasts 36 steps against its 33 frames, Turn Around 18 against 16).
 - **Landing into the state**: the port decides it from its own ground contact (`ROLL_GAP_TICKS` ticks in the air before it counts); the game from the ground bit of the step. Only differs on the short hops of uneven ground, where the game's landing brake is a single frame of 0.18 deceleration.
 - **Heading snap at the stop** (`FUN_804de8a0`'s blend before the direct write): the forward speed is 0 there, so the local side speed is the only thing that could differ; not visible.
 

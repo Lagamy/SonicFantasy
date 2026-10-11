@@ -97,7 +97,7 @@ The generated tables (`SAEntityKeys.h`, `STH2005EntityKeys.h`, the bridge keys i
 
 Where the two players' resources are: `Assets/External/Players/Sonic.json` and `Shadow.json` (source tree `External/Players/`, copied by `CopyExternal`), read once by `Loading::loadPlayerKeys` in `main` after the remaps; a missing or wrong file throws and stops the game. They hold disc facts only (offsets and entry names, each with its evidence in a `note`); the animation names are ours, the ones the scripts pass to `animate`.
 
-- `Sonic.json`: `textures` (the .gvm), `models` (`body`, `curled`, `jumpball`: `{rel, offset}`), `idle` (`{rel, offset, nodes}`, played when Sonic is made), `animations` (name to `{rel, offset, nodes, model}`; `model` names an entry of `models`).
+- `Sonic.json`: `textures` (the .gvm), `models` (`body`, `curled`, `jumpball`: `{rel, offset}`), `idle` (`{rel, offset, nodes}`, played when Sonic is made), `animations` (name to `{rel, offset, nodes, model, loop?}`; `model` names an entry of `models`; `loop` false = plays once and holds the last frame, default true). `sf.animate(e, name, rate, blendStep)`: a negative rate plays an SA motion backwards from its last frame (2026-10-11, not run).
 - `Shadow.json`: `archive`, `textures` (the .TXD), `model` (`name` and `parts`, each `{dff, bon}` or `{dff, bone}` for a part that attaches to a bone of the main skeleton), `idle` (the motions played when Shadow is made: `{mtp, motion, bon, attachedPart}`), `animations` (name to `{mtp, motion, bon, loop}`; `loop` false plays once and holds the last frame).
 
 ## Adding a level

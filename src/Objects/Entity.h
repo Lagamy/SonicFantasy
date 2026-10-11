@@ -126,8 +126,10 @@ struct Entity
 	AnimationIntent appliedBase;
 	float baseFrame = 0.0f;
 	uint32_t baseFrameCount = 0;
-	/* Frames a second the entity's SA motion plays at, set by gameplay (sf.animate); 0 = the default. Not part of the intent: it can change every tick without restarting the motion. */
+	/* Frames a second the entity's SA motion plays at, set by gameplay (sf.animate); 0 = the default, negative = backwards (SA motions). Not part of the intent: it can change every tick without restarting the motion. */
 	float animationRate = 0.0f;
+	/* The blend rate of the SA motion gameplay asked for (sf.animate): factor a second, 0 = none. Read when a motion change is applied (Entity::update); the instance then blends from the pose it showed to the new motion's first frame (SAInstance::beginBlend). */
+	float animationBlendRate = 0.0f;
 
 	void setSAGPUInstance(PoolId shaderId_, const SAModelKey& rMesh_, const SATextureSetKey& rTextures_);
 	void setSAGPUInstance(PoolId shaderId_, const SAModelKey& rMesh_);
