@@ -606,6 +606,27 @@ local function ballBlinkStep(state)
 	return state.ballTicks & 0x11 ~= 0
 end
 
+-- The blue sphere of the homing burst and the spin dash aura (sf.spawnDashSphere, docs/SADX_SONIC_REFERENCE.md "Burst and aura timing"). Decompile (FUN_8059dd30, FUN_8059dfb0): it sits at the task position plus (0, 5, 0) turned by his frame, and the
+-- task position is SADX_FEET_BELOW_BODY under the engine's body position (observed, START_LIFT in replay.lua), so the offset from the entity is 5 along his up axis minus that. ux, uy, uz = his up axis (the ground normal or the air's tilt).
+local DASH_SPHERE_UP = 5.0                                -- decompile (DAT_8065ef10)
+local SADX_FEET_BELOW_BODY = 5.3                          -- observed (sadx_1 first run: body y 9.30 for a recorded 4.00)
+local function dashSphere(kind, entity, ux, uy, uz, heading)
+	sf.spawnDashSphere(kind, entity, DASH_SPHERE_UP * ux, DASH_SPHERE_UP * uy - SADX_FEET_BELOW_BODY, DASH_SPHERE_UP * uz, heading, ux, uy, uz)
+end
+
+-- The trail of the roll and the homing flight (sf.spawnDashTrail, docs/SADX_SONIC_REFERENCE.md "Trail geometry and draw state"): one segment per tick between his body centre now and one tick later. Decompile (FUN_8059c148): the centre is the task
+-- position plus (0, w3+0x11c, 0) = 5.4 (the dump's collision sphere centre), and the task position is SADX_FEET_BELOW_BODY under the engine's body position, so the offset from the entity is 5.4 minus that.
+local TRAIL_CENTER_UP = 5.4                               -- decompile (w3+0x11c)
+local function dashTrail(entity)
+	sf.spawnDashTrail(entity, 0, TRAIL_CENTER_UP - SADX_FEET_BELOW_BODY, 0)
+end
+
+-- The curled Jump's squash (docs/SADX_SONIC_REFERENCE.md "Spin dash ball squash"): while the motion is the Jump's (0xE) and a ground bit is set, the draw (FUN_805a9f90) translates by (0, -1, 0), turns 0x2000 (45 degrees)
+-- about Z and scales by (0.7, 1.1, 0.8), in the model's own space after the heading. Decompile; the turn's axis is a hypothesis (the function used is the one the draw gives the +0x1c angle).
+local function ballSquash(entity, on)
+	if on then sf.setModelTransform(entity, 0, -1.0, 0, math.pi / 4, 0.7, 1.1, 0.8) else sf.setModelTransform(entity) end
+end
+
 -- One tick of Sonic. replay = SadxReplay.step()'s input (nil without a replay); returns the name of the motion chosen, for SadxReplay.log.
 local function playerStep(entity, replay)
 	local state = sf.state(entity)
@@ -618,6 +639,7 @@ local function playerStep(entity, replay)
 		state.ball, state.rolling, state.charge, state.homing, state.brake, state.turnFrames = false, false, nil, nil, nil, nil
 		local _, lockedVy = sf.velocity(entity)
 		sf.blink(entity, false)
+		ballSquash(entity, false)
 		local lockedMotion = sf.grounded(entity) and "sprint" or lockedVy > 0 and "springFall" or "fall"
 		sf.animate(entity, lockedMotion, 0, BLEND_STEPS[lockedMotion])
 		return lockedMotion
@@ -767,9 +789,18 @@ local function playerStep(entity, replay)
 			end
 			if state.charge ~= nil then
 				charging = true
+				-- The charge (state 4) makes the flattened tilted ellipsoid of FUN_8059e488 every tick (docs/SADX_SONIC_REFERENCE.md "Effects of the spin dash charge and release"); the plain aura is state 5's and 0xE's.
+				-- Observed (user, a steep slope): it must follow the model's angle, and the port draws the model turned about Y only (face), never tilted to the ground (his frame's tilt is physics only), so the frame
+				-- given is the world's up axis, not the ground normal.
+				dashSphere("charge", entity, 0, 1, 0, heading)
 				heading, forward, side, vx, vy, vz = curledStep(state, true, hasWish, stickAngle, heading, vx, vy, vz, nx, ny, nz, frames, nil)
 			elseif state.rolling then
 				heading, forward, side, vx, vy, vz = curledStep(state, false, hasWish, stickAngle, heading, vx, vy, vz, nx, ny, nz, frames, launched)
+				-- Roll (state 5): an aura and a trail segment every tick while the forward speed is RUN_SPEED or more (decompile, w3+0x38 >= w3+0xc4).
+				if forward >= RUN_SPEED then
+					dashSphere("aura", entity, nx, ny, nz, heading)
+					dashTrail(entity)
+				end
 			else
 				-- The brake state 0xD (FUN_805aa66c cases 2 and 0xD, FUN_805af2b0 case 0xD; docs/SADX_SONIC_REFERENCE.md "Brake state"). Entered at the start of a frame while running when the stick is more than BRAKE_ANGLE off
 				-- his heading and his forward speed is WALK_SPEED or more (the skid: the Brake motion plays, SKID_FRAMES), or on landing from the air when the stick is that far off and the forward speed is over 0 (one frame,
@@ -843,6 +874,9 @@ local function playerStep(entity, replay)
 				state.ball, state.jumped = false, false
 			elseif justPressed and not state.homed then
 				state.homing, state.homed = {count = -1, frames = 0}, true
+				-- The burst is made once at the start of the state (FUN_805a8958) and stays where it is.
+				local tilt = state.tilt or {0, 1, 0}
+				dashSphere("burst", entity, tilt[1], tilt[2], tilt[3], heading)
 				if homingCandidates(entity, heading) then
 					heading, vx, vy, vz = homingStep(state, entity, hasWish, stickAngle, heading, vx, vy, vz, frames)
 				else
@@ -864,6 +898,10 @@ local function playerStep(entity, replay)
 		end
 		if state.homing ~= nil then
 			heading, vx, vy, vz, turnAway, chasing = homingStep(state, entity, hasWish, stickAngle, heading, vx, vy, vz, frames)
+			-- The homing flight (FUN_805af2b0 state 0xE): an aura and a trail segment every tick, no speed test (the burst was made at its start).
+			local tilt = state.tilt or {0, 1, 0}
+			dashSphere("aura", entity, tilt[1], tilt[2], tilt[3], heading)
+			dashTrail(entity)
 		else
 			heading, vx, vy, vz, turnAway = airStep(state, hasWish, stickAngle, heading, vx, vy, vz, frames)
 		end
@@ -878,6 +916,7 @@ local function playerStep(entity, replay)
 		if chasing then vy = vy + GRAVITY * FRAMES_PER_SECOND * frames end
 		sf.blink(entity, state.ball and ballBlinkStep(state) and "ball" or false)
 		sf.animate(entity, "jump", math.max(JUMP_RATE * (state.work0 or 0), 1e-6))
+		ballSquash(entity, false)
 		face(entity, state.heading)
 		sf.setGroundSnap(entity, 0)
 		state.kept = nil
@@ -997,6 +1036,7 @@ local function playerStep(entity, replay)
 	-- The port steps it on every tick with state.ball (ballBlinkStep), the roll and the homing flight included, whatever motion plays.
 	local blink = state.ball and ballBlinkStep(state)
 	sf.blink(entity, blink and "ball" or false)
+	ballSquash(entity, motion == "jump" and onGround)
 	sf.animate(entity, motion, rate and math.max(math.abs(rate), 1e-6) * (motion == "waitBack" and -1 or 1) or 0, BLEND_STEPS[motion] or 0)
 	face(entity, state.heading)
 	-- Observed (recording sadx_3, 0.8 to 0.82 s): at a ramp's lip the original puts him down on the floor in the same tick although his velocity still points up. The snap may therefore act on a rising body while the

@@ -16,7 +16,7 @@ SadxReplays = SadxReplays or {}
 SadxReplay = {enabled = true}
 
 -- The recordings R cycles through, in order (names of SadxReplays entries; add one with its file's sf.include in Scripts/sadx/main.lua).
-local ORDER = {"sadx_4", "sadx_1", "sadx_2", "sadx_3"}
+local ORDER = {"sadx_homing", "sadx_4", "sadx_1", "sadx_2", "sadx_3"}
 local END_HOLD = 0.3
 -- A row counts as reached from half a tick before its stamp (float noise of vi_count / 60 against tick * tickTime).
 local ROW_TOLERANCE_TICKS = 0.5

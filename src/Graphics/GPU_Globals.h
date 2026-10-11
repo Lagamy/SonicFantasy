@@ -13,6 +13,8 @@
 #endif
 #include "DashTrail.h"
 #include "EffectBalls.h"
+#include "DashSpheres.h"
+#include "SonicTrail.h"
 #include "Pool.h"
 #include "Shader.h"
 #include "BasicMesh.h"
@@ -29,6 +31,8 @@ namespace Graphics
 	inline Renderer renderer;
 	inline DashTrail dashTrail;
 	inline EffectBalls effectBalls;
+	inline DashSpheres dashSpheres;
+	inline SonicTrail sonicTrail;
 	inline PoolMap<BasicMesh> basicMeshes = ("Meshes"); 
 	inline PoolMap<Texture> textures = ("Textures");
 	inline PoolMap<VertexLayout> vertexLayouts = ("VertexLayouts");

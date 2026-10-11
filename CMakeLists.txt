@@ -52,6 +52,8 @@ add_executable(SonicSunset
 	src/Graphics/GPU_API.cpp
 	src/Graphics/DashTrail.cpp
 	src/Graphics/EffectBalls.cpp
+	src/Graphics/DashSpheres.cpp
+	src/Graphics/SonicTrail.cpp
 	src/Graphics/Resources/Shader.cpp
 	src/Graphics/Resources/Texture.cpp
 	src/Graphics/Resources/TextureSet.cpp

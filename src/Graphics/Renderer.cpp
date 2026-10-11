@@ -109,6 +109,8 @@ void Renderer::run(Camera& rCamera_, bool clearColor_)
 
 	dashTrail.draw();
 	effectBalls.draw();
+	dashSpheres.draw();
+	sonicTrail.draw();
 }
   
 void Renderer::drawEntity(Camera& rCamera_, Entity& rEntity_)
@@ -154,6 +156,8 @@ void Renderer::destroy()
 {
 	dashTrail.destroy();
 	effectBalls.destroy();
+	dashSpheres.destroy();
+	sonicTrail.destroy();
 	glDeleteBuffers(1, &this->boneBuffer); 
 	oneArchives.clear();
 	basicMeshes.clear(); 

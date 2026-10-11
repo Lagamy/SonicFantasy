@@ -321,6 +321,12 @@ void Entity::setScale(const glm::vec3& rScale_)
 	this->refreshBounds();
 }
 
+void Entity::setModelMatrix(const glm::mat4& rMatrix_)
+{
+	this->modelMatrix = rMatrix_;
+	this->transformDirty = true;
+}
+
 glm::vec3 Entity::collisionScale() const
 {
 	return this->physicsId == UninitializedPoolId ? this->scale : glm::vec3(1.0f);
@@ -609,7 +615,7 @@ void Entity::draw(const std::array<glm::vec4, 6>& rPlanes_, const glm::vec3& rCa
 	glm::mat4 renderRotation = this->renderRotation();
 	if(this->transformDirty || renderPosition != this->renderedPosition || renderRotation != this->renderedRotation)
 	{
-		this->transform = glm::translate(glm::mat4(1.0f), renderPosition) * renderRotation * glm::scale(glm::mat4(1.0f), this->scale);
+		this->transform = glm::translate(glm::mat4(1.0f), renderPosition) * renderRotation * glm::scale(glm::mat4(1.0f), this->scale) * this->modelMatrix;
 		this->renderedPosition = renderPosition;
 		this->renderedRotation = renderRotation;
 		this->transformDirty = false;

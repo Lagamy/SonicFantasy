@@ -91,6 +91,8 @@ struct Entity
 	glm::vec3 stagingPosition = glm::vec3(0.0f);
 	glm::mat4 rotation = glm::mat4(1.0f);
 	glm::vec3 scale = glm::vec3(1.0f);
+	/* A draw-only matrix applied after the scale, in the entity's own space (identity = none): a character's temporary deformation (setModelMatrix). Not part of the bounds, the picking or the collision. */
+	glm::mat4 modelMatrix = glm::mat4(1.0f);
 	PoolId behaviorSetId = UninitializedPoolId;
 	PoolId selfId = UninitializedPoolId;
 	PoolId stateId = UninitializedPoolId;
@@ -185,6 +187,8 @@ struct Entity
 	glm::mat4 renderRotation() const;
 	/* Sets the scale of the model (see above) and refreshes the bounds. */
 	void setScale(const glm::vec3& rScale_);
+	/* Sets the draw-only matrix applied after the scale (see modelMatrix). */
+	void setModelMatrix(const glm::mat4& rMatrix_);
 	/* The scale the entity's collision shapes get in the contacts and the lines view: its scale, or (1, 1, 1) for an entity with a physics body. */
 	glm::vec3 collisionScale() const;
 	void update(float deltaTime_);

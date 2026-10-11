@@ -30,7 +30,7 @@ The global table `sf`: what a script can ask of the engine. Every function is a 
 error if the handle is of an entity that is gone. Vectors are three numbers (x, y, z) both ways. Angles are in BAMS (65536 = a turn) where the games use them. The list, grouped:
 - time and game: tickRate(), tickTime(), rings(), setRings(n), debugMode(), key(name), cameraForward(), followCamera(e)
 - animation: animate(e, name [, framesPerGameFrame]) (Sonic's motions by name: stand, walk, speedwalk, jog, run, sprint, brake, turnAround, springFall, fall, landing, damage, jump and roll (curled model), standAlt, landFall, waitA, waitB, waitBack (waitA backwards: give it a negative rate), rollEnd, ball (jumpball model); for a Shadow entity: stand, walk, run, jump, jumpB (play once), jumpC, fall, brake, damage, skate, highSkate; it loops), pose(e, {{name, frame, weight}, ...}), setAnimationScaleMode(n), setAnimationEulerOrder(n), motionRange(e, name) and bone(e, name) (a Shadow entity's mixed pose, see below), lowestPoint(e) (the lowest y of a Shadow entity's vertices, posed and at rest), blink(e, name | false) (draws that animation in place of the animate one while it is on; the animate one keeps its own clock)
-- entities: exists(e), name(e), position(e), setPosition(e, x, y, z), moveTo(e, x, y, z), turnY(e, radians), orient(e, yaw, nx, ny, nz), destroy(e), state(e), axis(e, x, y, z), setUncullable(e, bool), postEvent(name, e [, x, y, z]), setDashTrail(e, bool) (the jump dash ribbon, Graphics::DashTrail), setEffectBall(e, kind, bool) (Shadow's effect balls, Graphics::EffectBalls; kind "jumpA", "dashB" or "fallB")
+- entities: exists(e), name(e), position(e), setPosition(e, x, y, z), moveTo(e, x, y, z), turnY(e, radians), orient(e, yaw, nx, ny, nz), setModelTransform(e [, tx, ty, tz, rotZ, sx, sy, sz]), destroy(e), state(e), axis(e, x, y, z), setUncullable(e, bool), postEvent(name, e [, x, y, z]), setDashTrail(e, bool) (the jump dash ribbon, Graphics::DashTrail), setEffectBall(e, kind, bool) (Shadow's effect balls, Graphics::EffectBalls; kind "jumpA", "dashB" or "fallB"), spawnDashSphere(kind, e, dx, dy, dz [, heading [, nx, ny, nz]]) (SADX Sonic's homing burst, aura and spin dash charge sphere, Graphics::DashSpheres; kind "burst", "aura" or "charge"), spawnDashTrail(e, dx, dy, dz) (one tick's segment of SADX Sonic's roll / homing trail from the entity's centre, Graphics::SonicTrail)
 - bodies (an entity with a physics): hasBody(e), velocity(e), setVelocity(e, x, y, z), setGroundSnap(e, distance), setGroundSnapMode(e, {ray, radius, minNormalY, blockedByWall, whileRising}), setMeanVelocityMove(e, on), setFaceContact(e, on), setWeight(e, w), grounded(e), groundNormal(e), groundSurface(e), groundGap(e, maxGap), touchingWall(e), wallNormal(e)
 - behaviours: behavior(name, fn [, fields]) (fields = {name = {type = "number" | "bool" | "string" | "vec3" | "entity" | "prefab", default = v, external = bool}}: written into sf.state(e) before the first call; the external ones are set per entity in the editor's Inspector; a prefab field holds the prefab's name, an entity field a handle or sf.none, a vec3 {x, y, z}), give(e, name), prefabBehavior(prefabName, fn) (fn(entity, placement) is called for every entity made from that prefab, prefabName like "SADX/SPRING"; placement is the SET record {type, rotation, position, scale} or nil)
 - collision: onTouch(name, fn), tag(name), collisionBehavior(name, {tags, collidesWith, interactions}), setShapeBehavior(e, behavior)
@@ -340,6 +340,25 @@ static int orient(lua_State* pLua_)
 	return 0;
 }
 
+/*
+setModelTransform(e, tx, ty, tz, rotZ, sx, sy, sz): the model is drawn with a translate, a turn about +Z (radians, right-handed) and a scale applied in that order, in the entity's own space after its rotation and scale
+(translate * rotZ * scale); with only the entity the model is drawn as it is. Draw only: the bounds, the picking and the collision are not changed. SADX Sonic's spin dash ball squash (FUN_805a9f90).
+*/
+static int setModelTransform(lua_State* pLua_)
+{
+	Entity& rEntity = Globals::Game::entities[checkEntity(pLua_, 1)];
+	if(lua_isnoneornil(pLua_, 2))
+	{
+		rEntity.setModelMatrix(glm::mat4(1.0f));
+		return 0;
+	}
+	glm::vec3 translation(static_cast<float>(luaL_checknumber(pLua_, 2)), static_cast<float>(luaL_checknumber(pLua_, 3)), static_cast<float>(luaL_checknumber(pLua_, 4)));
+	float angle = static_cast<float>(luaL_checknumber(pLua_, 5));
+	glm::vec3 scale(static_cast<float>(luaL_checknumber(pLua_, 6)), static_cast<float>(luaL_checknumber(pLua_, 7)), static_cast<float>(luaL_checknumber(pLua_, 8)));
+	rEntity.setModelMatrix(glm::translate(glm::mat4(1.0f), translation) * glm::rotate(glm::mat4(1.0f), angle, glm::vec3(0.0f, 0.0f, 1.0f)) * glm::scale(glm::mat4(1.0f), scale));
+	return 0;
+}
+
 static int moveTo(lua_State* pLua_)
 {
 	Globals::Game::entities[checkEntity(pLua_, 1)].moveTo(checkVector(pLua_, 2));
@@ -409,6 +428,34 @@ static int setEffectBall(lua_State* pLua_)
 	else if(kind == "fallB") ball = Graphics::EffectBalls::FallBallB;
 	else return luaL_error(pLua_, "sf.setEffectBall: unknown kind '%s' (jumpA, dashB or fallB).", kind.c_str());
 	Graphics::effectBalls.setActive(checkEntity(pLua_, 1), ball, lua_toboolean(pLua_, 3) != 0);
+	return 0;
+}
+
+/*
+Makes one sphere of SADX Sonic's homing burst ("burst", fixed where it is made), aura ("aura", follows the entity one tick behind; made every tick while rolling fast or homing) or spin dash charge ("charge", a flattened tilted ellipsoid
+at the entity's current position; made every tick while charging) at the entity's position plus (dx, dy, dz) (Graphics::DashSpheres).
+heading (radians, default 0) turns the aura's gradient along the character's heading; the charge is drawn in the frame of heading and the up direction (nx, ny, nz) (default 0, 1, 0).
+*/
+static int spawnDashSphere(lua_State* pLua_)
+{
+	std::string kind = luaL_checkstring(pLua_, 1);
+	Graphics::DashSpheres::Kind sphere;
+	if(kind == "burst") sphere = Graphics::DashSpheres::Burst;
+	else if(kind == "aura") sphere = Graphics::DashSpheres::Aura;
+	else if(kind == "charge") sphere = Graphics::DashSpheres::Charge;
+	else return luaL_error(pLua_, "sf.spawnDashSphere: unknown kind '%s' (burst, aura or charge).", kind.c_str());
+	float heading = static_cast<float>(luaL_optnumber(pLua_, 6, 0.0));
+	glm::vec3 up(static_cast<float>(luaL_optnumber(pLua_, 7, 0.0)), static_cast<float>(luaL_optnumber(pLua_, 8, 1.0)), static_cast<float>(luaL_optnumber(pLua_, 9, 0.0)));
+	Graphics::dashSpheres.spawn(checkEntity(pLua_, 2), sphere, checkVector(pLua_, 3), heading, up);
+	return 0;
+}
+
+/*
+Makes one trail segment of SADX Sonic's roll and homing flight (Graphics::SonicTrail): it starts at the entity's position plus (dx, dy, dz) now and ends at the same offset position on the next gameplay tick, lives 20 ticks.
+*/
+static int spawnDashTrail(lua_State* pLua_)
+{
+	Graphics::sonicTrail.spawn(checkEntity(pLua_, 1), checkVector(pLua_, 2));
 	return 0;
 }
 
@@ -955,13 +1002,13 @@ void registerAPI(lua_State* pLua_)
 		{"tickRate", guarded<tickRate>}, {"tickTime", guarded<tickTime>}, {"rings", guarded<rings>}, {"setRings", guarded<setRings>},
 		{"debugMode", guarded<debugMode>}, {"key", guarded<key>}, {"cameraForward", guarded<cameraForward>}, {"followCamera", guarded<followCamera>}, {"animate", guarded<animate>}, {"blink", guarded<blink>}, {"pose", guarded<pose>}, {"setAnimationScaleMode", guarded<setAnimationScaleMode>}, {"setAnimationEulerOrder", guarded<setAnimationEulerOrder>}, {"motionRange", guarded<motionRange>}, {"bone", guarded<bone>}, {"lowestPoint", guarded<lowestPoint>},
 		{"exists", guarded<exists>}, {"name", guarded<name>}, {"position", guarded<position>}, {"setPosition", guarded<setPosition>},
-		{"moveTo", guarded<moveTo>}, {"turnY", guarded<turnY>}, {"orient", guarded<orient>}, {"destroy", guarded<destroy>}, {"state", guarded<state>}, {"axis", guarded<axis>},
-		{"setUncullable", guarded<setUncullable>}, {"postEvent", guarded<postEvent>}, {"setDashTrail", guarded<setDashTrail>}, {"setEffectBall", guarded<setEffectBall>},
+		{"moveTo", guarded<moveTo>}, {"turnY", guarded<turnY>}, {"orient", guarded<orient>}, {"setModelTransform", guarded<setModelTransform>}, {"destroy", guarded<destroy>}, {"state", guarded<state>}, {"axis", guarded<axis>},
+		{"setUncullable", guarded<setUncullable>}, {"postEvent", guarded<postEvent>}, {"setDashTrail", guarded<setDashTrail>}, {"setEffectBall", guarded<setEffectBall>}, {"spawnDashSphere", guarded<spawnDashSphere>}, {"spawnDashTrail", guarded<spawnDashTrail>},
 		{"hasBody", guarded<hasBody>}, {"velocity", guarded<velocity>}, {"setVelocity", guarded<setVelocity>}, {"grounded", guarded<grounded>}, {"setGroundSnap", guarded<setGroundSnap>}, {"setWeight", guarded<setWeight>}, {"setGroundSnapMode", guarded<setGroundSnapMode>}, {"setMeanVelocityMove", guarded<setMeanVelocityMove>}, {"setFaceContact", guarded<setFaceContact>},
 		{"groundNormal", guarded<groundNormal>}, {"groundSurface", guarded<groundSurface>}, {"groundGap", guarded<groundGap>}, {"touchingWall", guarded<touchingWall>}, {"wallNormal", guarded<wallNormal>},
 		{"behavior", guarded<behavior>}, {"give", guarded<give>}, {"prefabBehavior", guarded<prefabBehavior>},
 		{"onTouch", guarded<onTouch>}, {"tag", guarded<tag>}, {"collisionBehavior", guarded<collisionBehavior>}, {"setShapeBehavior", guarded<setShapeBehavior>},
-		{"loadLevel", guarded<loadLevel>}, {"unloadLevel", guarded<unloadLevel>}, {"levelExists", guarded<levelExists>}, {"spawnPlayer", guarded<spawnPlayer>}, {"spawn", guarded<spawn>},{"setCamera", guarded<setCamera>},
+		{"loadLevel", guarded<loadLevel>}, {"unloadLevel", guarded<unloadLevel>}, {"levelExists", guarded<levelExists>}, {"spawnPlayer", guarded<spawnPlayer>}, {"spawn", guarded<spawn>}, {"setCamera", guarded<setCamera>},
 		{"include", guarded<include>}, {"rotateBamsZXY", guarded<rotateBamsZXY>},
 		{nullptr, nullptr}
 	};

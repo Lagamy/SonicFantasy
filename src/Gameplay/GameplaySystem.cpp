@@ -119,4 +119,6 @@ void GameplaySystem::tick()
 	Globals::Physics::collisionSystem.update();
 	Graphics::dashTrail.tick();
 	Graphics::effectBalls.tick(this->tickTime());
+	Graphics::dashSpheres.tick();
+	Graphics::sonicTrail.tick();
 }
