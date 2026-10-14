@@ -201,7 +201,7 @@ PoolId BABehaviors::applyBoundAreaData(const BoundAreaBehaviorData& rData_)
 		for(const std::string& rTag : rRule.tags)
 		{
 			uint32_t tagId = tagNamed(rTag).id;
-			if(function != Globals::Game::boundAreaFunctions.nameToId.end()) behavior.availableInteractions[tagId].push_back(BAInteraction::script(Globals::Game::boundAreaFunctions[function->second].scriptFunction));
+			if(function != Globals::Game::boundAreaFunctions.nameToId.end()) behavior.availableInteractions[tagId].push_back(BAInteraction::script(Globals::Game::boundAreaFunctions[function->second].scriptFunction, Globals::Game::boundAreaFunctions[function->second].onEntry));
 		}
 	}
 

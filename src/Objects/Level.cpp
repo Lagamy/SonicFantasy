@@ -29,6 +29,7 @@ void Level::setSAGPUInstance(PoolId shaderId_, const SALandTableKey& rLandTable_
 	}
 	this->instanceId = Loading::addSALevelInstance(shaderId_, rLandTable_, rTextures_, rSkippedTextures_);
 	this->sourceEngine = SA_NINJA;
+	this->computeBounds();
 }
 
 void Level::setONEGPUInstance(PoolId shaderId_, const STH2005::LevelKey& rLevel_, const std::vector<std::string>& rSkippedEntries_)
@@ -39,6 +40,7 @@ void Level::setONEGPUInstance(PoolId shaderId_, const STH2005::LevelKey& rLevel_
 	}
 	this->instanceId = Loading::addONELevelInstance(shaderId_, rLevel_, rSkippedEntries_);
 	this->sourceEngine = STH2005_ONE;
+	this->computeBounds();
 }
 
 void Level::setGLTFGPUInstance(PoolId shaderId_, const GLTFLevelKey& rLevel_)
@@ -49,6 +51,7 @@ void Level::setGLTFGPUInstance(PoolId shaderId_, const GLTFLevelKey& rLevel_)
 	}
 	this->instanceId = Loading::addGLTFLevelInstance(shaderId_, rLevel_);
 	this->sourceEngine = GLTF_FILE;
+	this->computeBounds();
 }
 
 void Level::setPosition(const glm::vec3& rPosition_)
@@ -56,9 +59,111 @@ void Level::setPosition(const glm::vec3& rPosition_)
 	this->position = rPosition_;
 	if(this->collisionId != UninitializedPoolId)
 	{
-		Globals::Physics::collisions[this->collisionId].setPosition(rPosition_);
+		this->placeCollision();
 		Globals::Physics::collisionSystem.rebuildQuadTree();
 	}
+}
+
+void Level::computeBounds()
+{
+	this->hasBounds = false;
+	if(this->instanceId == UninitializedPoolId) return;
+	glm::vec3 low(0.0f), high(0.0f);
+	auto add = [&](const glm::vec3& rCenter_, float radius_)
+	{
+		glm::vec3 pieceLow = rCenter_ - glm::vec3(radius_);
+		glm::vec3 pieceHigh = rCenter_ + glm::vec3(radius_);
+		low = this->hasBounds ? glm::min(low, pieceLow) : pieceLow;
+		high = this->hasBounds ? glm::max(high, pieceHigh) : pieceHigh;
+		this->hasBounds = true;
+	};
+	switch(this->sourceEngine)
+	{
+	case SA_NINJA:
+		for(const Graphics::SALevelPiece& rPiece : Graphics::getSALevelInstance(this->instanceId).pieces)
+		{
+			add(rPiece.center, rPiece.radius);
+		}
+		break;
+	case STH2005_ONE:
+	{
+		glm::mat4 yaw = glm::rotate(glm::mat4(1.0f), glm::radians(Graphics::RenderWareYawDegrees), glm::vec3(0.0f, 1.0f, 0.0f));
+		for(const Graphics::ONELevelPiece& rPiece : Graphics::getONELevelInstance(this->instanceId).pieces)
+		{
+			add(glm::vec3(yaw * glm::vec4(rPiece.center, 1.0f)), rPiece.radius);
+		}
+		break;
+	}
+	case GLTF_FILE:
+		for(const Graphics::GLTFLevelSubmesh& rSubmesh : Graphics::gltfLevelInstances[this->instanceId].submeshes)
+		{
+			add(rSubmesh.center, rSubmesh.radius);
+		}
+		break;
+	}
+	this->boundsMin = low;
+	this->boundsMax = high;
+}
+
+glm::mat4 Level::mapMatrix() const
+{
+	glm::mat4 matrix = glm::translate(glm::mat4(1.0f), this->mapPosition);
+	matrix = glm::rotate(matrix, glm::radians(this->mapRotation.y), glm::vec3(0.0f, 1.0f, 0.0f));
+	matrix = glm::rotate(matrix, glm::radians(this->mapRotation.x), glm::vec3(1.0f, 0.0f, 0.0f));
+	matrix = glm::rotate(matrix, glm::radians(this->mapRotation.z), glm::vec3(0.0f, 0.0f, 1.0f));
+	return matrix;
+}
+
+void Level::placeCollision()
+{
+	if(this->collisionId == UninitializedPoolId) return;
+	glm::mat4 matrix = this->mapMatrix();
+	Physics::Collision& rCollision = Globals::Physics::collisions[this->collisionId];
+	rCollision.setRotation(glm::mat3(matrix));
+	rCollision.setPosition(glm::vec3(matrix * glm::vec4(this->position, 1.0f)));
+}
+
+void Level::commitMapCollision()
+{
+	if(!this->collisionStale) return;
+	this->collisionStale = false;
+	this->placeCollision();
+	Globals::Physics::collisionSystem.rebuildQuadTree();
+}
+
+void Level::setMapTransform(const glm::vec3& rPosition_, const glm::vec3& rRotationDegrees_, bool collision_)
+{
+	glm::mat4 old = this->mapMatrix();
+	this->mapPosition = rPosition_;
+	this->mapRotation = rRotationDegrees_;
+	glm::mat4 delta = this->mapMatrix() * glm::inverse(old);
+	glm::mat4 deltaRotation = glm::mat4(glm::mat3(delta));
+	auto movePoint = [&](const glm::vec3& rPoint_) { return glm::vec3(delta * glm::vec4(rPoint_, 1.0f)); };
+
+	for(PoolId id : this->entityIds)
+	{
+		if(!entityExists(id)) continue;
+		Entity& rEntity = getEntity(id);
+		rEntity.setPosition(movePoint(rEntity.position));
+		rEntity.setRotation(deltaRotation * rEntity.rotation);
+	}
+	for(glm::vec3& rPosition : this->sourcePositions) rPosition = movePoint(rPosition);
+	for(glm::mat4& rRotation : this->sourceRotations) rRotation = deltaRotation * rRotation;
+	for(auto& [key, rBuilt] : this->built)
+	{
+		rBuilt.baseline.position = movePoint(rBuilt.baseline.position);
+		rBuilt.baseline.rotation = deltaRotation * rBuilt.baseline.rotation;
+		if(rBuilt.baseline.hasCamera) rBuilt.baseline.cameraPosition = movePoint(rBuilt.baseline.cameraPosition);
+	}
+	this->collisionStale = true;
+	if(collision_) this->commitMapCollision();
+#ifdef EDITOR
+	for(Graphics::CollisionView::Marker& rMarker : editor.collisionView.markers)
+	{
+		if(rMarker.levelId == this->selfId) rMarker.position = movePoint(rMarker.position);
+	}
+#endif
+	Globals::Game::spatialIndex.dirty = true;
 }
 
 /*
@@ -106,7 +211,7 @@ void Level::setONEEntities(PoolId shaderId_, const STH2005::LevelKey& rLevel_)
 					if(name != rLevel_.typeNames->end()) pLabel = name->second;
 				}
 #ifdef EDITOR
-				editor.collisionView.markers.push_back(Graphics::CollisionView::Marker{glm::vec3(yaw * glm::vec4(rPlacement.position, 1.0f)) + this->position, rPlacement.type, pLabel});
+				editor.collisionView.markers.push_back(Graphics::CollisionView::Marker{glm::vec3(yaw * glm::vec4(rPlacement.position, 1.0f)) + this->position, rPlacement.type, pLabel, this->selfId});
 #endif
 				continue;
 			}
@@ -170,9 +275,18 @@ void Level::setONEEntities(PoolId shaderId_, const STH2005::LevelKey& rLevel_)
 				params.what = std::format("(type {}) of {}", static_cast<unsigned>(rPlacement.type), pPath);
 				params.modelIndex = rSpawn.modelIndex;
 				params.pONECollisions = &rSpawn.collisions;
+				params.levelId = this->selfId;
 				PoolId id = spawnPrefab(prefabId, shaderId_, params);
 				if(id == UninitializedPoolId) continue;
-				this->entityIds.push_back(id);
+				EntityRecipe recipe;
+				recipe.kind = EntityRecipe::Kind::Placed;
+				recipe.prefabId = prefabId;
+				recipe.shaderId = shaderId_;
+				recipe.params = params;
+				recipe.params.pONECollisions = nullptr;
+				recipe.oneCollisions = rSpawn.collisions;
+				recipe.hasOneCollisions = true;
+				this->addBuilt(id, recipe);
 			}
 		}
 	}
@@ -227,8 +341,18 @@ void Level::setSAEntities(PoolId shaderId_, const SALandTableKey& rLandTable_)
 		params.pModel = &rModel_;
 		params.pCollisions = &rCollisions_;
 		params.pPlacement = pPlacement_;
-		PoolId id = spawnPrefab(findPrefab(SA_NINJA, rKey_.name), shaderId_, params);
-		if(id != UninitializedPoolId) this->entityIds.push_back(id);
+		params.levelId = this->selfId;
+		PoolId prefabId = findPrefab(SA_NINJA, rKey_.name);
+		PoolId id = spawnPrefab(prefabId, shaderId_, params);
+		if(id == UninitializedPoolId) return;
+		EntityRecipe recipe;
+		recipe.kind = EntityRecipe::Kind::Placed;
+		recipe.prefabId = prefabId;
+		recipe.shaderId = shaderId_;
+		recipe.params = params;
+		recipe.params.pPlacement = nullptr;
+		if(pPlacement_ != nullptr) recipe.placement = std::make_shared<const Ninja::SAPlacement>(*pPlacement_);
+		this->addBuilt(id, recipe);
 	};
 
 	for(const char* pPath : rLandTable_.placementFiles)
@@ -247,7 +371,7 @@ void Level::setSAEntities(PoolId shaderId_, const SALandTableKey& rLandTable_)
 					if(name != rLandTable_.typeNames->end()) pLabel = name->second;
 				}
 #ifdef EDITOR
-				editor.collisionView.markers.push_back(Graphics::CollisionView::Marker{position, rPlacement.type, pLabel});
+				editor.collisionView.markers.push_back(Graphics::CollisionView::Marker{position, rPlacement.type, pLabel, this->selfId});
 #endif
 				continue;
 			}
@@ -259,7 +383,7 @@ void Level::setSAEntities(PoolId shaderId_, const SALandTableKey& rLandTable_)
 			if(rModel.rel == nullptr)
 			{
 #ifdef EDITOR
-				editor.collisionView.markers.push_back(Graphics::CollisionView::Marker{position, rPlacement.type, rKey.name});
+				editor.collisionView.markers.push_back(Graphics::CollisionView::Marker{position, rPlacement.type, rKey.name, this->selfId});
 #endif
 				continue;
 			}
@@ -275,7 +399,7 @@ void Level::setSACollision(const SALandTableKey& rLandTable_)
 		throw std::runtime_error("Level: already has a collision.");
 	}
 	this->collisionId = Loading::addSACollision(rLandTable_);
-	Globals::Physics::collisions[this->collisionId].setPosition(this->position);
+	this->placeCollision();
 	Globals::Physics::collisionSystem.rebuildQuadTree();
 }
 
@@ -286,7 +410,7 @@ void Level::setONECollision(const STH2005::LevelKey& rLevel_)
 		throw std::runtime_error("Level: already has a collision.");
 	}
 	this->collisionId = Loading::addONECollision(rLevel_);
-	Globals::Physics::collisions[this->collisionId].setPosition(this->position);
+	this->placeCollision();
 	Globals::Physics::collisionSystem.rebuildQuadTree();
 }
 
@@ -297,7 +421,7 @@ void Level::setGLTFCollision(const GLTFLevelKey& rLevel_)
 		throw std::runtime_error("Level: already has a collision.");
 	}
 	this->collisionId = Loading::addGLTFCollision(rLevel_);
-	Globals::Physics::collisions[this->collisionId].setPosition(this->position);
+	this->placeCollision();
 	Globals::Physics::collisionSystem.rebuildQuadTree();
 }
 
@@ -332,7 +456,9 @@ void Level::appendGLTFCollision(const GLTFLevelKey& rLevel_, const std::string& 
 		this->setGLTFCollision(rLevel_);
 		return;
 	}
+	Globals::Physics::collisions[this->collisionId].setRotation(glm::mat3(1.0f));
 	Loading::appendGLTFCollision(this->collisionId, rLevel_, rName_);
+	this->placeCollision();
 	Globals::Physics::collisionSystem.rebuildQuadTree();
 }
 
@@ -344,7 +470,7 @@ void Level::update(float deltaTime_)
 void Level::draw(const Camera& rCamera_)
 {
 	if(this->instanceId == UninitializedPoolId) return;
-	glm::mat4 base = glm::translate(glm::mat4(1.0f), this->position);
+	glm::mat4 base = this->mapMatrix() * glm::translate(glm::mat4(1.0f), this->position);
 	switch(this->sourceEngine)
 	{
 	case SA_NINJA:
@@ -357,6 +483,90 @@ void Level::draw(const Camera& rCamera_)
 		Graphics::gltfLevelInstances[this->instanceId].draw(base, rCamera_);
 		break;
 	}
+}
+
+void Level::addBuilt(PoolId entityId_, const EntityRecipe& rRecipe_)
+{
+	uint32_t index = static_cast<uint32_t>(this->entityIds.size());
+	this->entityIds.push_back(entityId_);
+	if(entityId_ == UninitializedPoolId) return;
+	BuiltEntity& rBuilt = this->built[builtKey(entityId_)];
+	rBuilt.index = index;
+	rBuilt.recipe = rRecipe_;
+}
+
+void Level::captureBaseline(PoolId entityId_)
+{
+	auto found = this->built.find(builtKey(entityId_));
+	if(found == this->built.end() || !entityExists(entityId_)) return;
+	const Entity& rEntity = getEntity(entityId_);
+	EntityBaseline& rBaseline = found->second.baseline;
+	rBaseline.position = rEntity.position;
+	rBaseline.rotation = rEntity.rotation;
+	rBaseline.scale = rEntity.scale;
+	rBaseline.modelMatrix = rEntity.modelMatrix;
+	rBaseline.behaviors = rEntity.behaviorSetId == UninitializedPoolId ? std::vector<PoolId>() : Globals::Game::entityBehaviors[rEntity.behaviorSetId].behaviorIds;
+	rBaseline.shapes = entityShapes(entityId_);
+	rBaseline.mesh = entityMesh(entityId_);
+	rBaseline.texture = entityTexture(entityId_);
+	rBaseline.animationIntent = rEntity.animationIntent;
+	rBaseline.blinkIntent = rEntity.blinkIntent;
+	rBaseline.animationRate = rEntity.animationRate;
+	rBaseline.animationBlendRate = rEntity.animationBlendRate;
+	rBaseline.behaviorNotCulled = rEntity.behaviorNotCulled;
+	rBaseline.hasCamera = rEntity.cameraId != UninitializedPoolId;
+	if(rBaseline.hasCamera)
+	{
+		const Camera& rCamera = Globals::Game::cameras[rEntity.cameraId];
+		rBaseline.cameraPosition = rCamera.position;
+		rBaseline.cameraFront = rCamera.front;
+		rBaseline.cameraYaw = rCamera.yaw;
+		rBaseline.cameraPitch = rCamera.pitch;
+		rBaseline.cameraFov = rCamera.fov;
+		rBaseline.cameraNear = rCamera.nearPlane;
+		rBaseline.cameraFar = rCamera.farPlane;
+		rBaseline.cameraEnabled = rCamera.enabled;
+		rBaseline.cameraIsMain = Globals::Game::mainCamera == rEntity.cameraId;
+		rBaseline.cameraRenderTargetId = rCamera.renderTargetId;
+	}
+}
+
+void Level::captureBaselines()
+{
+	this->builtCount = static_cast<uint32_t>(this->entityIds.size());
+	for(PoolId id : this->entityIds)
+	{
+		if(id != UninitializedPoolId) this->captureBaseline(id);
+	}
+}
+
+/*
+What can differ in an entity after it ran: its transform, behaviour list, bound area, model, texture, motion, uncullable flag and the Lua state (the dirty flag). A physics body or an entity state always counts as changed: its contents (velocity) are not compared. A camera module is compared by its view (position, direction, field of view, planes, enabled, render target, whether it is the main camera).
+Effects other systems keep by entity (the dash ribbon, the effect balls: player effects) are not looked at.
+*/
+bool Level::entityChanged(PoolId entityId_) const
+{
+	auto found = this->built.find(builtKey(entityId_));
+	if(found == this->built.end() || !entityExists(entityId_)) return true;
+	const Entity& rEntity = getEntity(entityId_);
+	const EntityBaseline& rBaseline = found->second.baseline;
+	if(rEntity.scriptStateDirty || rEntity.physicsId != UninitializedPoolId || rEntity.stateId != UninitializedPoolId) return true;
+	if((rEntity.cameraId != UninitializedPoolId) != rBaseline.hasCamera) return true;
+	if(rBaseline.hasCamera)
+	{
+		const Camera& rCamera = Globals::Game::cameras[rEntity.cameraId];
+		if(rCamera.position != rBaseline.cameraPosition || rCamera.front != rBaseline.cameraFront || rCamera.yaw != rBaseline.cameraYaw || rCamera.pitch != rBaseline.cameraPitch) return true;
+		if(rCamera.fov != rBaseline.cameraFov || rCamera.nearPlane != rBaseline.cameraNear || rCamera.farPlane != rBaseline.cameraFar || rCamera.enabled != rBaseline.cameraEnabled) return true;
+		if(rCamera.renderTargetId != rBaseline.cameraRenderTargetId || (Globals::Game::mainCamera == rEntity.cameraId) != rBaseline.cameraIsMain) return true;
+	}
+	if(rEntity.position != rBaseline.position || rEntity.rotation != rBaseline.rotation || rEntity.scale != rBaseline.scale || rEntity.modelMatrix != rBaseline.modelMatrix) return true;
+	if(rEntity.animationIntent != rBaseline.animationIntent || rEntity.blinkIntent != rBaseline.blinkIntent) return true;
+	if(rEntity.animationRate != rBaseline.animationRate || rEntity.animationBlendRate != rBaseline.animationBlendRate || rEntity.behaviorNotCulled != rBaseline.behaviorNotCulled) return true;
+	static const std::vector<PoolId> none;
+	const std::vector<PoolId>& rBehaviors = rEntity.behaviorSetId == UninitializedPoolId ? none : Globals::Game::entityBehaviors[rEntity.behaviorSetId].behaviorIds;
+	if(rBehaviors != rBaseline.behaviors) return true;
+	if(entityMesh(entityId_) != rBaseline.mesh || entityTexture(entityId_) != rBaseline.texture) return true;
+	return entityShapes(entityId_) != rBaseline.shapes;
 }
 
 /* Removes the level's instance, which gives back the users of its pieces. Called by PoolMap::remove. */
@@ -463,7 +673,7 @@ void Level::revertSourceEntity(uint32_t index_)
 
 void Level::restoreSource()
 {
-	clearPrefabEdits();
+	clearPrefabEdits(this->selfId);
 	for(uint32_t i = 0; i < this->sourceEntityCount; i++)
 	{
 		this->revertSourceEntity(i);
@@ -478,31 +688,57 @@ void Level::restoreSource()
 	}
 	for(uint32_t i = this->sourceEntityCount; i < this->entityIds.size(); i++)
 	{
+		this->built.erase(builtKey(this->entityIds[i]));
 		if(entityExists(this->entityIds[i])) Globals::Game::entities.remove(this->entityIds[i]);
 	}
 	this->entityIds.resize(this->sourceEntityCount);
+	this->builtCount = std::min(this->builtCount, this->sourceEntityCount);
 }
 
-void Level::destroy()
+void Level::destroyEntities()
 {
 #ifdef EDITOR
-	/* The markers do not say which level they belong to; one level is loaded at a time, so all of them go. */
-	editor.collisionView.markers.clear();
+	/* Only the markers this level made go; the others belong to the levels still loaded. */
+	std::erase_if(editor.collisionView.markers, [&](const Graphics::CollisionView::Marker& rMarker_) { return rMarker_.levelId == this->selfId; });
 #endif
+	/* A level camera's render target is a pool object of its own that removing the camera does not free: the ones the build made go with it (not a target a script gave the camera, which the script owns). */
+	Pool<Graphics::RenderTarget>& rTargets = Globals::Game::renderTargets;
+	for(PoolId id : this->entityIds)
+	{
+		if(!entityExists(id)) continue;
+		auto builtIt = this->built.find(builtKey(id));
+		const Entity& rEntity = getEntity(id);
+		if(builtIt != this->built.end() && builtIt->second.recipe.kind == EntityRecipe::Kind::Camera && rEntity.cameraId != UninitializedPoolId)
+		{
+			PoolId targetId = Globals::Game::cameras[rEntity.cameraId].renderTargetId;
+			bool targetAlive = targetId != UninitializedPoolId && targetId.id < rTargets.alive.size() && rTargets.alive[targetId.id] && rTargets.generation[targetId.id] == targetId.generation;
+			if(targetAlive && targetId == builtIt->second.baseline.cameraRenderTargetId) rTargets.remove(targetId);
+		}
+	}
 	for(PoolId id : this->entityIds)
 	{
 		if(entityExists(id)) Globals::Game::entities.remove(id);
 	}
 	this->entityIds.clear();
+	this->built.clear();
+	this->builtCount = 0;
 	this->sourceEntityCount = 0;
 	this->sourcePositions.clear();
 	this->sourceRotations.clear();
 	this->sourceScales.clear();
 	this->sourceBehaviors.clear();
 	this->sourceShapes.clear();
+	forgetLevelPrefabEdits(this->selfId);
+}
+
+void Level::destroy()
+{
+	this->destroyEntities();
 #ifdef EDITOR
 	/* The level's own External prefabs go with its entities. */
-	Loading::unloadLevelPrefabs();
+	Loading::unloadLevelPrefabs(this->name);
+	/* Its External models and textures go after them: no entity of it holds a pointer into the pools any more. */
+	if(!this->name.empty()) Loading::forgetExternalAssets(this->name);
 #endif
 	if(this->collisionId != UninitializedPoolId)
 	{

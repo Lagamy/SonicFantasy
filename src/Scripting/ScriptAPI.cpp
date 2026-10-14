@@ -34,7 +34,7 @@ error if the handle is of an entity that is gone. Vectors are three numbers (x, 
 - bodies (an entity with a physics): hasBody(e), velocity(e), setVelocity(e, x, y, z), setGroundSnap(e, distance), setGroundSnapMode(e, {ray, radius, minNormalY, blockedByWall, whileRising}), setMeanVelocityMove(e, on), setFaceContact(e, on), setWeight(e, w), grounded(e), groundNormal(e), groundSurface(e), groundGap(e, maxGap), touchingWall(e), wallNormal(e)
 - behaviours: behavior(name, fn [, fields]) (fields = {name = {type = "number" | "bool" | "string" | "vec3" | "entity" | "prefab", default = v, external = bool}}: written into sf.state(e) before the first call; the external ones are set per entity in the editor's Inspector; a prefab field holds the prefab's name, an entity field a handle or sf.none, a vec3 {x, y, z}), give(e, name), prefabBehavior(prefabName, fn) (fn(entity, placement) is called for every entity made from that prefab, prefabName like "SADX/SPRING"; placement is the SET record {type, rotation, position, scale} or nil)
 - collision: onTouch(name, fn), tag(name), collisionBehavior(name, {tags, collidesWith, interactions}), setShapeBehavior(e, behavior)
-- setup: spawn(prefabName, x, y, z) (makes an entity from a prefab by its name, "SADX/SPRING", "Global/Bullet"; returns it), loadLevel(name) (the name of a Levels/<name>/ folder: "EmeraldCoast", "Stg0100", "Stg0000"; returns the level), unloadLevel(level) (done at the start of the next tick), levelExists(level), spawnPlayer(character, x, y, z) ("sonic", "shadow"; returns the entity, which the script then attaches), setCamera(x, y, z)
+- setup: spawn(prefabName, x, y, z) (makes an entity from a prefab by its name, "SADX/SPRING", "Global/Bullet"; returns it), loadLevel(name) (the name of a Levels/<name>/ folder: "EmeraldCoast", "Stg0100", "Stg0000"; returns the level), unloadLevel(level) (done at the start of the next tick), levelExists(level), levels() (every level's handle, in a table), levelName(level), resetLevel(level) (destroyed and built again from its recipe at the start of the next tick), spawnPlayer(character, x, y, z) ("sonic", "shadow"; returns the entity, which the script then attaches), setCamera(x, y, z)
 - scripts: include(path), rotateBamsZXY(x, y, z, az, ax, ay), none
 */
 namespace Scripting
@@ -42,7 +42,7 @@ namespace Scripting
 static PoolId checkEntity(lua_State* pLua_, int arg_)
 {
 	lua_Integer handle = luaL_checkinteger(pLua_, arg_);
-	PoolId id = fromHandle(handle);
+	PoolId id = currentEntity(fromHandle(handle));
 	if(!entityExists(id)) luaL_error(pLua_, "entity %I does not exist (any more)", handle);
 	return id;
 }
@@ -294,7 +294,7 @@ static int followCamera(lua_State* pLua_)
 
 static int exists(lua_State* pLua_)
 {
-	lua_pushboolean(pLua_, entityExists(fromHandle(luaL_checkinteger(pLua_, 1))));
+	lua_pushboolean(pLua_, entityExists(currentEntity(fromHandle(luaL_checkinteger(pLua_, 1)))));
 	return 1;
 }
 
@@ -371,20 +371,10 @@ static int destroy(lua_State* pLua_)
 	return 0;
 }
 
-/* The entity's table for what its behaviours remember, made on the first call and kept until the entity is removed. */
+/* The entity's table for what its behaviours remember, made on the first call and kept until the entity is removed. A write that changes a value in it, at any depth, marks the entity dirty (Scripting.cpp, pushEntityState). */
 static int state(lua_State* pLua_)
 {
-	Entity& rEntity = Globals::Game::entities[checkEntity(pLua_, 1)];
-	if(rEntity.scriptStateRef == 0)
-	{
-		lua_newtable(pLua_);
-		lua_pushvalue(pLua_, -1);
-		rEntity.scriptStateRef = luaL_ref(pLua_, LUA_REGISTRYINDEX);
-	}
-	else
-	{
-		lua_rawgeti(pLua_, LUA_REGISTRYINDEX, rEntity.scriptStateRef);
-	}
+	pushEntityState(pLua_, checkEntity(pLua_, 1));
 	return 1;
 }
 
@@ -722,13 +712,20 @@ static int registerBoundAreaFunction(lua_State* pLua_, const std::string& rName_
 
 /*
 Registers fn(parent, contact) under a name as an onTouch function of a bound area (BoundAreaFunction): the editor lists it and a bound area's rules name it. The same name again replaces the function behind the
-same registry reference. Returns the function, so it can also be used directly in the interactions of sf.collisionBehavior (which then names it by this name).
+same registry reference. An optional third argument {entry = true} makes it run once per entry of a contact (the pair was not touching on the previous tick) instead of every tick. Returns the function, so it can also be used directly in the interactions of sf.collisionBehavior (which then names it by this name).
 */
 static int onTouch(lua_State* pLua_)
 {
 	const char* pName = luaL_checkstring(pLua_, 1);
 	luaL_checktype(pLua_, 2, LUA_TFUNCTION);
 	registerBoundAreaFunction(pLua_, pName, 2, callerSourceFile(pLua_));
+	bool onEntry = false;
+	if(lua_istable(pLua_, 3))
+	{
+		onEntry = lua_getfield(pLua_, 3, "entry") != LUA_TNIL && lua_toboolean(pLua_, -1);
+		lua_pop(pLua_, 1);
+	}
+	Globals::Game::boundAreaFunctions[Globals::Game::boundAreaFunctions.nameToId.at(pName)].onEntry = onEntry;
 	lua_pushvalue(pLua_, 2);
 	return 1;
 }
@@ -807,7 +804,7 @@ static int collisionBehavior(lua_State* pLua_)
 			for(int n = 2; rFunctions.nameToId.contains(name); n++) name = std::format("{}/{}#{}", pName, rTagNames[tagId_], n);
 			registerBoundAreaFunction(pLua_, name, index_, sourceFile);
 		}
-		behavior.availableInteractions[tagId_].push_back(BAInteraction::script(rFunctions[rFunctions.nameToId.at(name)].scriptFunction));
+		behavior.availableInteractions[tagId_].push_back(BAInteraction::script(rFunctions[rFunctions.nameToId.at(name)].scriptFunction, rFunctions[rFunctions.nameToId.at(name)].onEntry));
 
 		auto rule = std::find_if(data.onTouch.begin(), data.onTouch.end(), [&](const BoundAreaRule& rRule_) { return rRule_.function == name; });
 		if(rule == data.onTouch.end()) rule = data.onTouch.insert(data.onTouch.end(), BoundAreaRule{name, {}});
@@ -868,12 +865,12 @@ static PoolId shaderByName(const char* name_)
 }
 
 /*
-Makes a level from Assets/Levels/<name>/<name>.json (Loading::loadLevel, see LevelLoader.h) and returns it. Load one level at a time: Emerald Coast and Westopolis would overlap at similar coordinates. The player's start
-position is the script's to choose (the real start of a stage is not known).
+Makes a level from Assets/Levels/<name>/<name>.json (Loading::loadMap, see LevelLoader.h) and returns it; the levels the map (Map.json) has beside it are loaded too and are removed by the next call. Without a map entry for the name, one level at a time:
+Emerald Coast and Westopolis would overlap at similar coordinates. The player's start position is the script's to choose (the real start of a stage is not known).
 */
 static int loadLevel(lua_State* pLua_)
 {
-	lua_pushinteger(pLua_, toHandle(Loading::loadLevel(luaL_checkstring(pLua_, 1))));
+	lua_pushinteger(pLua_, toHandle(Loading::loadMap(luaL_checkstring(pLua_, 1))));
 	return 1;
 }
 
@@ -897,6 +894,43 @@ static int levelExists(lua_State* pLua_)
 	PoolId id = fromHandle(luaL_checkinteger(pLua_, 1));
 	lua_pushboolean(pLua_, id.id < Globals::Game::levels.objects.size() && Globals::Game::levels.alive[id.id] && Globals::Game::levels.generation[id.id] == id.generation);
 	return 1;
+}
+
+/* The levels that exist, as handles (the ones loadLevel returns); a script walks them and tells them apart by sf.levelName. */
+static int levels(lua_State* pLua_)
+{
+	lua_newtable(pLua_);
+	int count = 0;
+	for(uint32_t i = 0; i < Globals::Game::levels.objects.size(); i++)
+	{
+		if(!Globals::Game::levels.alive[i]) continue;
+		lua_pushinteger(pLua_, toHandle(PoolId(i, Globals::Game::levels.generation[i])));
+		lua_rawseti(pLua_, -2, ++count);
+	}
+	return 1;
+}
+
+static int levelName(lua_State* pLua_)
+{
+	PoolId id = fromHandle(luaL_checkinteger(pLua_, 1));
+	Globals::Game::levels.isPoolIdValid(id);
+	lua_pushstring(pLua_, Globals::Game::levels.objects[id.id].name.c_str());
+	return 1;
+}
+
+/* The levels resetLevel was asked to reset; processPendingUnloads (Scripting.h) resets them. */
+static std::vector<PoolId> pendingResets;
+
+/*
+Asks for a level to be destroyed and built again from its recipe (Loading::resetLevel: entities back at their placed state, the same as when the player leaves a map level's bounds). It happens at the start of the next
+gameplay tick, not now, for the reason unloadLevel waits: the script runs inside a tick and the collision system is still reading the entities. Asking twice before that resets it once.
+*/
+static int resetLevel(lua_State* pLua_)
+{
+	PoolId id = fromHandle(luaL_checkinteger(pLua_, 1));
+	Globals::Game::levels.isPoolIdValid(id);
+	if(std::find(pendingResets.begin(), pendingResets.end(), id) == pendingResets.end()) pendingResets.push_back(id);
+	return 0;
 }
 
 /* Every entity spawnPlayer and spawn made that still exists (Scripting::spawnedEntities). */
@@ -987,6 +1021,14 @@ const std::vector<PoolId>& spawnedEntities()
 
 void processPendingUnloads()
 {
+	pruneRemadeEntities();
+	/* Resets first, on a level still present; an unload asked in the same tick then removes the rebuilt one. */
+	std::vector<PoolId> resets;
+	resets.swap(pendingResets);
+	for(PoolId id : resets)
+	{
+		if(Globals::Game::levels.alive[id.id] && Globals::Game::levels.generation[id.id] == id.generation) Loading::resetLevel(id);
+	}
 	if(pendingUnloads.empty()) return;
 	for(PoolId id : pendingUnloads)
 	{
@@ -1008,7 +1050,7 @@ void registerAPI(lua_State* pLua_)
 		{"groundNormal", guarded<groundNormal>}, {"groundSurface", guarded<groundSurface>}, {"groundGap", guarded<groundGap>}, {"touchingWall", guarded<touchingWall>}, {"wallNormal", guarded<wallNormal>},
 		{"behavior", guarded<behavior>}, {"give", guarded<give>}, {"prefabBehavior", guarded<prefabBehavior>},
 		{"onTouch", guarded<onTouch>}, {"tag", guarded<tag>}, {"collisionBehavior", guarded<collisionBehavior>}, {"setShapeBehavior", guarded<setShapeBehavior>},
-		{"loadLevel", guarded<loadLevel>}, {"unloadLevel", guarded<unloadLevel>}, {"levelExists", guarded<levelExists>}, {"spawnPlayer", guarded<spawnPlayer>}, {"spawn", guarded<spawn>}, {"setCamera", guarded<setCamera>},
+		{"loadLevel", guarded<loadLevel>}, {"unloadLevel", guarded<unloadLevel>}, {"levelExists", guarded<levelExists>}, {"levels", guarded<levels>}, {"levelName", guarded<levelName>}, {"resetLevel", guarded<resetLevel>}, {"spawnPlayer", guarded<spawnPlayer>}, {"spawn", guarded<spawn>}, {"setCamera", guarded<setCamera>},
 		{"include", guarded<include>}, {"rotateBamsZXY", guarded<rotateBamsZXY>},
 		{nullptr, nullptr}
 	};

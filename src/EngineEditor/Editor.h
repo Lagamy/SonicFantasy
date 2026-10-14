@@ -8,6 +8,8 @@
 #include "CollisionView.h"
 #include "Text.h"
 #include "LevelLoader.h"
+#include "Level.h"
+#include "Map.h"
 #include "EntityListPanel.h"
 #include "InspectorPanel.h"
 #include "PrefabPanel.h"
@@ -32,6 +34,52 @@ struct Editor
 {
 	/* True while in the editor (the start state), false while playing (the Play button, setPlaying). */
 	bool active = true;
+
+	/* The editor's Map view (the Map tab, docs/TODO.md level map): every level is drawn and picked. False = the Level view, where only the active level is (levelShown). Has no effect while playing. */
+	bool mapView = false;
+
+	/*
+	The Map view's state: the name of the level whose place is being edited (mapSelected; empty = the active level) and whether Map.json has a change that is not written yet (mapDirty; set while a drag or the inspector widget runs). When it is let go (processInputs) the change counts as made (mapUnsaved), and Map.json is written only by Save (saveAllLevels, Ctrl+S).
+	levelPlace gives a loaded level's place (the map's entry, else the level's own); false if no level of the name is loaded. setLevelPlace gives the level the place (Level::setMapTransform) and keeps it in the map (Map::set).
+	*/
+	std::string mapSelected;
+	bool mapDirty = false;
+	bool mapUnsaved = false;
+
+	/*
+	The levels selected besides mapSelected (a multi-selection: Shift or Ctrl click in the Map tab's list, Shift click in the scene) and the helpers on them. mapSelection lists the selected names, mapSelected first (empty = the active level's name), loaded levels only. selectMapLevel selects one
+	level, or with additive_ adds or removes it from the selection (a newly added one becomes mapSelected). The Map view's gizmo moves and turns them all as a group; Ctrl+Z undoes such a change.
+	*/
+	std::vector<std::string> mapExtraSelected;
+
+	std::vector<std::string> mapSelection() const;
+	bool mapIsSelected(const std::string& name_) const;
+	void selectMapLevel(const std::string& name_, bool additive_);
+	bool levelPlace(const std::string& name_, MapLevel& rPlace_) const;
+	void setLevelPlace(const MapLevel& rPlace_);
+
+	/* The Map tab's "Choose as active": loads the level as the File menu's Load level does (the map's other levels beside it, unsaved edits gone) and goes back to the Level tab. */
+	void chooseActive(const std::string& name_);
+
+	/* The Map tab's "Add level to map": the level gets an entry (at the origin) and, if it is not loaded, is loaded in its place beside the others; the map is written. Says in fileMessage how it went. */
+	void addLevelToMap(const std::string& name_);
+
+	/*
+	The Map tab's "Remove from map": the level's entry goes (Map.json is written). A loaded level that is not the active one is unloaded; the active one stays and goes back to the origin, as it would load without an entry. The Level's file and edits are not touched.
+	*/
+	void removeLevelFromMap(const std::string& name_);
+
+	/*
+	While playing, a level was reset in place (Loading::resetLevel): puts back what Play kept of it (keptLevels, as Stop does), the entities' state and the edits made in the editor before Play. Nothing if Play kept no level of that name.
+	*/
+	void restoreKeptLevel(PoolId levelId_);
+	/*
+	The in-place reset (Loading::resetEntitiesInPlace) of a level Play kept: gives the entities it made again (rRemadeIndices_, their place in the level) their kept state, and makes the entities the editor added again (all of them were removed). The entities it left alone have the state Play
+	kept (Play took their baseline from it). The caller resolves the external references after. Nothing if Play kept no level of that name.
+	*/
+	void restoreKeptEntities(PoolId levelId_, const std::vector<uint32_t>& rRemadeIndices_);
+	/* Whether Play kept this level's edits (restoreKeptLevel would give them back). */
+	bool hasKeptLevel(const std::string& rName_) const;
 
 	/* While playing: the debug menu is open (Tab), with the cursor free for it. Always false in the editor. */
 	bool debugMenuOpen = false;
@@ -80,6 +128,9 @@ struct Editor
 
 	/* The File menu's work (DebugUI): writes the current level's edits into the level file of the name (Loading::saveLevelEdits) and says in fileMessage how it went; or puts the level back as its source has it (the game's data plus the level's saved Source Game Level; Level::restoreSource, unsaved until Save). */
 	void saveLevel(const std::string& fileName_);
+
+	/* Save and Ctrl+S: writes every loaded level's edits into its own level file (saveLevelEdits; a level whose file would not change is not rewritten), one failing level does not stop the others; fileMessage says how many were saved. Save as writes only the current level (saveLevel). */
+	void saveAllLevels();
 	void restoreSourceValues();
 
 	/* File > Save Source Game Level: makes the level as it is now the level's source (Loading::saveSourceLevel: Restore Source Game Level returns to it from now on), then loads the level again from its files so the editor holds exactly what a load gives (the selection is cleared, the players go to the start); says in fileMessage how it went. */
@@ -87,6 +138,7 @@ struct Editor
 
 	/* Replaces the loaded level with Levels/<name>/<name>.json (the scripts' resetGame with a name: the level, the players at its start); what was edited and not saved in the old level is gone. */
 	void loadLevel(const std::string& levelName_);
+
 	std::string fileMessage;
 
 	/* The File menu's New level (DebugUI): writes the level file (Loading::createLevelFile) and, if that worked, loads it as loadLevel does; says in fileMessage how it went. */
@@ -126,6 +178,9 @@ struct Editor
 	{
 		uint32_t index;
 		KeptEntity entity;
+
+		/* The entity's id when Play kept it: undo steps that name it are moved to the new one (renameUndoEntity). */
+		PoolId oldId;
 	};
 
 	/* An entity added to the level, made again from its prefab. */
@@ -133,6 +188,10 @@ struct Editor
 	{
 		PoolId prefabId;
 		KeptEntity entity;
+		PoolId oldId;
+
+		/* The entity's place in Level::entityIds when Play kept it (restoreKeptEntities tells the editor's from the build's). */
+		uint32_t index;
 	};
 
 	/* The prefabs' own edits (behaviours, bound area shapes, model, texture). */
@@ -146,9 +205,6 @@ struct Editor
 		TextureChoice texture;
 		MeshChoice mesh;
 	};
-	std::vector<KeptOwn> keptOwn;
-	std::vector<KeptAdded> keptAdded;
-	std::vector<KeptPrefab> keptPrefabs;
 	void clearKept();
 
 	/* An entity's position, rotation and scale: what Ctrl+Z gives back. */
@@ -158,6 +214,11 @@ struct Editor
 		glm::mat4 rotation;
 		glm::vec3 scale;
 		bool operator==(const Transform&) const = default;
+	};
+	struct EntityTransform
+	{
+		PoolId entity;
+		Transform transform;
 	};
 
 	/* Ctrl+C: what was copied, a prefab entity (prefabId, entity) or a camera entity (isCamera, camera). */
@@ -186,44 +247,71 @@ struct Editor
 		KeptEntity entity;
 		CopiedCamera camera;
 	};
-	/* One step of Ctrl+Z / Ctrl+Y: either the entity's transform to give back (created false; before), or an entity the editor made (created true: undoing removes it, and keeps its state in snapshot so that redoing makes it again, with a new PoolId). */
+	/*
+	One step of Ctrl+Z / Ctrl+Y: either the entity's transform to give back (created false; before), or an entity the editor made (created true: undoing removes it, and keeps its state in snapshot so that redoing makes it again, with a new PoolId).
+	Two more kinds, both with created false: a group (group not empty: the transforms several entities had before one change, entity / before are the first of them) and a map step (places not empty: the places the levels had in the Map view, given back by name).
+	*/
 	struct UndoAction
 	{
 		bool created;
 		PoolId entity;
 		Transform before;
 		Clipboard snapshot;
+		std::vector<EntityTransform> group;
+		std::vector<MapLevel> places;
 	};
 	std::vector<UndoAction> undoStack;
 	std::vector<UndoAction> redoStack;
 
-	/* The selected entity and its transform as last seen (trackTransform): a different value once nothing is being dragged is a finished change. */
-	PoolId trackedEntity = UninitializedPoolId;
-	Transform tracked;
+	/* The selected entities (primary first) and their transforms as last seen (trackTransform), and in the Map view the selected levels' places: a different value once nothing is being dragged is a finished change. */
+	std::vector<EntityTransform> tracked;
 	bool trackedBusy = false;
+	std::vector<MapLevel> trackedPlaces;
+	bool trackedPlacesBusy = false;
 
 	Clipboard clipboard;
 
-	/* The level's camera entities at Play (snapshotOf), made again at Stop: a camera is not in keptAdded (no prefab). */
-	std::vector<Clipboard> keptCameras;
+	/*
+	What setPlaying keeps of one level at Play, by the level's name (its pool slot is gone and made again at Stop): the level's own entities, the added ones, the prefabs' edits for that level, and its camera entities (snapshotOf; a camera is not in added, it has no prefab).
+	Every level alive at Play is kept: play can leave a level (it is unloaded) and Stop must give each back, not only the one the game ends in.
+	*/
+	struct KeptLevel
+	{
+		std::string name;
+		std::vector<KeptOwn> own;
+		std::vector<KeptAdded> added;
+		std::vector<KeptPrefab> prefabs;
+		std::vector<Clipboard> cameras;
+
+		/* The place in Level::entityIds of each of cameras, at Play. */
+		std::vector<uint32_t> cameraIndices;
+	};
+	std::vector<KeptLevel> keptLevels;
 
 	/* A camera entity at a position that the level owns (it is saved with the level, Loading::saveLevelEdits "cameras"); the Add camera button and paste make cameras with it. */
-	PoolId addLevelCamera(const char* name_, const glm::vec3& rPosition_);
+	PoolId addLevelCamera(const char* name_, const glm::vec3& rPosition_, PoolId levelId_ = UninitializedPoolId);
 
 	/* Puts an entity the editor made (Add camera, paste) on the undo stack and selects it. */
 	void recordCreated(PoolId entityId_);
 
-	/* Ctrl+Z undoes the latest step, Ctrl+Y does the latest undone one again; a new step empties the redo ones. Both stacks are dropped when the level is loaded again, restored or the game is played (the entities are made again). */
+	/* Ctrl+Z undoes the latest step, Ctrl+Y does the latest undone one again; a new step empties the redo ones. Both stacks are dropped when the level is loaded again or restored; Play and Stop keep them (the entities made again at Stop are renamed in the steps, giveKeptLevel). */
 	void undo();
 	void redo();
 	void pushUndo(const UndoAction& rAction_);
 	void applyAction(const UndoAction& rAction_, std::vector<UndoAction>& rOpposite_);
 	Clipboard snapshotOf(PoolId entityId_);
-	PoolId spawnFrom(const Clipboard& rCopy_, const glm::vec3& rPosition_);
+	PoolId spawnFrom(const Clipboard& rCopy_, const glm::vec3& rPosition_, PoolId levelId_ = UninitializedPoolId);
+
+	/* Gives a level what keptLevels holds for it (Stop): the prefabs' edits for that level, each entity's exact state, the added entities and cameras made again. */
+	void giveKeptLevel(PoolId levelId_, const KeptLevel& rKept_);
 	void clearUndo();
 
-	/* Looks at the selected entity once a frame (processInputs, in the editor): when its transform differs from the last one seen and no gizmo drag or ImGui widget is being held, pushes the old transform (a whole drag is one step). */
+	/* Makes the undo and redo steps that name entity old_ name new_ (the entity was made again by Stop or a level reset). */
+	void renameUndoEntity(PoolId old_, PoolId new_);
+
+	/* Looks at the selected entities (the selected levels in the Map view) once a frame (processInputs, in the editor): when a transform (place) differs from the last one seen and no gizmo drag or ImGui widget is being held, pushes the old ones (a whole drag is one step; several changed entities or levels are one step). */
 	void trackTransform();
+	void trackPlaces();
 
 	/* Ctrl+C copies the selected entity; Ctrl+V makes a copy where the cursor points (the horizontal plane through the copied entity, else where it was), selected and undoable. A camera entity copies the camera's own settings (not its render target). Says in fileMessage when it can't. */
 	void copySelected();

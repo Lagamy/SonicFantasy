@@ -1,4 +1,5 @@
 #include "Texture.h"
+#include "RenderStats.h"
 #include <algorithm>
 #include <array>
 #include <utility>
@@ -165,6 +166,7 @@ glTexImage2D(
 	this->pixels.clear(); 
 
 	this->alive = true; 
+	renderStats.textureUploads++;
 }
 
 void Texture::destroy()

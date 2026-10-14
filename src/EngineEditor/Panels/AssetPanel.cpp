@@ -256,7 +256,7 @@ void AssetPanel::loadExternal()
 	if(this->selectedGame >= Global) this->selectedGame = -1;
 	for(int game = Global; game < GameCount; game++)
 	{
-		Graphics::ExternalPools& rPools = game == Global ? Graphics::externalProject : Graphics::externalLevel;
+		Graphics::ExternalPools& rPools = game == Global ? Graphics::externalProject : Graphics::externalLevel();
 		const char* source = game == Global ? "Global" : "Level";
 		for(uint32_t i = 0; i < rPools.models.allocatedSize(); i++)
 		{

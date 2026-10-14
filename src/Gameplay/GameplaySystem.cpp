@@ -3,6 +3,7 @@
 #include "API.h"
 #include "GPU_Globals.h"
 #include "Scripting.h"
+#include "LevelLoader.h"
 #include "Editor.h"
 #include <algorithm>
 #include <chrono>

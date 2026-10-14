@@ -71,11 +71,14 @@ void PrefabPanel::rebuildTiles()
 	}
 	for(auto& rScope : this->externalTiles) rScope.clear();
 	const auto& rPrefabs = Globals::Game::prefabs;
+	this->listedLevel = Loading::levelPrefabScope();
 	for(uint32_t i = 0; i < rPrefabs.objects.size(); i++)
 	{
 		if(!rPrefabs.alive[i]) continue;
 		const Prefab& rPrefab = rPrefabs.objects[i];
 		PoolId id(i, rPrefabs.generation[i]);
+		/* The Level folder lists only the active level's prefabs: every loaded level has its own. */
+		if(rPrefab.inLevel && rPrefab.level != this->listedLevel) continue;
 		if(rPrefab.kind == PrefabKind::External) this->externalTiles[rPrefab.inLevel ? 1 : 0].push_back(id);
 		else this->tiles[rPrefab.game == SA_NINJA ? 0 : 1][static_cast<int>(rPrefab.group)].push_back(id);
 	}
@@ -183,6 +186,7 @@ void PrefabPanel::spawn(PoolId prefabId_, PoolId& rSelectedEntity_, const Editor
 	SpawnParams params;
 	params.position = rCamera_.position + rCamera_.front * SpawnDistance;
 	params.what = "(editor)";
+	params.levelId = editor.currentLevel();
 	PoolId id = spawnPrefab(prefabId_, getShaderId(rPrefab.game == SA_NINJA ? "SA" : "STH2005"), params);
 	if(id == UninitializedPoolId)
 	{
@@ -461,7 +465,7 @@ void PrefabPanel::draw(PoolId& rSelectedEntity_, const EditorCamera& rCamera_)
 {
 	this->thumbnails.beginFrame();
 	this->assets.beginFrame();
-	if(this->listedRevision != prefabRevision())
+	if(this->listedRevision != prefabRevision() || this->listedLevel != Loading::levelPrefabScope())
 	{
 		this->rebuildTiles();
 		this->thumbnails.forgetExternal();

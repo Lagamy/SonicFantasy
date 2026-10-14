@@ -28,14 +28,17 @@ struct BAInteraction
 {
 	void (*pFunction)(PoolId parentEntity_, PoolId contactEntity_) = nullptr;
 	int scriptFunction = 0;
+	/* Called only on the first tick of a contact (the pair was not touching on the previous tick), see CollisionSystem.cpp; from BoundAreaFunction::onEntry. */
+	bool onEntry = false;
 
 	BAInteraction() = default;
 	BAInteraction(void (*pFunction_)(PoolId parentEntity_, PoolId contactEntity_)) : pFunction(pFunction_) {}
 
-	static BAInteraction script(int scriptFunction_)
+	static BAInteraction script(int scriptFunction_, bool onEntry_ = false)
 	{
 		BAInteraction interaction;
 		interaction.scriptFunction = scriptFunction_;
+		interaction.onEntry = onEntry_;
 		return interaction;
 	}
 
@@ -60,6 +63,8 @@ struct BoundAreaFunction
 {
 	int scriptFunction = 0;
 	std::string sourceFile;
+	/* sf.onTouch(name, fn, {entry = true}): the function is called once per entry of a contact, not every tick it lasts (BAInteraction::onEntry). */
+	bool onEntry = false;
 };
 
 /*

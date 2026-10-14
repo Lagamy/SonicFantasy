@@ -9,37 +9,73 @@
 -- FUN_804e38a8), the jump (FUN_805a70ac, FUN_804e6064), the spin dash (FUN_805a4340, FUN_805a3eb8, FUN_804df428), the roll (FUN_804decb0) and the homing attack (state 0xE: FUN_805a8958, FUN_805a8310) are decoded the same
 -- day, also not run. Not ported: the Light Speed Attack (state 6, FUN_805a76c0: the old homing here was its rules), the tilt of his frame in the air, the object he stands on pushing him.
 
+-- File layout, top to bottom: constants by system, utilities, physics (ground, air, homing, ground probe), animation (blink, motion pick), effects and model (spheres, trail, squash, facing),
+-- the tick (input, locked tick, playerStep: contact, states and speeds, motion, output), the behavior and the entry points main.lua calls. New code goes in the block of its system.
+
+-- ==== Constants: units and limits ====
 local FRAMES_PER_SECOND = 60
-local JUMP_SPEED = 1.66 * FRAMES_PER_SECOND             -- external
+local SPEED_CAP = 16 * FRAMES_PER_SECOND                -- external, units per second on each world axis
+
+-- ==== Constants: ground speeds and thresholds ====
+local WALK_SPEED = 0.46                                 -- external (+0x24): the speeds (per frame) up to which the game plays Walk, Speedwalk (up to +0x28), Jog (+0x2c) and Run (+0x34); Sprint above
+local SPEEDWALK_SPEED = 1.39
+local JOG_SPEED = 2.3
+local RUN_MAX_SPEED = 5.09
+local RUN_SPEED = 1.39                                  -- external (+0x28)
+local MID_SPEED = (WALK_SPEED + RUN_SPEED) / 2                 -- external (0.5 times +0xc0 + +0xc4): from here a turn of more than 22.5 degrees brakes
+local FAST_SPEED = 3.0                                  -- external (+0x10): above it the forward drag acts on the excess only
+local STAND_EPSILON = 1e-3                                 -- the game stands at a forward speed of exactly 0 with no stick (FUN_805a444c); groundStep zeroes the speeds it means to, this only absorbs float noise
+local SNAP_SPEED = 0.87 * WALK_SPEED                      -- external (FUN_804dc9ec): without the stick a speed under this stops
+local STORED_SPEED_MIN = 0.01                           -- hypothesis (the game's constant DAT_8065cd60 is 0.02, perhaps compared against twice the frame's step), bracket 0.0093 to 0.0111 per frame (recording sadx_2, 2.94 to 2.98 s): under it, with the stick pushed, the stored forward speed stays 0
+
+-- ==== Constants: ground acceleration, drag and grip ====
 local GROUND_ACCEL = 0.05                               -- external, units per frame squared (+0x3c)
 local GROUND_ACCEL_FAST_FACTOR = 0.4                    -- external: from FUN_804e4e00, the acceleration at a forward speed of FAST_SPEED or more (with the ground normal's y >= 0)
 local ANALOG_MID_FACTOR = 0.3                           -- external (FUN_804e4e00, DAT_8065cd18): the acceleration's factor from RUN_SPEED up to JOG_SPEED with the stick's magnitude at ANALOG_MID_LIMIT or less
 local ANALOG_MID_LIMIT = 0.9                            -- external (FUN_804e4e00, DAT_8065cd70)
 local ANALOG_STOP_LIMIT = 0.5                           -- external (FUN_804e4e00, DAT_8065cccc): with the stick's magnitude at this or less the acceleration stops at ANALOG_STOP_FRACTION times WALK_SPEED
 local ANALOG_STOP_FRACTION = 0.4                        -- external (FUN_804e4e00, DAT_8065cd40)
-local STORED_SPEED_MIN = 0.01                           -- hypothesis (the game's constant DAT_8065cd60 is 0.02, perhaps compared against twice the frame's step), bracket 0.0093 to 0.0111 per frame (recording sadx_2, 2.94 to 2.98 s): under it, with the stick pushed, the stored forward speed stays 0
-local FAST_SPEED = 3.0                                  -- external (+0x10): above it the forward drag acts on the excess only
-local AIR_ACCEL = 0.031                                 -- external (+0x40), doubled while falling (FUN_804e38a8)
-local AIR_BRAKE = -0.17                                 -- external (+0x4c): the air acceleration when the stick is more than 135 degrees from his heading and forward speed > RUN_SPEED
-local RUN_SPEED = 1.39                                  -- external (+0x28)
-local WALL_STOP_SPEED = 15.0                            -- external (FUN_804dac14, DAT_8065ce40): per frame; at this forward speed or more a wall in front stops him dead
-local WALL_HEAD_ON_SPEED = 3.7                          -- external (FUN_804dac14, record +0x30): per frame; at this speed or more a head-on wall zeroes his horizontal velocity
-local WALL_HEAD_ON_COS = -0.98                          -- external (FUN_804dac14, DAT_8065ce6c): the velocity direction's cosine to the wall's normal that counts as head-on
-local WALL_TURN_AWAY = 0.75 * math.pi                   -- external (FUN_804db674: 0x6000 of 0x10000): a stored turn target further than this from the heading flips it by half a turn when it slides
 local GROUND_DECEL = 0.06                               -- external (+0x44): towards zero with no stick, when the ground normal's y >= 0.71
 local DRAG_FORWARD_GROUND = -0.008                      -- external (+0x54)
-local DRAG_FORWARD_AIR = -0.028                         -- external (+0x50)
-local DRAG_UP = -0.01                                   -- external (+0x58)
-local DRAG_SIDE = -0.4                                  -- external (+0x5c)
-local SPEED_CAP = 16 * FRAMES_PER_SECOND                -- external, units per second on each world axis
-local JUMP_HOLD_TICKS = 60                              -- external (+0x00): the most frames a held button extends the jump
-local JUMP_HOLD_ACCEL = 0.8 * 0.076                     -- external (0.8 times +0x38), units per frame squared, added to the vertical speed in the jump
+local FORCE_DEAD = 0.051                                -- external (FUN_804e4e00): the acceleration below which the resting rules zero it
+local GRAVITY = 0.08                                    -- external (+0x114), units per frame squared: the engine's gravity (-288 a second squared) is the same
+local FRICTION_LIMIT = -0.2825                          -- external (+0x104): the ground's grip: the forward acceleration on the ground can't exceed -this times the gravity's pull into the surface (0.0226 on flat ground)
+local FRICTION_SIDE = -0.6                              -- external (+0x100): the sideways slide's friction, times the pull into the surface
 local GROUND_GRIP = 0.99                                -- external (FUN_804dd3f8): the share of his old local speed kept when he turns on the ground with the stick pushed
-local AIR_GRIP = 0.1                                    -- external: the same in the air
+local KEPT_VELOCITY_TOLERANCE = 0.01                    -- units per second: how far the engine's horizontal velocity may be from the one he handed it for his own ground speeds to stand
+local PLANE_CHANGED_EPSILON = 1e-6                       -- dot product of two ground normals under 1 minus this: another plane (the same triangle gives the same normal)
+
+-- ==== Constants: ground turning ====
 local TURN_SLOW_ANGLE = 0x1000 / 0x10000 * 2 * math.pi  -- external: below it the heading moves by a eighth of the difference a frame, up to TURN_MID_ANGLE by a quarter, else by TURN_MAX_STEP
 local TURN_MID_ANGLE = 0x2000 / 0x10000 * 2 * math.pi
 local TURN_MAX_STEP = 0x800 / 0x10000 * 2 * math.pi
 local BRAKE_ANGLE = 0x6000 / 0x10000 * 2 * math.pi
+local WIDE_TURN_STEP = 0x100 / 0x10000 * 2 * math.pi    -- external (FUN_804dcfa8): the most the heading turns a frame in the gentle turn
+local STAND_TURN_STEP = 0x2000 / 0x10000 * 2 * math.pi  -- external (FUN_804e4e00): the most the heading turns a frame when he stands still
+local STEEP_TURN_STEP = 0x600 / 0x10000 * 2 * math.pi   -- external (FUN_804de5a0): per unit of the sideways pull of gravity, no stick on a slope steeper than 45 degrees, when not curled
+local STEEP_TURN_STEP_BALL = 0xC00 / 0x10000 * 2 * math.pi -- external (FUN_804de5a0): the same for the ball (his curled states)
+
+-- ==== Constants: walls ====
+local WALL_STOP_SPEED = 15.0                            -- external (FUN_804dac14, DAT_8065ce40): per frame; at this forward speed or more a wall in front stops him dead
+local WALL_HEAD_ON_SPEED = 3.7                          -- external (FUN_804dac14, record +0x30): per frame; at this speed or more a head-on wall zeroes his horizontal velocity
+local WALL_HEAD_ON_COS = -0.98                          -- external (FUN_804dac14, DAT_8065ce6c): the velocity direction's cosine to the wall's normal that counts as head-on
+local WALL_TURN_AWAY = 0.75 * math.pi                   -- external (FUN_804db674: 0x6000 of 0x10000): a stored turn target further than this from the heading flips it by half a turn when it slides
+
+-- ==== Constants: air ====
+local AIR_ACCEL = 0.031                                 -- external (+0x40), doubled while falling (FUN_804e38a8)
+local AIR_BRAKE = -0.17                                 -- external (+0x4c): the air acceleration when the stick is more than 135 degrees from his heading and forward speed > RUN_SPEED
+local DRAG_FORWARD_AIR = -0.028                         -- external (+0x50)
+local DRAG_UP = -0.01                                   -- external (+0x58)
+local DRAG_SIDE = -0.4                                  -- external (+0x5c)
+local AIR_GRIP = 0.1                                    -- external: the same in the air
+local AIR_LEVEL_SPEED = 5.09                             -- observed (sadx_1) + decompile (FUN_804dd7a0, w3+0xd0): his 3D speed a frame at or under which the tilt of his frame levels out
+
+-- ==== Constants: jump ====
+local JUMP_SPEED = 1.66 * FRAMES_PER_SECOND             -- external
+local JUMP_HOLD_TICKS = 60                              -- external (+0x00): the most frames a held button extends the jump
+local JUMP_HOLD_ACCEL = 0.8 * 0.076                     -- external (0.8 times +0x38), units per frame squared, added to the vertical speed in the jump
+
+-- ==== Constants: spin dash and roll ====
 local SPIN_DASH_MIN_CHARGE = 2.0                        -- external (FUN_805a4340), units per frame: the charge starts at the larger of this and his forward speed
 local SPIN_DASH_CHARGE_STEP = 0.4                       -- external (FUN_805a3eb8), units per frame, per tick held
 local SPIN_DASH_MAX_CHARGE = 10.0                       -- external (FUN_805a3eb8): the step is added only while the charge is under this, so the last step ends above it (10.4 from 2.0 in the game's floats)
@@ -48,17 +84,14 @@ local ROLL_SLOPE_DRAG = -0.0002                         -- external (FUN_804decb
 local ROLL_FLAT_NORMAL = 0.98                           -- external (FUN_804decb0, DAT_8065ceb0 as a double): above it the rolling ball's drag is DRAG_FORWARD_GROUND
 local BRAKE_FORCE = -0.18                               -- external (+0xe4 of the record, FUN_804df428): the deceleration against his speed while the spin dash charges
 local GRIP_ROLL = -0.1                                  -- external (+0xfc, FUN_804df428): times the pull into the surface, the share the charge's forward deceleration loses
+
+-- ==== Constants: brake and turn around ====
 local SKID_FRAMES = 36                                  -- external (state 0xD, FUN_805aa66c, FUN_804cf4f4, table entry 0x14): the frames it lasts when nothing stops it, derived: the motion's 4 blend frames and 32 more (33 frames, 1 a frame)
 local LANDING_SKID_FRAMES = 1                           -- external (FUN_805aa66c, state 8 and others): a landing into state 0xD writes another motion than 0x14, so the next frame leaves it
 local TURN_AROUND_FRAMES = 18                           -- external (FUN_805aa66c state 0xD, FUN_804cf4f4, table entry 0x1E): the frames after the skid's stop until the Turn Around motion (16 frames, 0.9 a frame) has ended, derived
 local TURN_AROUND_RATE = 0.9                            -- external (table entry 0x1E): the Turn Around motion's frames a game frame
--- Standing poses (table entries 0x1 Land after a fall, 0x2 Alternate Stand after a jump, 0x4 and 0x5 the idle waiting, 0x1D the roll's end; FUN_805a3e58, FUN_805a9c28, FUN_804cf4f4). A motion that plays once ends at its
--- last frame (frame >= count - 1, at the table's rate) after its blend; its value is the game frames from the change to the end, derived: blend frames (1 / step) + (frames - 1) / rate. Land 4 + 19 / 0.25, Wait A the same,
--- Wait B 4 + 38 / 0.25, Roll End 16 + 15 / 1. The entry after each is the table's next id (Land to Alternate Stand, Wait A to Wait B, Roll End to Land).
-local POSE_END = {rollEnd = 31, landFall = 80, waitA = 80, waitB = 156, waitBack = 81}
-local POSE_NEXT = {rollEnd = "landFall", landFall = "standAlt", waitA = "waitB", waitB = "waitBack"}
-local POSE_RATE = {standAlt = 0.25, landFall = 0.25, waitA = 0.25, waitB = 0.25, waitBack = 0.25, rollEnd = 1.0} -- external (table +0xC); waitBack (id 6) plays backwards: its rate is sent negative
-local IDLE_WAIT_FRAMES = 0x708                          -- external (FUN_805a9c28): the state 1 steps (work+0xE) after which the idle waiting (Wait A) starts, 1800 = 30 s at 60 a second
+
+-- ==== Constants: homing attack ====
 local HOMING_SPEED = 5.0                                -- external (FUN_805a8958, FUN_805a8310): units per frame
 local HOMING_CONE = 0x5000 / 0x10000 * 2 * math.pi      -- external (FUN_805a8310): a target must be within this of his heading, radians
 local HOMING_TURN = 0x800 / 0x10000 * 2 * math.pi       -- external (FUN_805a8310): the most his heading turns towards the target a frame
@@ -67,31 +100,25 @@ local HOMING_DECAY = 0.9                                -- external (FUN_805a831
 local HOMING_END_COUNT = 6                              -- external (FUN_805aa66c, state 0xE): the counter (work+0x80) from which the attack ends in the fall
 local HOMING_MAX_FRAMES = 359                           -- external (FUN_805aa66c): the frame counter (work+0x82) above which the attack ends in the jump
 local HOMING_LONG_FRAMES = 180                          -- external (FUN_805a8310): past this many frames the speed is scaled by 0.7 + 0.1 x a random number in [0, 1)
-local STEEP_TURN_STEP_BALL = 0xC00 / 0x10000 * 2 * math.pi -- external (FUN_804de5a0): the same for the ball (his curled states)
-local AIR_LEVEL_SPEED = 5.09                             -- observed (sadx_1) + decompile (FUN_804dd7a0, w3+0xd0): his 3D speed a frame at or under which the tilt of his frame levels out
-local KEPT_VELOCITY_TOLERANCE = 0.01                    -- units per second: how far the engine's horizontal velocity may be from the one he handed it for his own ground speeds to stand
-local PLANE_CHANGED_EPSILON = 1e-6                       -- dot product of two ground normals under 1 minus this: another plane (the same triangle gives the same normal)
+
+-- ==== Constants: ground contact and probe ====
 local ROLL_GAP_TICKS = 8                               -- placeholder: ticks without ground contact the charge and the roll survive (the engine's ground contact flickers on uneven terrain)
-local AIR_ANIMATION_TICKS = 8                           -- placeholder: ticks without ground contact before the air motions play (the engine's ground contact flickers on uneven terrain)
-local CONTACT_WINDOW = 8                                -- placeholder: see LAND_CONTACTS
-local LAND_CONTACTS = 4                                 -- placeholder: ticks with ground contact among the last CONTACT_WINDOW before the air motions give way to the ground ones
-local WALK_SPEED = 0.46                                 -- external (+0x24): the speeds (per frame) up to which the game plays Walk, Speedwalk (up to +0x28), Jog (+0x2c) and Run (+0x34); Sprint above
-local SPEEDWALK_SPEED = 1.39
-local JOG_SPEED = 2.3
-local RUN_MAX_SPEED = 5.09
 local PROBE_REACH_SLOW = 0.1                           -- decompile (FUN_804d83c0): the second ground sphere (centre 4.0 above his position, radius 4.1) reaches this far below his feet at WALK_SPEED or less
 -- The decompile's value is 1.1 (radius 5.1). Raised to 1.5 at the user's request (2026-10-11, not run): a slow roll up the 14.7 degree ramp of sadx_4 (4.5 per frame, rising 1.2 a tick) left the floor at the crest with an
 -- overshoot of 0.99 against a reach of 0.98, where the original is put down on the plateau. A ramp of that slope needs about 0.26 x speed, so 1.5 covers it up to RUN_MAX_SPEED. Hypothesis: the original's real reason is unknown.
 local PROBE_REACH_FAST = 1.5                           -- the same at RUN_MAX_SPEED or more; linear between
-local GRAVITY = 0.08                                    -- external (+0x114), units per frame squared: the engine's gravity (-288 a second squared) is the same
-local FRICTION_LIMIT = -0.2825                          -- external (+0x104): the ground's grip: the forward acceleration on the ground can't exceed -this times the gravity's pull into the surface (0.0226 on flat ground)
-local FRICTION_SIDE = -0.6                              -- external (+0x100): the sideways slide's friction, times the pull into the surface
-local WIDE_TURN_STEP = 0x100 / 0x10000 * 2 * math.pi    -- external (FUN_804dcfa8): the most the heading turns a frame in the gentle turn
-local MID_SPEED = (WALK_SPEED + RUN_SPEED) / 2                 -- external (0.5 times +0xc0 + +0xc4): from here a turn of more than 22.5 degrees brakes
-local STAND_TURN_STEP = 0x2000 / 0x10000 * 2 * math.pi  -- external (FUN_804e4e00): the most the heading turns a frame when he stands still
-local STEEP_TURN_STEP = 0x600 / 0x10000 * 2 * math.pi   -- external (FUN_804de5a0): per unit of the sideways pull of gravity, no stick on a slope steeper than 45 degrees, when not curled
-local FORCE_DEAD = 0.051                                -- external (FUN_804e4e00): the acceleration below which the resting rules zero it
-local SNAP_SPEED = 0.87 * WALK_SPEED                      -- external (FUN_804dc9ec): without the stick a speed under this stops
+
+-- ==== Constants: animation ====
+local AIR_ANIMATION_TICKS = 8                           -- placeholder: ticks without ground contact before the air motions play (the engine's ground contact flickers on uneven terrain)
+local CONTACT_WINDOW = 8                                -- placeholder: see LAND_CONTACTS
+local LAND_CONTACTS = 4                                 -- placeholder: ticks with ground contact among the last CONTACT_WINDOW before the air motions give way to the ground ones
+-- Standing poses (table entries 0x1 Land after a fall, 0x2 Alternate Stand after a jump, 0x4 and 0x5 the idle waiting, 0x1D the roll's end; FUN_805a3e58, FUN_805a9c28, FUN_804cf4f4). A motion that plays once ends at its
+-- last frame (frame >= count - 1, at the table's rate) after its blend; its value is the game frames from the change to the end, derived: blend frames (1 / step) + (frames - 1) / rate. Land 4 + 19 / 0.25, Wait A the same,
+-- Wait B 4 + 38 / 0.25, Roll End 16 + 15 / 1. The entry after each is the table's next id (Land to Alternate Stand, Wait A to Wait B, Roll End to Land).
+local POSE_END = {rollEnd = 31, landFall = 80, waitA = 80, waitB = 156, waitBack = 81}
+local POSE_NEXT = {rollEnd = "landFall", landFall = "standAlt", waitA = "waitB", waitB = "waitBack"}
+local POSE_RATE = {standAlt = 0.25, landFall = 0.25, waitA = 0.25, waitB = 0.25, waitBack = 0.25, rollEnd = 1.0} -- external (table +0xC); waitBack (id 6) plays backwards: its rate is sent negative
+local IDLE_WAIT_FRAMES = 0x708                          -- external (FUN_805a9c28): the state 1 steps (work+0xE) after which the idle waiting (Wait A) starts, 1800 = 30 s at 60 a second
 -- Playback rate. External (FUN_804cf4f4 and the animation table at _Main.rel 0x3544E0, confirmed on a RAM dump of the running game): each game frame the motions of table modes 9 and 10 advance by a per-motion value times
 -- a speed. Walk, Speedwalk, Jog, Run and the curled Jump use work[0] (mode 10): the forward speed plus 20 times the excess (what FUN_805a99f0 writes there, the spin dash's charge while it charges); Sprint and the roll use the
 -- forward speed (mode 9).
@@ -101,14 +128,15 @@ local RATES = {walk = 3.4, speedwalk = 1.4, jog = 0.8, run = 0.5, sprint = 0.5}
 local BLEND_STEPS = {stand = 1 / 16, walk = 0.25, speedwalk = 0.25, jog = 0.25, run = 0.25, sprint = 0.5, jump = 0.25, roll = 0.25, springFall = 0.125, fall = 0.25, landing = 1.0, brake = 0.25, damage = 1.0, turnAround = 1.0,
 	standAlt = 0.25, landFall = 0.25, waitA = 0.25, waitB = 0.25, waitBack = 0.25, rollEnd = 0.0625}
 local JUMP_RATE = 0.2                                      -- external (table entry 0xE: the jump and the charge): times work[0]
+local JUMP_WORK0 = 5.0                                  -- observed (tools/sadx_1-4, sadx_ball, sadx_homing: work[0] is exactly 5.0 in every airborne jump row, forward speed 0 to 10): the jump state's work[0], so the jump plays at 1 frame a step
 local ROLL_RATE = 0.7                                      -- external (table entry 0xF: the roll): times the forward speed
 local PICK_EXCESS_FACTOR = 5.0                             -- external (FUN_805a99f0, DAT_8065efbc): times the excess, added to the forward speed that picks the ground motion
 local RATE_EXCESS_FACTOR = 20.0                            -- external (FUN_805a99f0, DAT_8065f024): times the excess, added to the forward speed in work[0]
 local HARD_LANDING_VY = -5.0                               -- external (FUN_805aa66c, state 8): per frame; at his vertical speed this low or lower a landing without the stick and without speed plays Landing, else Stand
-local STAND_EPSILON = 1e-3                                 -- the game stands at a forward speed of exactly 0 with no stick (FUN_805a444c); groundStep zeroes the speeds it means to, this only absorbs float noise
-local BALL_BLINK_TICKS = 4                              -- observed (your report that 1 was far too fast), against the decompile (1 per 60 Hz step, see "Ball blink"): ticks per step of the game's blink counter
 local LANDING_TICKS = 16                                -- external (table entry 0x13: 16 frames, plays once at 1 a frame, blend 1): derived from the table, not observed
+local BALL_BLINK_TICKS = 1                              -- observed (tools/sadx_ball.csv, 2026-10-12: counter_7e +1 per vi_count in 373 of 375 steps), ticks per step of the game's blink counter; 4 was the compromise for your earlier report that 1 was too fast
 
+-- ==== Utilities ====
 -- An angle in (-pi, pi].
 local function wrapAngle(angle)
 	return angle - 2 * math.pi * math.floor((angle + math.pi) / (2 * math.pi))
@@ -123,44 +151,7 @@ local function float32(value)
 	return (string.unpack("f", string.pack("f", value)))
 end
 
--- The game's list of homing targets (FUN_8041e060, built by the collision manager each frame) is every registered target (objects.lua) whose position is within HOMING_RANGE of his. Returns whether the list is
--- not empty, and the nearest entry within HOMING_CONE of the heading (as FUN_805a8310 picks it: strictly nearer wins, so the first of equals) with the vector to it.
-local function homingCandidates(entity, heading)
-	local px, py, pz = sf.position(entity)
-	local rangeSquared = HOMING_RANGE * HOMING_RANGE
-	local listed, best, bestSquared, bx, by, bz = false, nil, rangeSquared, 0, 0, 0
-	for target in pairs(homingTargets) do
-		if not sf.exists(target) then
-			homingTargets[target] = nil
-		else
-			local tx, ty, tz = sf.position(target)
-			local dx, dy, dz = tx - px, ty - py, tz - pz
-			local squared = dx * dx + dy * dy + dz * dz
-			if squared < rangeSquared then
-				listed = true
-				if squared < bestSquared and math.abs(wrapAngle(math.atan(dz, dx) - heading)) <= HOMING_CONE then
-					best, bestSquared, bx, by, bz = target, squared, dx, dy, dz
-				end
-			end
-		end
-	end
-	return listed, best, bx, by, bz
-end
-
--- How far below his feet the game still finds the floor (FUN_804d83c0 of the decompile): its second sphere's lowest point is PROBE_REACH_SLOW below the feet at WALK_SPEED forward speed or less, rising linearly to
--- PROBE_REACH_FAST at RUN_MAX_SPEED. The engine's ground snap does the same job (a stepped move straight down by this much, kept only if it ends on a floor, not while rising). Units: forward speed per frame.
-local function probeReach(forwardSpeed)
-	local t = math.min(math.max((forwardSpeed - WALK_SPEED) / (RUN_MAX_SPEED - WALK_SPEED), 0), 1)
-	return PROBE_REACH_SLOW + (PROBE_REACH_FAST - PROBE_REACH_SLOW) * t
-end
-
--- Turns his model to the heading. External (FUN_805a9f90, his draw): the model is drawn turned about Y by 0x8000 - heading, the heading in the game's convention (forward = (cos, sin) over x and z); the matrix is the
--- SDK's right-handed one (hypothesis, as glm's), and the model's own front is taken to be the game's (hypothesis: if he faces backwards or sideways, the offset is here).
-local MODEL_YAW_OFFSET = math.pi
-local function face(entity, heading)
-	sf.turnY(entity, MODEL_YAW_OFFSET - heading)
-end
-
+-- ==== Physics: ground ====
 -- The axes of his frame on a surface: forward = the heading laid into the plane of the normal, side = forward x normal (flat: (-sin, 0, cos) of the heading, as everywhere here). The game rotates his local speeds by the
 -- surface's tilt and the heading (FUN_804dc9ec), so these are its local x and z.
 local function groundAxes(angle, nx, ny, nz)
@@ -499,6 +490,7 @@ local function curledStep(state, charging, hasWish, stickAngle, heading, vx, vy,
 	return newHeading, forward, side, wx, wy, wz
 end
 
+-- ==== Physics: air ====
 -- One tick in the air (the jump 8, the fall 0xC and the other free air states, FUN_804e38a8, FUN_804dd3f8 and FUN_804dc9ec of the decompile; external). The engine's gravity is the game's, so only the rest is here: the drag
 -- on the three speeds (DRAG_FORWARD_AIR, DRAG_UP, DRAG_SIDE; from their values at the start of the tick) and the stick. Stick: more than 135 degrees off his heading at a forward speed over RUN_SPEED: AIR_BRAKE forward and
 -- the turn goes to the target he had (the stick's of the last frames); else the target is the stick; within 22.5 degrees of the heading also AIR_ACCEL forward, doubled while he falls (the engine's y speed under 0).
@@ -562,6 +554,31 @@ local function airStep(state, hasWish, stickAngle, heading, vx, vy, vz, frames, 
 	return newHeading, wx, wy, wz, brake
 end
 
+-- ==== Physics: homing attack ====
+-- The game's list of homing targets (FUN_8041e060, built by the collision manager each frame) is every registered target (objects.lua) whose position is within HOMING_RANGE of his. Returns whether the list is
+-- not empty, and the nearest entry within HOMING_CONE of the heading (as FUN_805a8310 picks it: strictly nearer wins, so the first of equals) with the vector to it.
+local function homingCandidates(entity, heading)
+	local px, py, pz = sf.position(entity)
+	local rangeSquared = HOMING_RANGE * HOMING_RANGE
+	local listed, best, bestSquared, bx, by, bz = false, nil, rangeSquared, 0, 0, 0
+	for target in pairs(homingTargets) do
+		if not sf.exists(target) then
+			homingTargets[target] = nil
+		else
+			local tx, ty, tz = sf.position(target)
+			local dx, dy, dz = tx - px, ty - py, tz - pz
+			local squared = dx * dx + dy * dy + dz * dz
+			if squared < rangeSquared then
+				listed = true
+				if squared < bestSquared and math.abs(wrapAngle(math.atan(dz, dx) - heading)) <= HOMING_CONE then
+					best, bestSquared, bx, by, bz = target, squared, dx, dy, dz
+				end
+			end
+		end
+	end
+	return listed, best, bx, by, bz
+end
+
 -- One tick of the homing attack (state 0xE, FUN_805a8310 of the decompile; external; also run once when it starts, FUN_805a8958). state.homing.count is the game's work+0x80, state.homing.frames its work+0x82.
 -- While the count is 0 or less and some target is listed: the nearest one within HOMING_CONE of the heading is chased: the heading turns towards it by HOMING_TURN, and the velocity is HOMING_SPEED along the new
 -- heading's horizontal direction scaled to the target's vertical share (y over the distance): so he flies the heading, not straight at it. On the first frame (count under 0) a target above him is not chased:
@@ -594,6 +611,15 @@ local function homingStep(state, entity, hasWish, stickAngle, heading, vx, vy, v
 	return newHeading, wx, vy + DRAG_UP * vy * frames, wz, turnAway, false
 end
 
+-- ==== Physics: ground probe ====
+-- How far below his feet the game still finds the floor (FUN_804d83c0 of the decompile): its second sphere's lowest point is PROBE_REACH_SLOW below the feet at WALK_SPEED forward speed or less, rising linearly to
+-- PROBE_REACH_FAST at RUN_MAX_SPEED. The engine's ground snap does the same job (a stepped move straight down by this much, kept only if it ends on a floor, not while rising). Units: forward speed per frame.
+local function probeReach(forwardSpeed)
+	local t = math.min(math.max((forwardSpeed - WALK_SPEED) / (RUN_MAX_SPEED - WALK_SPEED), 0), 1)
+	return PROBE_REACH_SLOW + (PROBE_REACH_FAST - PROBE_REACH_SLOW) * t
+end
+
+-- ==== Animation: ball blink and motion pick ====
 -- The blink counter's step (docs/SADX_SONIC_REFERENCE.md "Ball blink"): called each tick while the ball flag is set, whatever the motion (the jump, the spin dash charge, the roll, the homing flight); it
 -- returns whether the Ball entry is drawn instead of the playing motion this tick. The counter is not touched while the flag is clear, so a later ball goes on from the value left.
 local function ballBlinkStep(state)
@@ -606,6 +632,120 @@ local function ballBlinkStep(state)
 	return state.ballTicks & 0x11 ~= 0
 end
 
+-- The motion the tick plays and its playback rate (nil: the motion's own), from the state the tick's physics left. forward and excess = groundStep's (units per frame), turnAway = the brake's skid, charging = the spin dash's charge.
+-- Keeps the ground contact window (state.contacts), the landing, the standing poses and the idle count in state. Returns the motion's name and the rate.
+local function chooseMotion(state, grounded, vy, hasWish, charging, forward, excess, turnAway, frames)
+	-- Motion. External (FUN_805a99f0, FUN_805aa66c; "Animation" in docs/SADX_SONIC_REFERENCE.md): on the ground by forward speed plus the excess, Walk to WALK_SPEED, Speedwalk to SPEEDWALK_SPEED, Jog to JOG_SPEED, Run to RUN_MAX_SPEED,
+	-- Sprint above; standing still is Stand; Brake while the brake state 0xD's skid runs (state.brake), Turn Around after its stop (state.turnFrames); Landing for LANDING_TICKS after a hard landing standing still;
+	-- the curled Jump for the jump, the charge and the roll. Placeholder or hypothesis (see the top): Damage while state.damaged, Spring Fall while rising after a spring, else Fall.
+	-- Ground contact flickers on uneven terrain (observed in a log of a run: on a slope or stairs the body touches the ground every second or third tick). Without any air motion playing, a gap of fewer than AIR_ANIMATION_TICKS ticks
+	-- keeps the ground motion; once they play, he counts as landed when at least LAND_CONTACTS of the last CONTACT_WINDOW ticks touched the ground, not when one did (placeholder rule: no flash of the landing motion in the middle of a fall).
+	local contacts = state.contacts or {}
+	table.insert(contacts, 1, grounded)
+	contacts[CONTACT_WINDOW + 1] = nil
+	state.contacts = contacts
+	local contactCount = 0
+	for _, touched in ipairs(contacts) do
+		if touched then contactCount = contactCount + 1 end
+	end
+	local landed = state.wasGrounded == false and contactCount >= LAND_CONTACTS or state.wasGrounded ~= false and grounded
+	local airTicks = landed and 0 or (state.airTicks or 0) + 1
+	state.airTicks = airTicks
+	local animGrounded = landed or (airTicks < AIR_ANIMATION_TICKS and not state.jumped and not state.springed)
+	-- The window counts the contacts since the air motions began (observed: left as it was, the ticks of the ground he just left counted as a landing the moment after a jump, and Fall and Landing restarted the jump).
+	if state.wasGrounded ~= false and not animGrounded then state.contacts = {} end
+	local motion
+	-- The playback rate (nil: the motion's own, as before): the table's value times a speed (RATES, JUMP_RATE, ROLL_RATE). Table modes 9 and 10 advance by that product, so a rate of zero holds the pose; the engine's 0 means
+	-- its default rate, hence the small floor. The sign is dropped (a negative speed would play backwards in the game; the engine's rate is not tried with a negative there); only Wait Back (table id 6, mode 6) is sent negative, below.
+	local rate = nil
+	if (state.damaged or 0) > 0 then
+		state.damaged = state.damaged - 1
+		motion = "damage"
+	elseif animGrounded and (state.jumpGrace or 0) > 0 then
+		-- The tick after the jump still reports the ground.
+		state.jumpGrace = state.jumpGrace - 1
+		motion = "jump"
+		state.work0 = JUMP_WORK0
+		rate = JUMP_RATE * state.work0
+	elseif animGrounded then
+		local cameFromJump, cameFromSpring = state.jumped, state.springed
+		state.springed, state.jumped = false, false
+		-- Landing (FUN_805aa66c states 8 and 0xC): with the brake state's condition false, no stick and a forward speed of exactly 0 he stands (state 1) and the table's Landing plays only when his vertical speed was
+		-- HARD_LANDING_VY or lower (else the motion is 2 after a jump, 1 after a fall: standing poses without an entry in Sonic.json, Stand here); any other landing goes to the running state and picks the motion by
+		-- speed at once (FUN_805a99f0). A stick or a speed ends the landing motion (state 1 goes to 2 on the stick, motion 9).
+		local standing = not hasWish and not charging and not state.rolling and math.abs(forward) < STAND_EPSILON
+		if state.wasGrounded == false then
+			state.landing = (standing and (state.airVy or 0) / FRAMES_PER_SECOND <= HARD_LANDING_VY) and LANDING_TICKS or 0
+		end
+		if not standing then state.landing = 0 end
+		-- Standing poses (FUN_805aa66c states 8 and 0xC write the motion 2 after a jump and 1 after a fall when the landing is not the hard one; FUN_805a9c28 keeps the motions 0 to 6 in state 1 and after 0x708 steps
+		-- of standing writes 4, Wait A, which runs on to 5, Wait B; FUN_805a3e58 writes 0x1D on the roll's end, which FUN_805a99f0 leaves alone until it has ended). Placeholders: the landing from a spring stays Stand (not read),
+		-- the step counter (work+0xE) is taken to restart whenever he is not standing (hypothesis), and Wait B runs on to Wait Back (id 6, mode 6: Wait A's data played backwards from its last frame, 4 blend frames + 77 steps of 0.25, then Stand; the engine plays it with a negative rate).
+		if state.wasGrounded == false then
+			state.pose = standing and state.landing == 0 and not cameFromSpring and {name = cameFromJump and "standAlt" or "landFall", frames = 0} or nil
+		end
+		local pose = state.pose
+		if charging or state.rolling or (pose ~= nil and pose.name ~= "rollEnd" and not standing) then pose = nil end
+		if pose ~= nil then
+			pose.frames = pose.frames + frames
+			if POSE_END[pose.name] ~= nil and pose.frames >= POSE_END[pose.name] then
+				local nextName = POSE_NEXT[pose.name]
+				pose = nextName ~= nil and (standing or pose.name ~= "rollEnd") and {name = nextName, frames = 0} or nil
+			end
+		end
+		state.idleFrames = standing and (state.idleFrames or 0) + frames or 0
+		if state.idleFrames > IDLE_WAIT_FRAMES and (state.landing or 0) == 0 and (pose == nil or POSE_NEXT[pose.name] == "standAlt" or pose.name == "standAlt") then
+			pose = {name = "waitA", frames = 0}
+			state.idleFrames = 0
+		end
+		state.pose = pose
+		if (state.landing or 0) > 0 then
+			state.landing = state.landing - 1
+			motion = "landing"
+		elseif charging then
+			-- The charge: the curled Jump (table entry 0xE) at JUMP_RATE times work[0], which the charge holds (FUN_805a4340 starts it at the larger of 2.0 and the forward speed, FUN_805a3eb8 adds 0.4 a frame).
+			motion = "jump"
+			state.work0 = state.charge
+			rate = JUMP_RATE * state.work0
+		elseif state.rolling then
+			-- The roll (state 5, table entry 0xF, FUN_805a3eb8): the curled Jump's motion data at ROLL_RATE times the forward speed, under its own entry ("roll" in Sonic.json: the change from the charge's entry blends).
+			motion = "roll"
+			rate = ROLL_RATE * forward
+		elseif turnAway then motion = "brake"
+		elseif state.turnFrames ~= nil then
+			-- FUN_805aa66c state 0xD: the stop with the stick still far off writes motion 0x1E (Turn Around, 0.9 a frame); FUN_805a99f0 leaves it alone until it has ended.
+			motion = "turnAround"
+			rate = TURN_AROUND_RATE
+		elseif pose ~= nil and (standing or pose.name == "rollEnd") then
+			motion = pose.name
+			rate = POSE_RATE[motion]
+		elseif standing then motion = "stand"
+		else
+			-- FUN_805a99f0: the forward speed plus PICK_EXCESS_FACTOR times the excess against the four speeds, not its size (a negative forward speed picks Walk), and work[0] is that speed with RATE_EXCESS_FACTOR.
+			local pick = forward + PICK_EXCESS_FACTOR * excess
+			state.work0 = forward + RATE_EXCESS_FACTOR * excess
+			if pick <= WALK_SPEED then motion = "walk"
+			elseif pick <= SPEEDWALK_SPEED then motion = "speedwalk"
+			elseif pick <= JOG_SPEED then motion = "jog"
+			elseif pick <= RUN_MAX_SPEED then motion = "run"
+			else motion = "sprint" end
+			rate = RATES[motion] * (motion == "sprint" and forward or state.work0)
+		end
+	else
+		if state.springed and vy <= 0 then state.springed = false end
+		if state.springed then state.jumped = false end
+		motion = state.springed and "springFall" or state.jumped and "jump" or "fall"
+		if motion == "jump" then
+			state.work0 = JUMP_WORK0
+			rate = JUMP_RATE * state.work0
+		end
+		state.landing, state.pose, state.idleFrames = 0, nil, 0
+	end
+	state.wasGrounded = animGrounded
+	return motion, rate
+end
+
+-- ==== Effects and model ====
 -- The blue sphere of the homing burst and the spin dash aura (sf.spawnDashSphere, docs/SADX_SONIC_REFERENCE.md "Burst and aura timing"). Decompile (FUN_8059dd30, FUN_8059dfb0): it sits at the task position plus (0, 5, 0) turned by his frame, and the
 -- task position is SADX_FEET_BELOW_BODY under the engine's body position (observed, START_LIFT in replay.lua), so the offset from the entity is 5 along his up axis minus that. ux, uy, uz = his up axis (the ground normal or the air's tilt).
 local DASH_SPHERE_UP = 5.0                                -- decompile (DAT_8065ef10)
@@ -627,24 +767,32 @@ local function ballSquash(entity, on)
 	if on then sf.setModelTransform(entity, 0, -1.0, 0, math.pi / 4, 0.7, 1.1, 0.8) else sf.setModelTransform(entity) end
 end
 
--- One tick of Sonic. replay = SadxReplay.step()'s input (nil without a replay); returns the name of the motion chosen, for SadxReplay.log.
-local function playerStep(entity, replay)
-	local state = sf.state(entity)
-	state.lock = state.lock or 0
-	state.invulnerable = state.invulnerable or 0
-	if state.invulnerable > 0 then state.invulnerable = state.invulnerable - 1 end
-	if state.lock > 0 then
-		state.lock = state.lock - 1
-		-- A launch ends the curled and the homing states (the game's spring and dash panel states clear the ball flag, FUN_805a6004).
-		state.ball, state.rolling, state.charge, state.homing, state.brake, state.turnFrames = false, false, nil, nil, nil, nil
-		local _, lockedVy = sf.velocity(entity)
-		sf.blink(entity, false)
-		ballSquash(entity, false)
-		local lockedMotion = sf.grounded(entity) and "sprint" or lockedVy > 0 and "springFall" or "fall"
-		sf.animate(entity, lockedMotion, 0, BLEND_STEPS[lockedMotion])
-		return lockedMotion
-	end
+-- Turns his model to the heading. External (FUN_805a9f90, his draw): the model is drawn turned about Y by 0x8000 - heading, the heading in the game's convention (forward = (cos, sin) over x and z); the matrix is the
+-- SDK's right-handed one (hypothesis, as glm's), and the model's own front is taken to be the game's (hypothesis: if he faces backwards or sideways, the offset is here).
+local MODEL_YAW_OFFSET = math.pi
+local function face(entity, heading)
+	sf.turnY(entity, MODEL_YAW_OFFSET - heading)
+end
 
+-- The model's end of the tick: the ball blink, the squash, the motion and the facing (see "Ball blink" in docs/SADX_SONIC_REFERENCE.md).
+local function applyModel(entity, state, motion, rate, onGround)
+	-- Ball blink. Decompile (FUN_805af2b0, FUN_805a9f90, FUN_805a3eb8, FUN_805a4340; docs/SADX_SONIC_REFERENCE.md "Ball blink"): the main function adds 1 to the counter (work+0x7e) once per game step while status 0x100 is set, whatever the
+	-- action, and nothing else adds to it; the draw (called at the end of every step) uses the Ball entry (motion 0x20, jumpball model) instead of the playing motion on the steps where counter & 0x11 is not zero, with the same animation clock
+	-- (sf.blink). So in each 32 steps the odd ones of the first 16 and all of the last 16 are the ball. The counter is zeroed only by the spin dash start and by the spin dash charge's end (FUN_805a3eb8); a jump, a homing attack and a roll
+	-- go on from the value left. The decompile steps the game once per 60 Hz retrace in play (FUN_8047ab7c(1,1); one extra step when a frame ran late), so by the code the port's tick is 1 per step; BALL_BLINK_TICKS stays 4 because
+	-- of your observation that 1 was far too fast: the conflict is open (see the reference).
+	-- The port steps it on every tick with state.ball (ballBlinkStep), the roll and the homing flight included, whatever motion plays.
+	local blink = state.ball and ballBlinkStep(state)
+	sf.blink(entity, blink and "ball" or false)
+	ballSquash(entity, motion == "jump" and onGround)
+	sf.animate(entity, motion, rate and math.max(math.abs(rate), 1e-6) * (motion == "waitBack" and -1 or 1) or 0, BLEND_STEPS[motion] or 0)
+	face(entity, state.heading)
+end
+
+-- ==== Tick: input ====
+-- His stick and buttons for the tick: the replay's when one runs, else the keys (W A S D relative to the camera, SPACE the jump button, CTRL the action button), which only the active player outside the debug mode reads.
+-- Sets state.stickMag, state.spaceHeld and state.actionHeld, and state.heading on the first tick. Returns hasWish, stickAngle (nil without the stick), pressed, justPressed, actionHeld and actionPressed.
+local function readInput(entity, state, replay)
 	-- The camera's heading over the ground, and the way to its right.
 	local fx, _, fz = sf.cameraForward()
 	local length = math.sqrt(fx * fx + fz * fz)
@@ -668,14 +816,6 @@ local function playerStep(entity, replay)
 	state.stickMag = math.min(1, wishLength)
 	local stickAngle = hasWish and math.atan(wz, wx) or nil
 
-	local frames = sf.tickTime() * FRAMES_PER_SECOND
-	local vx, vy, vz = sf.velocity(entity)
-	-- The velocity as the engine step left it, before this tick changes anything, for the replay log (SadxReplay.log).
-	state.logV0x, state.logV0y, state.logV0z = vx, vy, vz
-	local grounded = sf.grounded(entity)
-	-- The vertical speed of the last tick without ground contact: the game's landing reads its vertical speed (w2+8) before the contact's response, the engine's is already cut when the landing is seen.
-	if not grounded then state.airVy = vy end
-
 	-- The buttons. External (FUN_804e60cc, FUN_804e6064, FUN_805a4340, FUN_805a3eb8 of the decompile): the jump, the homing attack and the spin dash start on the press; the jump's hold and the spin dash's charge read the
 	-- button held. SPACE is the jump button, CTRL the action button (the game's spin dash button; in the air it uncurls him).
 	local pressed = controlled and sf.key("SPACE")
@@ -686,7 +826,46 @@ local function playerStep(entity, replay)
 	if replay ~= nil then actionHeld = replay.b end
 	local actionPressed = actionHeld and (not state.actionHeld or state.actionPending == true)
 	state.actionHeld = actionHeld
+	return hasWish, stickAngle, pressed, justPressed, actionHeld, actionPressed
+end
 
+-- ==== Tick: locked ====
+-- A tick while the control is locked (a launch): the curled and homing states end and a motion plays by where he is going. Returns the motion's name.
+local function lockedStep(entity, state)
+	-- A launch ends the curled and the homing states (the game's spring and dash panel states clear the ball flag, FUN_805a6004).
+	state.ball, state.rolling, state.charge, state.homing, state.brake, state.turnFrames = false, false, nil, nil, nil, nil
+	local _, lockedVy = sf.velocity(entity)
+	sf.blink(entity, false)
+	ballSquash(entity, false)
+	local lockedMotion = sf.grounded(entity) and "sprint" or lockedVy > 0 and "springFall" or "fall"
+	sf.animate(entity, lockedMotion, 0, BLEND_STEPS[lockedMotion])
+	return lockedMotion
+end
+
+-- ==== Tick: Sonic ====
+-- One tick of Sonic. replay = SadxReplay.step()'s input (nil without a replay); returns the name of the motion chosen, for SadxReplay.log.
+local function playerStep(entity, replay)
+	local state = sf.state(entity)
+	state.lock = state.lock or 0
+	state.invulnerable = state.invulnerable or 0
+	if state.invulnerable > 0 then state.invulnerable = state.invulnerable - 1 end
+	if state.lock > 0 then
+		state.lock = state.lock - 1
+		return lockedStep(entity, state)
+	end
+
+	-- ==== input ====
+	local hasWish, stickAngle, pressed, justPressed, actionHeld, actionPressed = readInput(entity, state, replay)
+
+	local frames = sf.tickTime() * FRAMES_PER_SECOND
+	local vx, vy, vz = sf.velocity(entity)
+	-- The velocity as the engine step left it, before this tick changes anything, for the replay log (SadxReplay.log).
+	state.logV0x, state.logV0y, state.logV0z = vx, vy, vz
+	local grounded = sf.grounded(entity)
+	-- The vertical speed of the last tick without ground contact: the game's landing reads its vertical speed (w2+8) before the contact's response, the engine's is already cut when the landing is seen.
+	if not grounded then state.airVy = vy end
+
+	-- ==== ground contact ====
 	-- His ground contact for the rules. The tick after a jump the engine's last move still reports the ground, he is in the air (the game's jump clears its ground flag at once). The charge and the roll survive fewer than
 	-- ROLL_GAP_TICKS ticks without contact (placeholder: the engine's ground contact flickers on uneven terrain), longer and they end, the ball flag staying (the game's jump state).
 	local leave = state.leaveTicks or 0
@@ -703,6 +882,7 @@ local function playerStep(entity, replay)
 		state.charge, state.rolling, state.brake, curled, braking = nil, false, nil, false, false
 	end
 
+	-- ==== states and speeds (physics) ====
 	-- The states, from the transitions of FUN_805aa66c and the steps of FUN_805af2b0 (docs/SADX_SONIC_REFERENCE.md has the case numbers): on the ground the running state (1, 2: groundStep), the spin dash's charge (4:
 	-- curledStep) and the roll after its release (5); in the air the jump (8, the ball flag set), the fall (0xC, flag clear: after the homing attack's end, the action button, a spring) and the homing attack (0xE).
 	-- The ball flag (the game's status 0x100) is set by the jump, the charge and the roll, and cleared on landing. Not ported: the Light Speed Attack (state 6, needs the shoes and the Ancient Light).
@@ -910,12 +1090,14 @@ local function playerStep(entity, replay)
 	if not ranGround then state.turnFrames = nil end
 	state.heading = heading
 
+	-- ==== homing attack's end of the tick ====
 	-- The homing attack's motion and the end of the tick. Decompile: case 0xE writes no motion id, so the jump's motion plays and the ball flag keeps blinking it (docs/SADX_SONIC_REFERENCE.md "Ball blink"; changed from a solid
 	-- Ball placeholder). While chasing a target the game's gravity does not act (the velocity is set), so the engine's is given back.
 	if state.homing ~= nil then
 		if chasing then vy = vy + GRAVITY * FRAMES_PER_SECOND * frames end
 		sf.blink(entity, state.ball and ballBlinkStep(state) and "ball" or false)
-		sf.animate(entity, "jump", math.max(JUMP_RATE * (state.work0 or 0), 1e-6))
+		state.work0 = JUMP_WORK0
+		sf.animate(entity, "jump", JUMP_RATE * state.work0)
 		ballSquash(entity, false)
 		face(entity, state.heading)
 		sf.setGroundSnap(entity, 0)
@@ -924,121 +1106,13 @@ local function playerStep(entity, replay)
 		return "jump"
 	end
 
-	-- Motion. External (FUN_805a99f0, FUN_805aa66c; "Animation" in docs/SADX_SONIC_REFERENCE.md): on the ground by forward speed plus the excess, Walk to WALK_SPEED, Speedwalk to SPEEDWALK_SPEED, Jog to JOG_SPEED, Run to RUN_MAX_SPEED,
-	-- Sprint above; standing still is Stand; Brake while the brake state 0xD's skid runs (state.brake), Turn Around after its stop (state.turnFrames); Landing for LANDING_TICKS after a hard landing standing still;
-	-- the curled Jump for the jump, the charge and the roll. Placeholder or hypothesis (see the top): Damage while state.damaged, Spring Fall while rising after a spring, else Fall.
-	-- Ground contact flickers on uneven terrain (observed in a log of a run: on a slope or stairs the body touches the ground every second or third tick). Without any air motion playing, a gap of fewer than AIR_ANIMATION_TICKS ticks
-	-- keeps the ground motion; once they play, he counts as landed when at least LAND_CONTACTS of the last CONTACT_WINDOW ticks touched the ground, not when one did (placeholder rule: no flash of the landing motion in the middle of a fall).
-	local contacts = state.contacts or {}
-	table.insert(contacts, 1, grounded)
-	contacts[CONTACT_WINDOW + 1] = nil
-	state.contacts = contacts
-	local contactCount = 0
-	for _, touched in ipairs(contacts) do
-		if touched then contactCount = contactCount + 1 end
-	end
-	local landed = state.wasGrounded == false and contactCount >= LAND_CONTACTS or state.wasGrounded ~= false and grounded
-	local airTicks = landed and 0 or (state.airTicks or 0) + 1
-	state.airTicks = airTicks
-	local animGrounded = landed or (airTicks < AIR_ANIMATION_TICKS and not state.jumped and not state.springed)
-	-- The window counts the contacts since the air motions began (observed: left as it was, the ticks of the ground he just left counted as a landing the moment after a jump, and Fall and Landing restarted the jump).
-	if state.wasGrounded ~= false and not animGrounded then state.contacts = {} end
-	local motion
-	-- The playback rate (nil: the motion's own, as before): the table's value times a speed (RATES, JUMP_RATE, ROLL_RATE). Table modes 9 and 10 advance by that product, so a rate of zero holds the pose; the engine's 0 means
-	-- its default rate, hence the small floor. The sign is dropped (a negative speed would play backwards in the game; the engine's rate is not tried with a negative there); only Wait Back (table id 6, mode 6) is sent negative, below.
-	local rate = nil
-	if (state.damaged or 0) > 0 then
-		state.damaged = state.damaged - 1
-		motion = "damage"
-	elseif animGrounded and (state.jumpGrace or 0) > 0 then
-		-- The tick after the jump still reports the ground.
-		state.jumpGrace = state.jumpGrace - 1
-		motion = "jump"
-		rate = JUMP_RATE * (state.work0 or 0)
-	elseif animGrounded then
-		local cameFromJump, cameFromSpring = state.jumped, state.springed
-		state.springed, state.jumped = false, false
-		-- Landing (FUN_805aa66c states 8 and 0xC): with the brake state's condition false, no stick and a forward speed of exactly 0 he stands (state 1) and the table's Landing plays only when his vertical speed was
-		-- HARD_LANDING_VY or lower (else the motion is 2 after a jump, 1 after a fall: standing poses without an entry in Sonic.json, Stand here); any other landing goes to the running state and picks the motion by
-		-- speed at once (FUN_805a99f0). A stick or a speed ends the landing motion (state 1 goes to 2 on the stick, motion 9).
-		local standing = not hasWish and not charging and not state.rolling and math.abs(forward) < STAND_EPSILON
-		if state.wasGrounded == false then
-			state.landing = (standing and (state.airVy or 0) / FRAMES_PER_SECOND <= HARD_LANDING_VY) and LANDING_TICKS or 0
-		end
-		if not standing then state.landing = 0 end
-		-- Standing poses (FUN_805aa66c states 8 and 0xC write the motion 2 after a jump and 1 after a fall when the landing is not the hard one; FUN_805a9c28 keeps the motions 0 to 6 in state 1 and after 0x708 steps
-		-- of standing writes 4, Wait A, which runs on to 5, Wait B; FUN_805a3e58 writes 0x1D on the roll's end, which FUN_805a99f0 leaves alone until it has ended). Placeholders: the landing from a spring stays Stand (not read),
-		-- the step counter (work+0xE) is taken to restart whenever he is not standing (hypothesis), and Wait B runs on to Wait Back (id 6, mode 6: Wait A's data played backwards from its last frame, 4 blend frames + 77 steps of 0.25, then Stand; the engine plays it with a negative rate).
-		if state.wasGrounded == false then
-			state.pose = standing and state.landing == 0 and not cameFromSpring and {name = cameFromJump and "standAlt" or "landFall", frames = 0} or nil
-		end
-		local pose = state.pose
-		if charging or state.rolling or (pose ~= nil and pose.name ~= "rollEnd" and not standing) then pose = nil end
-		if pose ~= nil then
-			pose.frames = pose.frames + frames
-			if POSE_END[pose.name] ~= nil and pose.frames >= POSE_END[pose.name] then
-				local nextName = POSE_NEXT[pose.name]
-				pose = nextName ~= nil and (standing or pose.name ~= "rollEnd") and {name = nextName, frames = 0} or nil
-			end
-		end
-		state.idleFrames = standing and (state.idleFrames or 0) + frames or 0
-		if state.idleFrames > IDLE_WAIT_FRAMES and (state.landing or 0) == 0 and (pose == nil or POSE_NEXT[pose.name] == "standAlt" or pose.name == "standAlt") then
-			pose = {name = "waitA", frames = 0}
-			state.idleFrames = 0
-		end
-		state.pose = pose
-		if (state.landing or 0) > 0 then
-			state.landing = state.landing - 1
-			motion = "landing"
-		elseif charging then
-			-- The charge: the curled Jump (table entry 0xE) at JUMP_RATE times work[0], which the charge holds (FUN_805a4340 starts it at the larger of 2.0 and the forward speed, FUN_805a3eb8 adds 0.4 a frame).
-			motion = "jump"
-			state.work0 = state.charge
-			rate = JUMP_RATE * state.work0
-		elseif state.rolling then
-			-- The roll (state 5, table entry 0xF, FUN_805a3eb8): the curled Jump's motion data at ROLL_RATE times the forward speed, under its own entry ("roll" in Sonic.json: the change from the charge's entry blends).
-			motion = "roll"
-			rate = ROLL_RATE * forward
-		elseif turnAway then motion = "brake"
-		elseif state.turnFrames ~= nil then
-			-- FUN_805aa66c state 0xD: the stop with the stick still far off writes motion 0x1E (Turn Around, 0.9 a frame); FUN_805a99f0 leaves it alone until it has ended.
-			motion = "turnAround"
-			rate = TURN_AROUND_RATE
-		elseif pose ~= nil and (standing or pose.name == "rollEnd") then
-			motion = pose.name
-			rate = POSE_RATE[motion]
-		elseif standing then motion = "stand"
-		else
-			-- FUN_805a99f0: the forward speed plus PICK_EXCESS_FACTOR times the excess against the four speeds, not its size (a negative forward speed picks Walk), and work[0] is that speed with RATE_EXCESS_FACTOR.
-			local pick = forward + PICK_EXCESS_FACTOR * excess
-			state.work0 = forward + RATE_EXCESS_FACTOR * excess
-			if pick <= WALK_SPEED then motion = "walk"
-			elseif pick <= SPEEDWALK_SPEED then motion = "speedwalk"
-			elseif pick <= JOG_SPEED then motion = "jog"
-			elseif pick <= RUN_MAX_SPEED then motion = "run"
-			else motion = "sprint" end
-			rate = RATES[motion] * (motion == "sprint" and forward or state.work0)
-		end
-	else
-		if state.springed and vy <= 0 then state.springed = false end
-		if state.springed then state.jumped = false end
-		motion = state.springed and "springFall" or state.jumped and "jump" or "fall"
-		if motion == "jump" then rate = JUMP_RATE * (state.work0 or 0) end
-		state.landing, state.pose, state.idleFrames = 0, nil, 0
-	end
-	state.wasGrounded = animGrounded
+	-- ==== animation ====
+	local motion, rate = chooseMotion(state, grounded, vy, hasWish, charging, forward, excess, turnAway, frames)
 
-	-- Ball blink. Decompile (FUN_805af2b0, FUN_805a9f90, FUN_805a3eb8, FUN_805a4340; docs/SADX_SONIC_REFERENCE.md "Ball blink"): the main function adds 1 to the counter (work+0x7e) once per game step while status 0x100 is set, whatever the
-	-- action, and nothing else adds to it; the draw (called at the end of every step) uses the Ball entry (motion 0x20, jumpball model) instead of the playing motion on the steps where counter & 0x11 is not zero, with the same animation clock
-	-- (sf.blink). So in each 32 steps the odd ones of the first 16 and all of the last 16 are the ball. The counter is zeroed only by the spin dash start and by the spin dash charge's end (FUN_805a3eb8); a jump, a homing attack and a roll
-	-- go on from the value left. The decompile steps the game once per 60 Hz retrace in play (FUN_8047ab7c(1,1); one extra step when a frame ran late), so by the code the port's tick is 1 per step; BALL_BLINK_TICKS stays 4 because
-	-- of your observation that 1 was far too fast: the conflict is open (see the reference).
-	-- The port steps it on every tick with state.ball (ballBlinkStep), the roll and the homing flight included, whatever motion plays.
-	local blink = state.ball and ballBlinkStep(state)
-	sf.blink(entity, blink and "ball" or false)
-	ballSquash(entity, motion == "jump" and onGround)
-	sf.animate(entity, motion, rate and math.max(math.abs(rate), 1e-6) * (motion == "waitBack" and -1 or 1) or 0, BLEND_STEPS[motion] or 0)
-	face(entity, state.heading)
+	-- ==== model ====
+	applyModel(entity, state, motion, rate, onGround)
+
+	-- ==== physics output ====
 	-- Observed (recording sadx_3, 0.8 to 0.82 s): at a ramp's lip the original puts him down on the floor in the same tick although his velocity still points up. The snap may therefore act on a rising body while the
 	-- ground step ran without a jump or a spring. Hypothesis (recording sadx_3, 4.68 to 4.72 s the roll and 7.98 to 8.02 s the run, both at a crest where the surface's slope turns): the same for the ticks after the
 	-- ground contact is lost (fewer than ROLL_GAP_TICKS) while no jump, spring or homing attack is playing. The engine reports no ground the tick the surface turns away, the original keeps him on the floor (put down
@@ -1056,6 +1130,7 @@ local function playerStep(entity, replay)
 	return motion
 end
 
+-- ==== Behavior and entry points ====
 -- The tick's input comes from the replay when one runs (SadxReplay.step also counts its tick, so it runs before the lock's early return); the log line follows the step.
 sf.behavior("Player", function(entity)
 	local replay = SadxReplay.step()

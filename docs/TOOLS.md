@@ -41,7 +41,7 @@ The SADX counterpart of `shadowLiveLog.py` (Dolphin running SADX GC, Sonic in a 
 - The game's own processed stick: `stick_angle` (world direction, camera already applied) and `stick_mag`. A replay feeds that directly, no camera and no raw pad needed for the stick.
 - The pad record (static address, no search flag): `pad_buttons` (held), `pad_pressed`, `pad_released`, `pad_l`, `pad_r`, `pad_sx`, `pad_sy` (signed stick x / y, -127 = forward). The replay's jump needs `pad_pressed` / `pad_buttons` bit 0x4.
 - The camera: `cam_rot_x/y` (signed 16 bit angles, y = yaw), `cam_eye_*`, `cam_target_*` (the look-at point); cells empty when the camera is not created yet.
-- Named fields of the player's blocks: `up_speed, side_speed, work0, grip_excess, ground_nx/ny/nz, slope_cos, wall_nx/ny/nz, flags_04, flags_5c, flags_60, flags_1e4, counter_7e, anim_id, anim_prev, anim_frame, col_flags`. `status` bits 0x3 = on the ground.
+- Named fields of the player's blocks: `up_speed, side_speed, work0, grip_excess, ground_nx/ny/nz, slope_cos, wall_nx/ny/nz, flags_04, flags_5c, flags_60, flags_1e4, counter_7e, anim_id, anim_prev, anim_frame, col_flags`. `status` bits 0x3 = on the ground. Animation columns (added 2026-10-12 for the ball's animation speed and blink, not run live): `anim_mode, anim_next, anim_frame2, anim_flags, anim_fwd_ptr_val, anim_work_ptr_val` (motion struct w3+0x120 and the floats its speed pointers name), `ent_nodes, ent_mode, ent_next, ent_step, ent_rate` (the live table entry of the current id), `ball_blink, drawn_id, drawn_ptr` (the draw's blink decision, computed per row from status&0x100, id != 0x91 and counter&0x11).
 - `vi_count` is the u32 at `0x800C44E4` (the VI retrace count). Observed on sadx_1 (2026-10-10): one game step per retrace (+1 per tick, the last row of a tick is after the step).
 - Replay tools for it (2026-10-10, not run on a port run): `makeReplay.py --game sadx <csv> Scripts/sadx/replays/<name>.lua`, `compareReplay.py --game sadx <csv> tools/port_run.txt <name> [step] [--ai]`, `digestRun.py --game sadx <csv>` / `... tools/port_run.txt <name> [--from T --to T --every N]`, `sh tools/regenReplays.sh --game sadx [name ...]`. They work in the original's own axes with velocities per second; details in `docs/REPLAY_COMPARISON.md` "SADX Sonic".
 - Raw blocks for decoding later: `w1_raw`, `w2_raw`, `w3_raw` (0x200 bytes), `col_raw`, `stick_raw`, `pad_raw` (words, hex).
@@ -103,6 +103,13 @@ These read the discs in `build/Disks/` and write files. Run them only when the g
 
 `dumpCCL.py` reads Shadow `.CCL` collision files: `[outDir]` dumps them all (a summary only without it), `-x NAME` hex dump, `-p NAME` parsed, `--check` lists the entries that break the known layout.
 
+## glTF attribute round trip (Map.gltf pipeline, step 0)
+
+Written 2026-10-14, not run. Both stdlib only, no disc data. See the "Map.gltf authoring pipeline" item in `docs/TODO.md`.
+
+- `gltfAttrWrite.py [--out DIR/probe.gltf]` writes a probe glTF (two nodes, a few triangles, two vertices sharing a position) with the per-vertex fields in two encodings: custom attributes `_SRC` (uint), `_SRCFLAG` (uint), `_SRCIDX` (uint), `_ORIG` (vec3), and the same data in `TEXCOORD_1..3` as float32. Also writes the `.bin` and `<stem>.expected.json`. The colleague imports it in their modelling tool and re-exports it (run 1 no edits; run 2 a moved vertex, a deleted and a new triangle; once more with any custom-attribute export option on).
+- `gltfAttrCheck.py FILE [--expected X.expected.json] [--tool "name, options"] [--ai]` reads the re-export (`.gltf` or `.glb`) and reports per channel whether it survived and under which name and type, whether the moved vertex kept its original position, POSITION axis conversion, V flip of the UV sets, vertex welding / splitting and new geometry. Verdict: `PRIMARY=custom` (all four custom fields survive), `FALLBACK=texcoord` (custom lost, TEXCOORD sets exact), or `NONE` (stop and tell the user). Values above 2^24-1 cannot be exact in float32 and are left out of the fallback verdict. `--ai` is the compact form.
+
 ## RAM-dump readers (read only)
 
 - `sadxLiveTasks.py [mem1.raw]`: the live SET-object tasks of an SADX dump (Emerald Coast act 1) and their exec, display and destroy functions.
@@ -132,3 +139,6 @@ python3 tools/decompFunc.py FUN_800221a8 --lines 40-80           lines 40 to 80 
 ## Other
 
 `notifyDone.py [volume]` plays a short ring (default 10% volume). Claude runs it at the end of each task that used tools.
+
+`SF_HITCH=<ms> ./<app>` (not a script; main.cpp, written 2026-10-14, not run): prints to stderr each frame longer than `<ms>` (20 if empty or 0): camera position, ms of gameplay / entity update / render submit / UI / swap, and meshes uploaded (+) and freed (-) and textures uploaded that frame. Use it to find what a lag spike is: a mesh burst (level streaming), a texture first use, or a long swap (driver / vsync).
+

@@ -16,11 +16,19 @@ The built-in folders group the entities by the prefab they were made from (Entit
 cannot be changed. The user's folders (New folder; inside the selected one, if a user folder is selected) hold entities the user put there, by the entity's right click menu "Move to folder" or by dragging the entity onto a folder (onto a built-in folder: back to its own); an entity in a
 user folder is shown there instead of in its built-in one. Right click on a user folder deletes it (its folders move up, its entities go back to their built-in folders). While the filter has text every folder is open and those with no match are hidden.
 The folders are the panel's own state: they are not saved and the scripts cannot see them.
-The window is titled "Level". A second tab, "Collision", is the collision view's panel (CollisionView::drawPanel, the same as the Debug window's); a third, "Editor camera", holds the settings of Editor::camera (EditorCamera.h); Editor saves them with the panel sizes.
+The window is titled "Level" and has two tabs, Level (the tabs below) and Map (subtabs Levels = drawMap and Entities = drawEntities; sets Editor::mapView, the Map view of docs/TODO.md's level map: every level is drawn and picked, the Inspector edits the selected level's place in the map). A second tab, "Collision", is the collision view's panel (CollisionView::drawPanel, the same as the Debug window's); a third, "Editor camera", holds the settings of Editor::camera (EditorCamera.h); Editor saves them with the panel sizes.
 */
 struct EntityListPanel
 {
+	/*
+	The selection: selected is the primary entity (what the Inspector, the Prefab panel and the copy act on), extraSelected the others of a multi-selection (Shift or Ctrl click in the list, Shift click in the scene). The gizmo and Ctrl+Z work on all of them (selection()).
+	Code that picks one entity uses selectOnly; toggleSelected adds or removes one (a newly added one becomes the primary). An entity that no longer exists is dropped by draw().
+	*/
 	PoolId selected = UninitializedPoolId;
+	std::vector<PoolId> extraSelected;
+	std::vector<PoolId> selection() const;
+	void selectOnly(PoolId id_);
+	void toggleSelected(PoolId id_);
 
 	/* The user folder New folder makes its folder in (-1 = at the top); set by clicking a user folder, cleared by clicking anything else (the editor clears it when a click in the scene picks an entity). */
 	int selectedFolder = -1;
@@ -29,9 +37,14 @@ struct EntityListPanel
 	/* The panel's width in pixels: the user drags its right edge, draw() reads the result back, and Editor saves it (editor_settings.json). The other panels are laid out around it. */
 	float width = 300.0f;
 
+	/* Set by the Map tab's "Choose as active" (Editor::chooseActive): the Level tab is selected on the next draw. */
+	bool focusLevelTab = false;
+
 	void draw();
 
 private:
+	/* The Map tab: the loaded levels (a click selects one, the Inspector edits its place) and the add-level combo. */
+	void drawMap();
 	/* The tabs of the panel: the entity tree, (Collision is drawn by CollisionView) and the settings of the editor camera (look, pan, zoom and fly speeds). */
 	void drawEntities();
 	void drawCameraSettings();

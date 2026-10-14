@@ -38,6 +38,7 @@ Emerald Coast's floating bridge: the four things the stage's own code creates it
 and piers give the collision init (0x24A4D0, 0x24A590, 0x24A650); the meshes the game also collides with ("Floating Dock Collision", "Floating Pier Collision") are not used. Where the 51 entities stand is the level file's "source" (Levels/EmeraldCoast/EmeraldCoast.json,
 see docs/EMERALD_COAST_OBJECTS.md); they are registered as prefabs by the stage-created list of LevelLoader.cpp. Not reproduced: the waves and the player's weight that move the piers and tilt them (see the docs).
 */
+
 inline const SAEntityKey EmeraldCoastBridgeDockForward{"Floating Dock (Forward)", {"_Stg01.rel", 0x1C8408}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x24A4D0, 4}}};
 inline const SAEntityKey EmeraldCoastBridgeDockBackward{"Floating Dock (Backward)", {"_Stg01.rel", 0x1CACEC}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x24A590, 4}}};
 inline const SAEntityKey EmeraldCoastBridgePier{"Floating Pier", {"_Stg01.rel", 0x1CB9C0}, {"obj_beach.GVM"}, {}, {{"_Stg01.rel", 0x24A650, 2}}};

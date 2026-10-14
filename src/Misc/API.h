@@ -11,6 +11,13 @@ PoolId addEntity(const char* name_, glm::vec3 position_, PoolMap<Entity>* pPool_
 Entity& getEntity(PoolId id_);
 Entity& getEntityByName(const char* name_);
 PoolId addLevel(const char* name_, glm::vec3 position_);
+/* The level the editor edits and an entity without a level counts as part of (Entity::levelId): the loaded level named Map::active (Loading::loadMap sets it), else the lowest alive slot of the pool; UninitializedPoolId if there is none. */
+PoolId activeLevelId();
+/*
+False for what the editor's Level view leaves out: an entity of a level other than the active one (levelId_ is its Entity::levelId, or the level itself) while the editor is active and not in its Map view. Everything else is true: playing, a build without the editor,
+an entity without a level (players, cameras of scripts) and the active level. The renderer, the click picking and the entity list ask it; physics, scripts and collision do not (the levels beside the edited one still function).
+*/
+bool levelShown(PoolId levelId_);
 Level& getLevel(PoolId id_);
 Level& getLevelByName(const char* name_);
 PoolId addBATag(const BATagKey& rKey_);

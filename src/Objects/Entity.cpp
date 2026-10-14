@@ -4,6 +4,7 @@
 #include <cstdio>
 #include "Entity.h"
 #include "GPU_API.h"
+#include "API.h"
 #include "GPU_Globals.h"
 #include "ResourceLoader.h"
 #include "Globals.h"
@@ -527,7 +528,7 @@ bool Entity::rayHitsModel(const glm::vec3& rOrigin_, const glm::vec3& rDirection
 	};
 	if(this->pOverrideModel != nullptr)
 	{
-		Graphics::ExternalPools& rPools = this->pOverrideModel->inProject ? Graphics::externalProject : Graphics::externalLevel;
+		Graphics::ExternalPools& rPools = *this->pOverrideModel->pPools;
 		for(const Graphics::ExternalSubmesh& rSubmesh : this->pOverrideModel->submeshes) test(rPools.meshes[rSubmesh.meshId], glm::mat4(1.0f));
 	}
 	else if(this->sourceEngine == SA_NINJA)
@@ -611,6 +612,7 @@ from the camera. The test uses the transform of the frame that is drawn (renderP
 void Entity::draw(const std::array<glm::vec4, 6>& rPlanes_, const glm::vec3& rCameraPosition_, float maxDistance_)
 {
 	if(this->instanceId == UninitializedPoolId && !(this->isExternalOnly() && this->pOverrideModel != nullptr)) return;
+	if(!levelShown(this->levelId)) return;
 	glm::vec3 renderPosition = this->renderPosition();
 	glm::mat4 renderRotation = this->renderRotation();
 	if(this->transformDirty || renderPosition != this->renderedPosition || renderRotation != this->renderedRotation)

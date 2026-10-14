@@ -7,7 +7,9 @@
 #include "Globals.h"
 #include "GPU_Globals.h"
 #include "Prefab.h"
+#include "Scripting.h"
 #ifdef EDITOR
+#include "Editor.h"
 #include "ExternalAssets.h"
 #include "ExternalPrefabs.h"
 #include "GLTFImport.h"
@@ -466,69 +468,87 @@ void readExternals(const Json& rJson_, Entity& rEntity_, const std::string& rLev
 	}
 }
 
-/* A prefab's file in the level's Source Game Level under a root ("Assets/Levels/": the game's copy; the source tree's Levels/: what the next build copies back), by its pool name ("SADX/SPRING", "Level/<name>"). */
+/* A prefab's file in the level's Source Game Level under a root ("Assets/Levels/": the game's copy; the source tree's Levels/: what the next build copies back), by its pool name ("SADX/SPRING", "Level/<level>/<name>"). */
 std::string sourcePrefabFile(const std::string& rRoot_, const std::string& rLevel_, const std::string& rPoolName_)
 {
 	return rRoot_ + rLevel_ + "/SourceGamePrefabs/" + rPoolName_ + "/prefab.json";
+}
+
+/* One entry of an "added" list (see addEditedEntities): the entity of its prefab at its position with the properties the entry gives (behaviours, bound area, rotation, scale, model, texture, external values), or UninitializedPoolId, reported on stderr, if the prefab is unknown or it can't be made. */
+PoolId makeAddedEntity(const Json& rAdded, const std::string& name_, PoolId shaderId_, PoolId levelId_)
+{
+	std::string prefabName = rAdded.at("prefab").get<std::string>();
+	auto prefab = Globals::Game::prefabs.nameToId.find(prefabName);
+	if(prefab == Globals::Game::prefabs.nameToId.end())
+	{
+		fprintf(stderr, "Level '%s': an edit adds the unknown prefab '%s'.\n", name_.c_str(), prefabName.c_str());
+		return UninitializedPoolId;
+	}
+	SpawnParams params;
+	params.position = readPosition(rAdded.at("position"));
+	params.what = "(level file edit)";
+	params.levelId = levelId_;
+	PoolId id = spawnPrefab(prefab->second, shaderId_, params);
+	if(id == UninitializedPoolId) return id;
+
+	/* An added entity keeps its whole list: there is no source to take a difference from. */
+	if(rAdded.contains("behaviors"))
+	{
+		std::vector<PoolId> behaviorIds;
+		for(const Json& rName : rAdded.at("behaviors"))
+		{
+			PoolId behaviorId = findBehavior(rName.get<std::string>(), name_);
+			if(behaviorId != UninitializedPoolId) behaviorIds.push_back(behaviorId);
+		}
+		setEntityBehaviors(id, behaviorIds);
+	}
+	if(rAdded.contains("shapes"))
+	{
+		std::vector<Physics::CollisionShape> shapes;
+		for(const Json& rShape : rAdded.at("shapes")) shapes.push_back(readShape(rShape, name_));
+		setEntityShapes(id, shapes);
+	}
+	if(rAdded.contains("rotation")) getEntity(id).setRotation(readRotation(rAdded.at("rotation")));
+	if(rAdded.contains("scale")) getEntity(id).setScale(readPosition(rAdded.at("scale")));
+	if(rAdded.contains("mesh")) applyMeshChoice(id, readMeshChoice(rAdded.at("mesh")), name_);
+	if(rAdded.contains("texture")) applyTextureChoice(id, readTextureChoice(rAdded.at("texture")), name_);
+	if(rAdded.contains("externals")) readExternals(rAdded.at("externals"), getEntity(id), name_);
+	return id;
 }
 
 /* "added": [{"prefab", "position", ...}], the entities of a prefab the file adds to the level, after the ones it has; they are owned by the level. With keepIndices_ (the source set) an entry that can't be made leaves a gone entity in entityIds, so the entities after it keep the index the file counts them by. */
 void addEditedEntities(Level& rLevel_, const Json& rEdits, const std::string& name_, PoolId shaderId_, bool keepIndices_)
 {
 	if(!rEdits.contains("added")) return;
+	uint32_t addedIndex = 0;
 	for(const Json& rAdded : rEdits.at("added"))
 	{
-		std::string prefabName = rAdded.at("prefab").get<std::string>();
-		auto prefab = Globals::Game::prefabs.nameToId.find(prefabName);
-		if(prefab == Globals::Game::prefabs.nameToId.end())
+		PoolId id = makeAddedEntity(rAdded, name_, shaderId_, rLevel_.selfId);
+		EntityRecipe recipe;
+		if(id != UninitializedPoolId)
 		{
-			fprintf(stderr, "Level '%s': an edit adds the unknown prefab '%s'.\n", name_.c_str(), prefabName.c_str());
-			if(keepIndices_) rLevel_.entityIds.push_back(UninitializedPoolId);
-			continue;
+			recipe.kind = EntityRecipe::Kind::Added;
+			recipe.shaderId = shaderId_;
+			recipe.fromSource = keepIndices_;
+			recipe.addedIndex = addedIndex;
 		}
-		SpawnParams params;
-		params.position = readPosition(rAdded.at("position"));
-		params.what = "(level file edit)";
-		PoolId id = spawnPrefab(prefab->second, shaderId_, params);
-		if(keepIndices_ || id != UninitializedPoolId) rLevel_.entityIds.push_back(id);
-		if(id == UninitializedPoolId) continue;
-
-		/* An added entity keeps its whole list: there is no source to take a difference from. */
-		if(rAdded.contains("behaviors"))
-		{
-			std::vector<PoolId> behaviorIds;
-			for(const Json& rName : rAdded.at("behaviors"))
-			{
-				PoolId behaviorId = findBehavior(rName.get<std::string>(), name_);
-				if(behaviorId != UninitializedPoolId) behaviorIds.push_back(behaviorId);
-			}
-			setEntityBehaviors(id, behaviorIds);
-		}
-		if(rAdded.contains("shapes"))
-		{
-			std::vector<Physics::CollisionShape> shapes;
-			for(const Json& rShape : rAdded.at("shapes")) shapes.push_back(readShape(rShape, name_));
-			setEntityShapes(id, shapes);
-		}
-		if(rAdded.contains("rotation")) getEntity(id).setRotation(readRotation(rAdded.at("rotation")));
-		if(rAdded.contains("scale")) getEntity(id).setScale(readPosition(rAdded.at("scale")));
-		if(rAdded.contains("mesh")) applyMeshChoice(id, readMeshChoice(rAdded.at("mesh")), name_);
-		if(rAdded.contains("texture")) applyTextureChoice(id, readTextureChoice(rAdded.at("texture")), name_);
-		if(rAdded.contains("externals")) readExternals(rAdded.at("externals"), getEntity(id), name_);
+		addedIndex++;
+		if(keepIndices_ || id != UninitializedPoolId) rLevel_.addBuilt(id, recipe);
 	}
 }
 
 /*
 Applies one set of edits (the "edits" of the level's file, see saveLevelEdits, or its "source", the same format without "prefabs") to the level just made: the moved ones are put at their position, the added ones are made from their prefab and
 owned by the level. An edit that does not fit (an index past the entities, an unknown prefab) is reported on stderr and skipped.
+With only_ >= 0 only the per-entity edits of that index are applied (the prefab-wide ones and the added entities are not, and the entity references are not resolved: the caller does): what resetLevel does to an entity it made again.
 */
-void applyEditSet(Level& rLevel_, const Json& rEdits, const std::string& name_, PoolId shaderId_, bool asSource_)
+void applyEditSet(Level& rLevel_, const Json& rEdits, const std::string& name_, PoolId shaderId_, bool asSource_, int64_t only_ = -1)
 {
 	/* The source set (Save Source Game Level) makes its added entities first, so its per-entity edits can name them (their index follows the level's own entities); the edits set names only entities that exist before it. */
-	if(asSource_) addEditedEntities(rLevel_, rEdits, name_, shaderId_, true);
+	if(asSource_ && only_ < 0) addEditedEntities(rLevel_, rEdits, name_, shaderId_, true);
 
 	/* "prefabs": {"<prefab>": {"added": [behaviour names], "removed": [...], "shapesAdded": [shapes], "shapesRemoved": [...], "mesh": choice, "texture": choice}}, the behaviours and bound area shapes given to or taken from every entity of a prefab and the model and texture all of them get; applied first, so the per-entity ones below are differences from the result. */
-	if(rEdits.contains("prefabs"))
+	if(only_ < 0 && rEdits.contains("prefabs"))
 	{
 		for(const auto& [prefabName, rLists] : rEdits.at("prefabs").items())
 		{
@@ -541,26 +561,26 @@ void applyEditSet(Level& rLevel_, const Json& rEdits, const std::string& name_, 
 			for(const Json& rName : rLists.value("added", Json::array()))
 			{
 				PoolId behaviorId = findBehavior(rName.get<std::string>(), name_);
-				if(behaviorId != UninitializedPoolId) addPrefabBehavior(prefab->second, behaviorId);
+				if(behaviorId != UninitializedPoolId) addPrefabBehavior(prefab->second, behaviorId, PrefabScope::Level, rLevel_.selfId);
 			}
 			for(const Json& rName : rLists.value("removed", Json::array()))
 			{
 				PoolId behaviorId = findBehavior(rName.get<std::string>(), name_);
-				if(behaviorId != UninitializedPoolId) removePrefabBehavior(prefab->second, behaviorId);
+				if(behaviorId != UninitializedPoolId) removePrefabBehavior(prefab->second, behaviorId, PrefabScope::Level, rLevel_.selfId);
 			}
-			for(const Json& rShape : rLists.value("shapesAdded", Json::array())) addPrefabShape(prefab->second, readShape(rShape, name_));
-			for(const Json& rShape : rLists.value("shapesRemoved", Json::array())) removePrefabShape(prefab->second, readShape(rShape, name_));
+			for(const Json& rShape : rLists.value("shapesAdded", Json::array())) addPrefabShape(prefab->second, readShape(rShape, name_), PrefabScope::Level, rLevel_.selfId);
+			for(const Json& rShape : rLists.value("shapesRemoved", Json::array())) removePrefabShape(prefab->second, readShape(rShape, name_), PrefabScope::Level, rLevel_.selfId);
 			/* An External prefab's model and texture are saved with the prefab (ExternalPrefabs.h), not here. */
 			bool ownFile = Globals::Game::prefabs[prefab->second].kind == PrefabKind::External;
 			if(!ownFile && rLists.contains("mesh"))
 			{
 				MeshChoice choice = readMeshChoice(rLists.at("mesh"));
-				if(setPrefabMesh(prefab->second, choice) != 0) fprintf(stderr, "Level '%s': the model '%s' of prefab '%s' does not fit some of its entities.\n", name_.c_str(), choice.name.c_str(), prefabName.c_str());
+				if(setPrefabMesh(prefab->second, choice, PrefabScope::Level, rLevel_.selfId) != 0) fprintf(stderr, "Level '%s': the model '%s' of prefab '%s' does not fit some of its entities.\n", name_.c_str(), choice.name.c_str(), prefabName.c_str());
 			}
 			if(!ownFile && rLists.contains("texture"))
 			{
 				TextureChoice choice = readTextureChoice(rLists.at("texture"));
-				if(setPrefabTexture(prefab->second, choice) != 0) fprintf(stderr, "Level '%s': the texture '%s' of prefab '%s' does not fit some of its entities.\n", name_.c_str(), choice.name.c_str(), prefabName.c_str());
+				if(setPrefabTexture(prefab->second, choice, PrefabScope::Level, rLevel_.selfId) != 0) fprintf(stderr, "Level '%s': the texture '%s' of prefab '%s' does not fit some of its entities.\n", name_.c_str(), choice.name.c_str(), prefabName.c_str());
 			}
 		}
 	}
@@ -571,6 +591,7 @@ void applyEditSet(Level& rLevel_, const Json& rEdits, const std::string& name_, 
 		for(const Json& rEntry : rEdits.at("behaviors"))
 		{
 			uint32_t index = rEntry.at("index").get<uint32_t>();
+			if(only_ >= 0 && index != static_cast<uint32_t>(only_)) continue;
 			if(index >= rLevel_.entityIds.size() || !entityExists(rLevel_.entityIds[index]))
 			{
 				fprintf(stderr, "Level '%s': an edit changes the behaviours of entity %u, which is not one of its own.\n", name_.c_str(), index);
@@ -595,6 +616,7 @@ void applyEditSet(Level& rLevel_, const Json& rEdits, const std::string& name_, 
 		for(const Json& rEntry : rEdits.at("shapes"))
 		{
 			uint32_t index = rEntry.at("index").get<uint32_t>();
+			if(only_ >= 0 && index != static_cast<uint32_t>(only_)) continue;
 			if(index >= rLevel_.entityIds.size() || !entityExists(rLevel_.entityIds[index]))
 			{
 				fprintf(stderr, "Level '%s': an edit changes the bound area of entity %u, which is not one of its own.\n", name_.c_str(), index);
@@ -611,6 +633,7 @@ void applyEditSet(Level& rLevel_, const Json& rEdits, const std::string& name_, 
 		for(const Json& rEntry : rEdits.at("meshes"))
 		{
 			uint32_t index = rEntry.at("index").get<uint32_t>();
+			if(only_ >= 0 && index != static_cast<uint32_t>(only_)) continue;
 			if(index >= rLevel_.entityIds.size() || !entityExists(rLevel_.entityIds[index]))
 			{
 				fprintf(stderr, "Level '%s': an edit changes the model of entity %u, which is not one of its own.\n", name_.c_str(), index);
@@ -625,6 +648,7 @@ void applyEditSet(Level& rLevel_, const Json& rEdits, const std::string& name_, 
 		for(const Json& rEntry : rEdits.at("textures"))
 		{
 			uint32_t index = rEntry.at("index").get<uint32_t>();
+			if(only_ >= 0 && index != static_cast<uint32_t>(only_)) continue;
 			if(index >= rLevel_.entityIds.size() || !entityExists(rLevel_.entityIds[index]))
 			{
 				fprintf(stderr, "Level '%s': an edit changes the texture of entity %u, which is not one of its own.\n", name_.c_str(), index);
@@ -638,6 +662,7 @@ void applyEditSet(Level& rLevel_, const Json& rEdits, const std::string& name_, 
 		for(const Json& rMoved : rEdits.at("moved"))
 		{
 			uint32_t index = rMoved.at("index").get<uint32_t>();
+			if(only_ >= 0 && index != static_cast<uint32_t>(only_)) continue;
 			if(index >= rLevel_.entityIds.size() || !entityExists(rLevel_.entityIds[index]))
 			{
 				fprintf(stderr, "Level '%s': an edit moves entity %u, which is not one of its own.\n", name_.c_str(), index);
@@ -652,6 +677,7 @@ void applyEditSet(Level& rLevel_, const Json& rEdits, const std::string& name_, 
 		for(const Json& rEntry : rEdits.at("transforms"))
 		{
 			uint32_t index = rEntry.at("index").get<uint32_t>();
+			if(only_ >= 0 && index != static_cast<uint32_t>(only_)) continue;
 			if(index >= rLevel_.entityIds.size() || !entityExists(rLevel_.entityIds[index]))
 			{
 				fprintf(stderr, "Level '%s': an edit turns or scales entity %u, which is not one of its own.\n", name_.c_str(), index);
@@ -668,6 +694,7 @@ void applyEditSet(Level& rLevel_, const Json& rEdits, const std::string& name_, 
 		for(const Json& rEntry : rEdits.at("externals"))
 		{
 			uint32_t index = rEntry.at("index").get<uint32_t>();
+			if(only_ >= 0 && index != static_cast<uint32_t>(only_)) continue;
 			if(index >= rLevel_.entityIds.size() || !entityExists(rLevel_.entityIds[index]))
 			{
 				fprintf(stderr, "Level '%s': an edit sets fields of entity %u, which is not one of its own.\n", name_.c_str(), index);
@@ -676,8 +703,8 @@ void applyEditSet(Level& rLevel_, const Json& rEdits, const std::string& name_, 
 			readExternals(rEntry.at("values"), getEntity(rLevel_.entityIds[index]), name_);
 		}
 	}
-	if(!asSource_) addEditedEntities(rLevel_, rEdits, name_, shaderId_, false);
-	rLevel_.resolveExternalEntities();
+	if(!asSource_ && only_ < 0) addEditedEntities(rLevel_, rEdits, name_, shaderId_, false);
+	if(only_ < 0) rLevel_.resolveExternalEntities();
 }
 
 /*
@@ -688,32 +715,42 @@ The file is read again (not the recipe's copy): a saved edit is in the file the 
 "cameras" (top level of the level file, written by File > Save and Save Source Game Level): [{"name", "position", "front", "yaw", "pitch", "fov", "near", "far", "enabled", "main", "renderTarget": {"width", "height"}}], the camera entities the editor added to the level. Each is made after
 the edits as a camera entity (addCamera) that the level owns, so it is removed with the level and by Restore Source Game Level. "main" makes it the main camera; "renderTarget" makes a new render target of that size for it (absent: the screen). A broken entry is reported on stderr and skipped.
 */
+PoolId makeLevelCamera(const Json& rEntry_, PoolId levelId_)
+{
+	glm::vec3 position = readPosition(rEntry_.at("position"));
+	PoolId id = addCamera(rEntry_.value("name", std::string("Camera")).c_str(), position);
+	getEntity(id).levelId = levelId_;
+	PoolId cameraId = getEntity(id).cameraId;
+	Camera& rCamera = Globals::Game::cameras[cameraId];
+	if(rEntry_.contains("front")) rCamera.front = readPosition(rEntry_.at("front"));
+	rCamera.yaw = rEntry_.value("yaw", rCamera.yaw);
+	rCamera.pitch = rEntry_.value("pitch", rCamera.pitch);
+	rCamera.fov = rEntry_.value("fov", rCamera.fov);
+	rCamera.nearPlane = rEntry_.value("near", rCamera.nearPlane);
+	rCamera.farPlane = rEntry_.value("far", rCamera.farPlane);
+	rCamera.enabled = rEntry_.value("enabled", rCamera.enabled);
+	if(rEntry_.contains("renderTarget"))
+	{
+		const Json& rTarget = rEntry_.at("renderTarget");
+		rCamera.setRenderTarget(addRenderTarget(rTarget.at("width").get<uint32_t>(), rTarget.at("height").get<uint32_t>()));
+	}
+	rCamera.refreshProjection();
+	rCamera.set(position);
+	if(rEntry_.value("main", false)) Globals::Game::mainCamera = cameraId;
+	return id;
+}
+
 void addLevelCameras(Level& rLevel_, const Json& rCameras_, const std::string& name_)
 {
+	uint32_t listIndex = 0;
 	for(const Json& rEntry : rCameras_)
 	{
+		EntityRecipe recipe;
+		recipe.kind = EntityRecipe::Kind::Camera;
+		recipe.addedIndex = listIndex++;
 		try
 		{
-			glm::vec3 position = readPosition(rEntry.at("position"));
-			PoolId id = addCamera(rEntry.value("name", std::string("Camera")).c_str(), position);
-			rLevel_.entityIds.push_back(id);
-			PoolId cameraId = getEntity(id).cameraId;
-			Camera& rCamera = Globals::Game::cameras[cameraId];
-			if(rEntry.contains("front")) rCamera.front = readPosition(rEntry.at("front"));
-			rCamera.yaw = rEntry.value("yaw", rCamera.yaw);
-			rCamera.pitch = rEntry.value("pitch", rCamera.pitch);
-			rCamera.fov = rEntry.value("fov", rCamera.fov);
-			rCamera.nearPlane = rEntry.value("near", rCamera.nearPlane);
-			rCamera.farPlane = rEntry.value("far", rCamera.farPlane);
-			rCamera.enabled = rEntry.value("enabled", rCamera.enabled);
-			if(rEntry.contains("renderTarget"))
-			{
-				const Json& rTarget = rEntry.at("renderTarget");
-				rCamera.setRenderTarget(addRenderTarget(rTarget.at("width").get<uint32_t>(), rTarget.at("height").get<uint32_t>()));
-			}
-			rCamera.refreshProjection();
-			rCamera.set(position);
-			if(rEntry.value("main", false)) Globals::Game::mainCamera = cameraId;
+			rLevel_.addBuilt(makeLevelCamera(rEntry, rLevel_.selfId), recipe);
 		}
 		catch(const std::exception& rError)
 		{
@@ -731,6 +768,75 @@ void applyEdits(Level& rLevel_, const std::string& name_, PoolId shaderId_)
 	rLevel_.markSourceEntities();
 	if(file.contains("edits")) applyEditSet(rLevel_, file.at("edits"), name_, shaderId_, false);
 	if(file.contains("cameras")) addLevelCameras(rLevel_, file.at("cameras"), name_);
+}
+}
+
+namespace
+{
+/*
+Fills a level that addLevel made (or that resetLevel emptied): its name, External prefabs, the instance, collision and placed entities from the recipe, the file's edits, and last its place in the map. Throws what the steps throw; the caller decides what a failed level becomes.
+With keepInstance_ the level still has its instance, collision and External assets (resetLevel destroyed only its entities): those steps are skipped and the place in the map is applied from the unmoved state the new entities are in. Not for a level that has none yet.
+*/
+void buildLevel(PoolId id_, const std::string& name_, Recipe& rRecipe_, bool keepInstance_ = false)
+{
+	Level& rLevel = getLevel(id_);
+	rLevel.name = name_;
+#ifdef EDITOR
+	/* Before the edits: they may name the level's own External prefabs. */
+	if(!keepInstance_) loadExternalPrefabs(ExternalScope::Level, name_);
+#endif
+	/* The entities are made from the game's data and the level's Source Game Level prefab sets alone (Level::sourceBehaviors); the file's prefab edits are applied after them (applyEdits). The level's own sets start empty: its slot's were dropped when the level before it was destroyed. */
+	loadSourcePrefabs(name_, id_);
+	if(rRecipe_.saLandTable != nullptr)
+	{
+		if(!keepInstance_)
+		{
+			rLevel.setSAGPUInstance(rRecipe_.shaderId, *rRecipe_.saLandTable, *rRecipe_.saTextures, rRecipe_.skipped);
+			rLevel.setSACollision(*rRecipe_.saLandTable);
+		}
+		rLevel.setSAEntities(rRecipe_.shaderId, *rRecipe_.saLandTable);
+	}
+	else if(rRecipe_.gltfLevel != nullptr)
+	{
+		if(!keepInstance_)
+		{
+			rLevel.setGLTFGPUInstance(rRecipe_.shaderId, *rRecipe_.gltfLevel);
+			rLevel.setGLTFCollision(*rRecipe_.gltfLevel);
+		}
+	}
+	else
+	{
+		if(!keepInstance_)
+		{
+			rLevel.setONEGPUInstance(rRecipe_.shaderId, *rRecipe_.oneLevel, rRecipe_.skipped);
+			rLevel.setONECollision(*rRecipe_.oneLevel);
+		}
+		rLevel.setONEEntities(rRecipe_.shaderId, *rRecipe_.oneLevel);
+	}
+	applyEdits(rLevel, name_, rRecipe_.shaderId);
+
+	/* The level was made and edited in its own coordinates; the map's place for it (Map.json) moves all of it, so its file's edits stay local (saveLevelEdits writes them back unmoved). */
+	glm::vec3 placedPosition = rLevel.mapPosition;
+	glm::vec3 placedRotation = rLevel.mapRotation;
+	bool wasStale = rLevel.collisionStale;
+	if(keepInstance_)
+	{
+		/* The new entities are in local coordinates and the collision is already placed: the map place is taken off the level and put on again without moving the collision. */
+		rLevel.mapPosition = glm::vec3(0.0f);
+		rLevel.mapRotation = glm::vec3(0.0f);
+	}
+	if(const MapLevel* pPlace = Globals::Game::map.find(name_)) rLevel.setMapTransform(pPlace->position, pPlace->rotation, !keepInstance_);
+	if(keepInstance_)
+	{
+		/* The collision is at the place it had before the reset; if the editor moved the level's place while playing (or was dragging it) it is put on the place the map file gives now. */
+		rLevel.collisionStale = false;
+		if(wasStale || placedPosition != rLevel.mapPosition || placedRotation != rLevel.mapRotation)
+		{
+			rLevel.collisionStale = true;
+			rLevel.commitMapCollision();
+		}
+	}
+	rLevel.captureBaselines();
 }
 }
 
@@ -756,36 +862,10 @@ PoolId loadLevel(const std::string& name_)
 	scanExternalAssets(name_);
 #endif
 
-	/* The entities are made from the game's data alone (Level::sourceBehaviors); the file's prefab edits are applied after them (applyEdits). */
-	clearPrefabEdits();
-
 	PoolId id = addLevel(name_.c_str(), rRecipe.position);
 	try
 	{
-		Level& rLevel = getLevel(id);
-#ifdef EDITOR
-		/* Before the edits: they may name the level's own External prefabs. */
-		loadExternalPrefabs(ExternalScope::Level, name_);
-#endif
-		loadSourcePrefabs(name_);
-		if(rRecipe.saLandTable != nullptr)
-		{
-			rLevel.setSAGPUInstance(rRecipe.shaderId, *rRecipe.saLandTable, *rRecipe.saTextures, rRecipe.skipped);
-			rLevel.setSACollision(*rRecipe.saLandTable);
-			rLevel.setSAEntities(rRecipe.shaderId, *rRecipe.saLandTable);
-		}
-		else if(rRecipe.gltfLevel != nullptr)
-		{
-			rLevel.setGLTFGPUInstance(rRecipe.shaderId, *rRecipe.gltfLevel);
-			rLevel.setGLTFCollision(*rRecipe.gltfLevel);
-		}
-		else
-		{
-			rLevel.setONEGPUInstance(rRecipe.shaderId, *rRecipe.oneLevel, rRecipe.skipped);
-			rLevel.setONECollision(*rRecipe.oneLevel);
-			rLevel.setONEEntities(rRecipe.shaderId, *rRecipe.oneLevel);
-		}
-		applyEdits(rLevel, name_, rRecipe.shaderId);
+		buildLevel(id, name_, rRecipe);
 	}
 	catch(...)
 	{
@@ -796,12 +876,268 @@ PoolId loadLevel(const std::string& name_)
 	return id;
 }
 
-void loadSourcePrefabs(const std::string& levelName_)
+PoolId loadMap(const std::string& activeName_)
+{
+	Map& rMap = Globals::Game::map;
+	for(PoolId id : rMap.loaded)
+	{
+		if(id.id < Globals::Game::levels.objects.size() && Globals::Game::levels.alive[id.id] && Globals::Game::levels.generation[id.id] == id.generation) Globals::Game::levels.remove(id);
+	}
+	rMap.loaded.clear();
+
+	PoolId activeId = loadLevel(activeName_);
+	rMap.active = activeName_;
+	if(rMap.find(activeName_) == nullptr) return activeId;
+	for(const MapLevel& rEntry : rMap.levels)
+	{
+		if(rEntry.name == activeName_) continue;
+		try
+		{
+			rMap.loaded.push_back(loadLevel(rEntry.name));
+		}
+		catch(const std::exception& rError)
+		{
+			fprintf(stderr, "Map: %s\n", rError.what());
+		}
+	}
+	return activeId;
+}
+
+namespace
+{
+/*
+resetLevel's way of leaving the entities that did not change alone: of the entities the build made (Level::built), the ones that are not as the build left them (Level::entityChanged: moved, a script changed their state, destroyed, ...) are removed and made again from their recipe
+(EntityRecipe) with the file's edits for their index applied, at the map's place; the entities of the level that the build did not make (the editor's) are removed. An entity that holds a reference to a changed one (an external field naming it) is made again too, since the reference would name
+the old entity, and so on. Entities that did not change keep everything, the Lua state of their behaviours included (no setup runs again), which is the point: it is the cost of making all of them that the reset is trying to avoid.
+A level the editor's Play kept (Editor::keptLevels) gets, for the entities made again, the state the editor had at Play, and the entities the editor added are made again (Editor::restoreKeptEntities); the entities left alone were taken as baseline at Play.
+Returns false, with nothing changed, when the level has to be rebuilt whole: an entity that can't be made alone is changed (no recipe), the entities are not where the build put them, or (the editor's Play) an entity the file's edits added, or a camera of the file, has to be made again: its kept state is not
+kept by place in the file.
+*/
+bool resetEntitiesInPlace(PoolId levelId_, const std::string& name_, uint32_t& rKept_, uint32_t& rRemade_, uint32_t& rRemoved_)
+{
+	Level& rLevel = getLevel(levelId_);
+	if(rLevel.entityIds.size() < rLevel.builtCount) return false;
+	for(uint32_t i = 0; i < rLevel.builtCount; i++)
+	{
+		PoolId id = rLevel.entityIds[i];
+		if(id == UninitializedPoolId) continue;
+		auto found = rLevel.built.find(Level::builtKey(id));
+		if(found == rLevel.built.end() || found->second.index != i) return false;
+	}
+
+	/* Which of the build's entities to make again, by index: the changed ones, then the ones referring to them. */
+	std::vector<char> remake(rLevel.builtCount, 0);
+	for(uint32_t i = 0; i < rLevel.builtCount; i++)
+	{
+		PoolId id = rLevel.entityIds[i];
+		if(id == UninitializedPoolId || !rLevel.entityChanged(id)) continue;
+		if(rLevel.built.at(Level::builtKey(id)).recipe.kind == EntityRecipe::Kind::None) return false;
+		remake[i] = 1;
+	}
+	for(bool grew = true; grew;)
+	{
+		grew = false;
+		for(uint32_t i = 0; i < rLevel.builtCount; i++)
+		{
+			PoolId id = rLevel.entityIds[i];
+			if(remake[i] || id == UninitializedPoolId || !entityExists(id)) continue;
+			bool refers = false;
+			for(const auto& [behaviorName, rValues] : getEntity(id).externals)
+			{
+				for(const auto& [fieldName, rValue] : rValues)
+				{
+					if(rValue.entity == UninitializedPoolId) continue;
+					for(uint32_t j = 0; j < rLevel.builtCount && !refers; j++)
+					{
+						refers = remake[j] != 0 && rLevel.entityIds[j] == rValue.entity;
+					}
+				}
+			}
+			if(!refers) continue;
+			if(rLevel.built.at(Level::builtKey(id)).recipe.kind == EntityRecipe::Kind::None) return false;
+			remake[i] = 1;
+			grew = true;
+		}
+	}
+
+#ifdef EDITOR
+	if(editor.hasKeptLevel(name_))
+	{
+		for(uint32_t i = rLevel.sourceEntityCount; i < rLevel.builtCount; i++)
+		{
+			if(remake[i]) return false;
+		}
+	}
+#endif
+
+	/* What the editor added after the build goes (its own restore puts it back: Editor::restoreKeptEntities). */
+	for(uint32_t i = rLevel.builtCount; i < rLevel.entityIds.size(); i++)
+	{
+		rLevel.built.erase(Level::builtKey(rLevel.entityIds[i]));
+		if(entityExists(rLevel.entityIds[i]))
+		{
+			Globals::Game::entities.remove(rLevel.entityIds[i]);
+			rRemoved_++;
+		}
+	}
+	rLevel.entityIds.resize(rLevel.builtCount);
+
+	Json file;
+	std::ifstream stream(levelFilePath("Assets/Levels/", name_));
+	if(stream) file = Json::parse(stream);
+
+	/* First every entity is made, so the entity references of the file's edits (applied next) name the new ones. */
+	std::vector<uint32_t> made;
+	for(uint32_t i = 0; i < rLevel.builtCount; i++)
+	{
+		if(!remake[i])
+		{
+			if(rLevel.entityIds[i] != UninitializedPoolId) rKept_++;
+			continue;
+		}
+		PoolId oldId = rLevel.entityIds[i];
+		BuiltEntity built = std::move(rLevel.built.at(Level::builtKey(oldId)));
+		rLevel.built.erase(Level::builtKey(oldId));
+		PoolId oldCameraTarget = UninitializedPoolId;
+		if(entityExists(oldId) && getEntity(oldId).cameraId != UninitializedPoolId && Globals::Game::cameras[getEntity(oldId).cameraId].renderTargetId == built.baseline.cameraRenderTargetId)
+		{
+			oldCameraTarget = built.baseline.cameraRenderTargetId;
+		}
+		if(entityExists(oldId)) Globals::Game::entities.remove(oldId);
+		EntityRecipe& rRecipe = built.recipe;
+		PoolId id = UninitializedPoolId;
+		if(rRecipe.kind == EntityRecipe::Kind::Placed)
+		{
+			SpawnParams params = rRecipe.params;
+			params.pPlacement = rRecipe.placement.get();
+			params.pONECollisions = rRecipe.hasOneCollisions ? &rRecipe.oneCollisions : nullptr;
+			id = spawnPrefab(rRecipe.prefabId, rRecipe.shaderId, params);
+		}
+		else if(rRecipe.kind == EntityRecipe::Kind::Camera)
+		{
+			/* The old camera's render target, if it still has the one the build made for it, goes (makeLevelCamera makes a new one); the main camera is set again by the entry's "main". */
+			if(oldCameraTarget != UninitializedPoolId) Globals::Game::renderTargets.remove(oldCameraTarget);
+			if(file.contains("cameras") && file.at("cameras").size() > rRecipe.addedIndex)
+			{
+				try
+				{
+					id = makeLevelCamera(file.at("cameras")[rRecipe.addedIndex], rLevel.selfId);
+				}
+				catch(const std::exception& rError)
+				{
+					fprintf(stderr, "LevelReset: a camera of level %s not made again: %s\n", name_.c_str(), rError.what());
+				}
+			}
+		}
+		else
+		{
+			const char* pSet = rRecipe.fromSource ? "source" : "edits";
+			if(file.contains(pSet) && file.at(pSet).contains("added") && file.at(pSet).at("added").size() > rRecipe.addedIndex)
+			{
+				id = makeAddedEntity(file.at(pSet).at("added")[rRecipe.addedIndex], name_, rRecipe.shaderId, rLevel.selfId);
+			}
+		}
+		rLevel.entityIds[i] = id;
+		if(id == UninitializedPoolId) continue;
+		if(Scripting::ready()) Scripting::entityRemade(oldId, id);
+		rLevel.built[Level::builtKey(id)] = std::move(built);
+		made.push_back(i);
+		rRemade_++;
+	}
+
+	/* The per-entity edits for the new ones, then the map's place (the build made and edited the level in its own coordinates and placed it last). */
+	glm::mat4 place = rLevel.mapMatrix();
+	glm::mat4 placeRotation = glm::mat4(glm::mat3(place));
+	for(uint32_t i : made)
+	{
+		PoolId id = rLevel.entityIds[i];
+		const EntityRecipe& rMadeRecipe = rLevel.built.at(Level::builtKey(id)).recipe;
+		PoolId shaderId = rMadeRecipe.shaderId;
+		if(rMadeRecipe.kind != EntityRecipe::Kind::Camera && file.contains("source")) applyEditSet(rLevel, file.at("source"), name_, shaderId, true, i);
+		if(rMadeRecipe.kind != EntityRecipe::Kind::Camera && file.contains("edits")) applyEditSet(rLevel, file.at("edits"), name_, shaderId, false, i);
+		Entity& rEntity = getEntity(id);
+		rEntity.setPosition(glm::vec3(place * glm::vec4(rEntity.position, 1.0f)));
+		rEntity.setRotation(placeRotation * rEntity.rotation);
+	}
+#ifdef EDITOR
+	editor.restoreKeptEntities(levelId_, made);
+#endif
+	rLevel.resolveExternalEntities();
+	for(uint32_t i : made) rLevel.captureBaseline(rLevel.entityIds[i]);
+	return true;
+}
+}
+
+void resetLevel(PoolId levelId_)
+{
+	Level& rLevel = getLevel(levelId_);
+	const std::string name = rLevel.name;
+	Recipe& rRecipe = recipes.at(name);
+
+	/* Only what changed is made again when it can be (resetEntitiesInPlace, which gives the editor's Play its kept state); otherwise the entities are all made again, below. */
+	uint32_t kept = 0, remade = 0, removed = 0;
+	if(resetEntitiesInPlace(levelId_, name, kept, remade, removed))
+	{
+		if(remade != 0 || removed != 0)
+		{
+			Globals::Game::spatialIndex.rebuild();
+		}
+		return;
+	}
+	/* Only the entities are rebuilt: the instance (the meshes and textures uploaded) and the collision stay, which was most of the cost of destroying the whole level (TODO, Level reset, step 5). What the editor changes in them while playing (the map place) is put back below; scripts change neither. */
+
+	/* What each entity of the build was (by its place in the level and its recipe), to tell a script's kept handle which new entity took its place once the build is done. */
+	struct BuiltIdentity
+	{
+		PoolId id;
+		EntityRecipe::Kind kind;
+		PoolId prefabId;
+		bool fromSource;
+		uint32_t addedIndex;
+	};
+	std::vector<BuiltIdentity> before;
+	for(uint32_t i = 0; i < rLevel.builtCount && i < rLevel.entityIds.size(); i++)
+	{
+		auto found = rLevel.built.find(Level::builtKey(rLevel.entityIds[i]));
+		if(found == rLevel.built.end() || found->second.index != i) before.push_back({UninitializedPoolId, EntityRecipe::Kind::None, UninitializedPoolId, false, 0});
+		else before.push_back({rLevel.entityIds[i], found->second.recipe.kind, found->second.recipe.prefabId, found->second.recipe.fromSource, found->second.recipe.addedIndex});
+	}
+	rLevel.destroyEntities();
+	try
+	{
+		buildLevel(levelId_, name, rRecipe, true);
+	}
+	catch(const std::exception& rError)
+	{
+		/* The level stays, without entities: scripts may hold its handle, and the player still has to be somewhere. */
+		fprintf(stderr, "LevelReset: level %s not made again: %s\n", name.c_str(), rError.what());
+		return;
+	}
+	/* A new entity takes the place of an old one only when it is the same one by the recipe (the same place in the level, kind and prefab, and the same entry of the file's lists): a file the editor changed may have moved the entities. */
+	if(Scripting::ready())
+	{
+		for(uint32_t i = 0; i < before.size() && i < rLevel.builtCount && i < rLevel.entityIds.size(); i++)
+		{
+			PoolId newId = rLevel.entityIds[i];
+			if(before[i].id == UninitializedPoolId || newId == UninitializedPoolId) continue;
+			auto found = rLevel.built.find(Level::builtKey(newId));
+			if(found == rLevel.built.end()) continue;
+			const EntityRecipe& rNew = found->second.recipe;
+			if(rNew.kind == before[i].kind && rNew.prefabId == before[i].prefabId && rNew.fromSource == before[i].fromSource && rNew.addedIndex == before[i].addedIndex) Scripting::entityRemade(before[i].id, newId);
+		}
+	}
+#ifdef EDITOR
+	editor.restoreKeptLevel(levelId_);
+#endif
+	Globals::Game::spatialIndex.rebuild();
+}
+
+void loadSourcePrefabs(const std::string& levelName_, PoolId levelId_)
 {
 	for(uint32_t i = 0; i < Globals::Game::prefabs.objects.size(); i++)
 	{
 		if(!Globals::Game::prefabs.alive[i]) continue;
-		PrefabEdits& rSource = Globals::Game::prefabs.objects[i].source;
+		PrefabEdits& rSource = Globals::Game::prefabs.objects[i].inLevels[levelId_.id].source;
 		rSource = PrefabEdits{};
 		const std::string& rName = Globals::Game::prefabs.names[i];
 		std::string path = sourcePrefabFile("Assets/Levels/", levelName_, rName);
@@ -999,6 +1335,11 @@ static nlohmann::ordered_json buildLevelEdits(const Level& rLevel)
 		glm::mat3 matrix(rRotation_);
 		return nlohmann::ordered_json::array({matrix[0].x, matrix[0].y, matrix[0].z, matrix[1].x, matrix[1].y, matrix[1].z, matrix[2].x, matrix[2].y, matrix[2].z});
 	};
+
+	/* The level's entities are in world coordinates (Level::mapMatrix is applied to them); the file keeps the level's own, so every position and rotation written goes back through the inverse of the level's place in the map. */
+	glm::mat4 toLocal = glm::inverse(rLevel.mapMatrix());
+	auto localPoint = [&](const glm::vec3& rPoint_) { return glm::vec3(toLocal * glm::vec4(rPoint_, 1.0f)); };
+	auto localRotation = [&](const glm::mat4& rRotation_) { return glm::mat4(glm::mat3(toLocal)) * rRotation_; };
 	nlohmann::ordered_json moved = nlohmann::ordered_json::array();
 	nlohmann::ordered_json transforms = nlohmann::ordered_json::array();
 	nlohmann::ordered_json added = nlohmann::ordered_json::array();
@@ -1009,8 +1350,8 @@ static nlohmann::ordered_json buildLevelEdits(const Level& rLevel)
 		const Entity& rEntity = getEntity(rLevel.entityIds[i]);
 		if(i < rLevel.sourceEntityCount)
 		{
-			if(rEntity.position != rLevel.sourcePositions[i]) moved.push_back({{"index", i}, {"position", position(rEntity.position)}, {"source", position(rLevel.sourcePositions[i])}});
-			if(rEntity.rotation != rLevel.sourceRotations[i] || rEntity.scale != rLevel.sourceScales[i]) transforms.push_back({{"index", i}, {"rotation", rotation(rEntity.rotation)}, {"scale", position(rEntity.scale)}});
+			if(rEntity.position != rLevel.sourcePositions[i]) moved.push_back({{"index", i}, {"position", position(localPoint(rEntity.position))}, {"source", position(localPoint(rLevel.sourcePositions[i]))}});
+			if(rEntity.rotation != rLevel.sourceRotations[i] || rEntity.scale != rLevel.sourceScales[i]) transforms.push_back({{"index", i}, {"rotation", rotation(localRotation(rEntity.rotation))}, {"scale", position(rEntity.scale)}});
 			nlohmann::ordered_json values = writeExternals(rEntity, rLevel);
 			if(!values.empty()) externals.push_back({{"index", i}, {"values", values}});
 		}
@@ -1023,11 +1364,11 @@ static nlohmann::ordered_json buildLevelEdits(const Level& rLevel)
 			}
 			nlohmann::ordered_json shapes = nlohmann::ordered_json::array();
 			for(const Physics::CollisionShape& rShape : entityShapes(rEntity.selfId)) shapes.push_back(writeShape(rShape));
-			added.push_back({{"prefab", Globals::Game::prefabs.names[rEntity.prefabId.id]}, {"position", position(rEntity.position)}, {"behaviors", names}, {"shapes", shapes}});
-			if(rEntity.rotation != glm::mat4(1.0f)) added.back()["rotation"] = rotation(rEntity.rotation);
+			added.push_back({{"prefab", Globals::Game::prefabs.names[rEntity.prefabId.id]}, {"position", position(localPoint(rEntity.position))}, {"behaviors", names}, {"shapes", shapes}});
+			if(rEntity.rotation != glm::mat4(1.0f)) added.back()["rotation"] = rotation(localRotation(rEntity.rotation));
 			if(rEntity.scale != glm::vec3(1.0f)) added.back()["scale"] = position(rEntity.scale);
-			if(rEntity.meshChoice != prefabMesh(Globals::Game::prefabs[rEntity.prefabId])) added.back()["mesh"] = writeMeshChoice(rEntity.meshChoice);
-			if(rEntity.textureChoice != prefabTexture(Globals::Game::prefabs[rEntity.prefabId])) added.back()["texture"] = writeTextureChoice(rEntity.textureChoice);
+			if(rEntity.meshChoice != prefabMesh(Globals::Game::prefabs[rEntity.prefabId], rLevel.selfId)) added.back()["mesh"] = writeMeshChoice(rEntity.meshChoice);
+			if(rEntity.textureChoice != prefabTexture(Globals::Game::prefabs[rEntity.prefabId], rLevel.selfId)) added.back()["texture"] = writeTextureChoice(rEntity.textureChoice);
 			nlohmann::ordered_json values = writeExternals(rEntity, rLevel);
 			if(!values.empty()) added.back()["externals"] = values;
 		}
@@ -1041,8 +1382,9 @@ static nlohmann::ordered_json buildLevelEdits(const Level& rLevel)
 		if(!Globals::Game::prefabs.alive[i]) continue;
 		const Prefab& rPrefab = Globals::Game::prefabs.objects[i];
 		bool withModel = rPrefab.kind != PrefabKind::External;
-		if(prefabEditsEmpty(rPrefab.level, withModel)) continue;
-		nlohmann::ordered_json lists = writePrefabEdits(rPrefab.level, withModel);
+		const PrefabEdits& rLevelEdits = prefabLevelEdits(rPrefab, rLevel.selfId);
+		if(prefabEditsEmpty(rLevelEdits, withModel)) continue;
+		nlohmann::ordered_json lists = writePrefabEdits(rLevelEdits, withModel);
 		prefabs[Globals::Game::prefabs.names[i]] = lists;
 	}
 	nlohmann::ordered_json behaviors = nlohmann::ordered_json::array();
@@ -1056,7 +1398,7 @@ static nlohmann::ordered_json buildLevelEdits(const Level& rLevel)
 		std::vector<PoolId> expected = rLevel.sourceBehaviors[i];
 		if(rEntity.prefabId != UninitializedPoolId)
 		{
-			applyPrefabBehaviorsTo(Globals::Game::prefabs[rEntity.prefabId], expected);
+			applyPrefabBehaviorsTo(Globals::Game::prefabs[rEntity.prefabId], expected, rLevel.selfId);
 		}
 		std::vector<PoolId> current = rEntity.behaviorSetId == UninitializedPoolId ? std::vector<PoolId>() : Globals::Game::entityBehaviors[rEntity.behaviorSetId].behaviorIds;
 		nlohmann::ordered_json addedNames = nlohmann::ordered_json::array();
@@ -1072,7 +1414,7 @@ static nlohmann::ordered_json buildLevelEdits(const Level& rLevel)
 		if(!addedNames.empty() || !removedNames.empty()) behaviors.push_back({{"index", i}, {"added", addedNames}, {"removed", removedNames}});
 
 		std::vector<Physics::CollisionShape> expectedShapes = rLevel.sourceShapes[i];
-		if(rEntity.prefabId != UninitializedPoolId) applyPrefabShapesTo(Globals::Game::prefabs[rEntity.prefabId], expectedShapes);
+		if(rEntity.prefabId != UninitializedPoolId) applyPrefabShapesTo(Globals::Game::prefabs[rEntity.prefabId], expectedShapes, rLevel.selfId);
 		std::vector<Physics::CollisionShape> currentShapes = entityShapes(rEntity.selfId);
 		if(currentShapes != expectedShapes)
 		{
@@ -1081,9 +1423,9 @@ static nlohmann::ordered_json buildLevelEdits(const Level& rLevel)
 			shapes.push_back({{"index", i}, {"shapes", shapeList}});
 		}
 
-		MeshChoice expectedMesh = rEntity.prefabId != UninitializedPoolId ? prefabMesh(Globals::Game::prefabs[rEntity.prefabId]) : MeshChoice{};
+		MeshChoice expectedMesh = rEntity.prefabId != UninitializedPoolId ? prefabMesh(Globals::Game::prefabs[rEntity.prefabId], rLevel.selfId) : MeshChoice{};
 		if(rEntity.meshChoice != expectedMesh) meshes.push_back({{"index", i}, {"mesh", writeMeshChoice(rEntity.meshChoice)}});
-		TextureChoice expectedTexture = rEntity.prefabId != UninitializedPoolId ? prefabTexture(Globals::Game::prefabs[rEntity.prefabId]) : TextureChoice{};
+		TextureChoice expectedTexture = rEntity.prefabId != UninitializedPoolId ? prefabTexture(Globals::Game::prefabs[rEntity.prefabId], rLevel.selfId) : TextureChoice{};
 		if(rEntity.textureChoice != expectedTexture) textures.push_back({{"index", i}, {"texture", writeTextureChoice(rEntity.textureChoice)}});
 	}
 	nlohmann::ordered_json edits = nlohmann::ordered_json::object();
@@ -1106,13 +1448,14 @@ static nlohmann::ordered_json buildLevelCameras(const Level& rLevel)
 {
 	nlohmann::ordered_json cameras = nlohmann::ordered_json::array();
 	auto vector = [](const glm::vec3& rValue_) { return nlohmann::ordered_json::array({rValue_.x, rValue_.y, rValue_.z}); };
+	glm::mat4 toLocal = glm::inverse(rLevel.mapMatrix());
 	for(uint32_t i = rLevel.sourceEntityCount; i < rLevel.entityIds.size(); i++)
 	{
 		if(!entityExists(rLevel.entityIds[i])) continue;
 		const Entity& rEntity = getEntity(rLevel.entityIds[i]);
 		if(rEntity.cameraId == UninitializedPoolId) continue;
 		const Camera& rCamera = Globals::Game::cameras[rEntity.cameraId];
-		nlohmann::ordered_json entry = {{"name", Globals::Game::entities.names[rLevel.entityIds[i].id]}, {"position", vector(rCamera.position)}, {"front", vector(rCamera.front)}, {"yaw", rCamera.yaw}, {"pitch", rCamera.pitch},
+		nlohmann::ordered_json entry = {{"name", Globals::Game::entities.names[rLevel.entityIds[i].id]}, {"position", vector(glm::vec3(toLocal * glm::vec4(rCamera.position, 1.0f)))}, {"front", vector(rCamera.front)}, {"yaw", rCamera.yaw}, {"pitch", rCamera.pitch},
 			{"fov", rCamera.fov}, {"near", rCamera.nearPlane}, {"far", rCamera.farPlane}, {"enabled", rCamera.enabled}};
 		if(Globals::Game::mainCamera == rEntity.cameraId) entry["main"] = true;
 		if(const Graphics::RenderTarget* pTarget = rCamera.renderTarget()) entry["renderTarget"] = {{"width", pTarget->width}, {"height", pTarget->height}};
@@ -1121,7 +1464,7 @@ static nlohmann::ordered_json buildLevelCameras(const Level& rLevel)
 	return cameras;
 }
 
-void saveLevelEdits(PoolId levelId_, const std::string& fileName_)
+bool saveLevelEdits(PoolId levelId_, const std::string& fileName_)
 {
 	const Level& rLevel = getLevel(levelId_);
 	std::string levelName = Globals::Game::levels.names[levelId_.id];
@@ -1143,9 +1486,21 @@ void saveLevelEdits(PoolId levelId_, const std::string& fileName_)
 	the copy of such a level does not find them (the same as before levels were folders).
 	*/
 	std::string text = file.dump(2);
+	bool written = false;
 	for(const std::string& rRoot : {std::string("Assets/Levels/"), std::string(SF_SOURCE_DIR "/Levels/")})
 	{
 		namespace fs = std::filesystem;
+
+		/*
+		Saving under the level's own name: a root that has no folder for the level (the source tree when the level only exists in Assets) is not given one, so a save does not create folders by itself; Save as makes them. A file that already holds
+		exactly this text is left alone, so saving every loaded level rewrites only the levels that changed.
+		*/
+		if(fileName_ == levelName)
+		{
+			if(!fs::is_directory(rRoot + levelName)) continue;
+			std::ifstream existing(levelFilePath(rRoot, fileName_));
+			if(existing && std::string(std::istreambuf_iterator<char>(existing), std::istreambuf_iterator<char>()) == text) continue;
+		}
 		if(fileName_ != levelName && fs::is_directory(rRoot + levelName))
 		{
 			fs::copy(rRoot + levelName, rRoot + fileName_, fs::copy_options::recursive | fs::copy_options::skip_existing);
@@ -1155,7 +1510,9 @@ void saveLevelEdits(PoolId levelId_, const std::string& fileName_)
 		std::ofstream out(levelFilePath(rRoot, fileName_));
 		if(!out) throw std::runtime_error(std::format("can't write {}.", levelFilePath(rRoot, fileName_)));
 		out << text;
+		written = true;
 	}
+	return written;
 }
 
 namespace
@@ -1259,7 +1616,7 @@ void saveSourceLevel(PoolId levelId_)
 			if(!Globals::Game::prefabs.alive[i]) continue;
 			const Prefab& rPrefab = Globals::Game::prefabs.objects[i];
 			bool withModel = rPrefab.kind != PrefabKind::External;
-			PrefabEdits merged = mergePrefabEdits(rPrefab.source, rPrefab.level);
+			PrefabEdits merged = mergePrefabEdits(prefabSourceEdits(rPrefab, levelId_), prefabLevelEdits(rPrefab, levelId_));
 			fs::path path = sourcePrefabFile(rRoot, levelName, Globals::Game::prefabs.names[i]);
 			if(prefabEditsEmpty(merged, withModel))
 			{

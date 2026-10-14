@@ -25,6 +25,11 @@ struct RenderStats
 	uint32_t entitiesDrawn = 0;
 	uint32_t levelPiecesDrawn = 0;
 
+	/* Uploads and frees since the hitch logger of main.cpp (SF_HITCH) last zeroed them; resetFrame leaves them alone. */
+	uint32_t meshUploads = 0;
+	uint32_t meshFrees = 0;
+	uint32_t textureUploads = 0;
+
 	GLuint lastProgram = 0;
 	GLuint lastVAO = 0;
 	GLuint lastTexture = 0;

@@ -52,7 +52,7 @@ void attachPlayer(PoolId entityId_);
 /* The entities scripts spawned (sf.spawnPlayer, sf.spawn), in order; some may be gone since (entityExists). The editor's Assets tab reads it to count what they draw as used by the level. */
 const std::vector<PoolId>& spawnedEntities();
 
-/* Removes the levels a script asked to unload (sf.unloadLevel); the gameplay system calls it at the start of every tick. */
+/* Resets the levels a script asked to reset (sf.resetLevel) and removes the ones it asked to unload (sf.unloadLevel); the gameplay system calls it at the start of every tick. */
 void processPendingUnloads();
 
 /*
@@ -60,6 +60,12 @@ Puts the game back to its start (the editor's Stop): the script's global resetGa
 is running; then resetGame(true) is called, where it loads the level again and puts the players at its start. Both calls get the level's name as a second argument (nil without a name): a name makes the script load that level instead (the editor's File > Load level). A script that does not define resetGame is skipped.
 */
 void resetGame(const char* pLevelName_ = nullptr);
+
+/*
+Says that a level reset (Loading::resetLevel, or the editor's restore of what Play added) removed the entity oldId_ and made newId_ in its place from the same recipe. A script that kept the old handle (a global, the player's state) reaches the new entity with it: the functions of `sf`
+that take an entity follow the handle (sf.exists is true), and every entity a script is given afterwards carries the first handle, so == against a kept one holds. oldId_ may be any id the entity had; the entity's later remakes are told the same way.
+*/
+void entityRemade(PoolId oldId_, PoolId newId_);
 
 /* Gives back an entity's state table (Entity::scriptStateRef); Entity::destroy calls it. Safe after destroy(). */
 void releaseState(int stateRef_);

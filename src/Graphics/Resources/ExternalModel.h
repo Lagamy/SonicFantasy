@@ -10,6 +10,8 @@
 
 namespace Graphics
 {
+struct ExternalPools;
+
 /*
 One submesh of an external model: its BasicMesh (always in the pools of the model's own scope, see ExternalPools) and its Texture (UninitializedPoolId = untextured). A level model may use a project
 texture, so the texture says which scope's pool it is in.
@@ -21,12 +23,13 @@ struct ExternalSubmesh
 	bool textureInProject = false;
 };
 
-/* A model read from Assets/External (Loading::scanExternalAssets). inProject: it and its meshes are in the project pools, otherwise in the level pools. */
+/* A model read from Assets/External (Loading::scanExternalAssets). inProject: it and its meshes are in the project pools, otherwise in the pools of its level. pPools: the pools its meshes and own-scope textures are in (set at registration; a level's pools are dropped with the level, so an entity that holds the model never outlives them). */
 struct ExternalModel
 {
 	std::string name;
 	BoundingSphere bounds;
 	bool inProject = false;
+	ExternalPools* pPools = nullptr;
 	std::vector<ExternalSubmesh> submeshes;
 
 	/*
@@ -37,7 +40,7 @@ struct ExternalModel
 };
 
 /*
-The external assets of one scope. Two exist (GPU_Globals.h): externalProject (Assets/External/Models|Textures) and externalLevel (the opened level's folder; emptied when another level is opened). Names inside a pool are the plain asset names ("Crate", mesh "Crate#0"), so a level may hold an asset named like a project one.
+The external assets of one scope. externalProject (Assets/External/Models|Textures) is one; the level scope has one set per loaded level (GPU_Globals.h: externalLevels, kept until the level is destroyed), and externalLevel() is the set of the level the editor works on (the last scanned). Names inside a pool are the plain asset names ("Crate", mesh "Crate#0"), so a level may hold an asset named like a project one.
 */
 struct ExternalPools
 {

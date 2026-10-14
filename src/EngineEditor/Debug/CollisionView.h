@@ -32,12 +32,13 @@ struct CollisionView
 	/* Lines of the level collisions and the entities' shapes farther than this from the camera (units) are not drawn; the camera's far plane limits it too. */
 	float drawDistance = 2000.0f;
 
-	/* A cross to draw at a world position; value picks its color (see above), label (a string that outlives it, may be nullptr) names what it stands for in the legend. */
+	/* A cross to draw at a world position; value picks its color (see above), label (a string that outlives it, may be nullptr) names what it stands for in the legend. levelId is the level that made it (Level::destroy removes only its own). */
 	struct Marker
 	{
 		glm::vec3 position;
 		uint32_t value;
 		const char* label = nullptr;
+		PoolId levelId = UninitializedPoolId;
 	};
 
 	/* The color a value is drawn in (the same for attributes and markers). */

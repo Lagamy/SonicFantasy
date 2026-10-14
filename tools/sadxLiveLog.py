@@ -38,6 +38,9 @@ checked on the RAM dump sadxDecomp/mem1.raw, Emerald Coast act 1, at rest; hypot
   +0x44 / +0x48 / +0x4c wall normal (FUN_804dac14 writes it every step: zero without a wall; filled when the collision record's flags +4 have 0x10 and 0x4 and status 0x4 is clear),
   +0x5c / +0x60 flags_5c / flags_60 (this step's and the previous step's surface/state flags, 0x80100001 on the dump), +0x1e4 flags_1e4, +0x04 flags_04, +0x7e counter_7e, the motion struct at +0x120
   (+0x124 u16 motion id now, +0x126 the id of the step before, +0x130 f32 frame; dump: id 0xc run, frame 11.55) and the collision record's u16 flags at +4 (col_flags).
+- Animation columns for the ball's speed and blink (added 2026-10-12, not run live; read_motion): anim_mode (+0x120 u16), anim_next (+0x12A), anim_frame2 (+0x134), anim_flags (+0x12E), the floats the
+  motion struct's two speed pointers (+0x138 / +0x13C) name, the live table entry of the current id (ent_nodes, ent_mode, ent_next, ent_step, ent_rate), and the draw's decision computed from the
+  row: ball_blink, drawn_id (0x20 while blinking) and drawn_ptr (the entry's model pointer).
 - vi_count: the SDK's VI retrace count, u32 at 0x800C44E4 (external: FUN_80046210, the VI interrupt handler, does DAT_800c44e4 += 1 once per retrace; the dump read 27211). Unknown whether SADX runs one
   game frame per retrace (it may run 30 a second): the first recording shows it (count steps per position change).
 """
@@ -131,6 +134,31 @@ def words_hex(blob):
     return " ".join(f"{u32(blob, o):08x}" for o in range(0, len(blob) - len(blob) % 4, 4))
 
 
+def read_pointed_float(address):
+    # The float a motion struct pointer names (None-safe): "" when the pointer is not in MEM1.
+    return f"{f32(dme.read_bytes(address, 4), 0):.5f}" if valid(address) else ""
+
+
+def read_motion(w1, w3):
+    # The animation inputs of the ball's speed and blink (decompile FUN_804cf4f4, FUN_805a9f90; docs/ai/SADX_SONIC.md "Ball blink"). The motion struct is w3+0x120: +0 u16 mode, +4 id, +6 id of the step
+    # before, +0xA u16 next id, +0xE u16 flags, +0x10 f32 frame, +0x14 f32 frame2, +0x18 / +0x1C pointers to the floats that modes 9 / 10 multiply by the entry's rate (forward speed, work0), +0x20 pointer
+    # to the table of 16 byte entries (+4 nodes, +5 mode, +6 next, +8 blend step, +0xC rate). The draw (+0x140 is the table pointer again) shows entry 0x20 instead of the id when status & 0x100,
+    # id != 0x91 and counter (w3+0x7E) & 0x11; drawn_id / ball_blink / drawn_ptr (the entry's model pointer) are that decision computed here, not read. Columns are "" when a pointer is not in MEM1.
+    mode, next_id, flags = struct.unpack_from(">H", w3, 0x120)[0], struct.unpack_from(">H", w3, 0x12A)[0], struct.unpack_from(">H", w3, 0x12E)[0]
+    anim_id = struct.unpack_from(">H", w3, 0x124)[0]
+    row = [mode, next_id, f"{f32(w3, 0x134):.4f}", f"{flags:04x}", read_pointed_float(u32(w3, 0x138)), read_pointed_float(u32(w3, 0x13C))]
+    table = u32(w3, 0x140)
+    blink = bool(struct.unpack_from(">H", w1, 4)[0] & 0x100) and anim_id != 0x91 and bool(struct.unpack_from(">H", w3, 0x7E)[0] & 0x11)
+    drawn = 0x20 if blink else anim_id
+    if valid(table + 0x10 * 0x92):
+        entry = dme.read_bytes(table + 0x10 * anim_id, 0x10)
+        row += [entry[4], entry[5], struct.unpack_from(">H", entry, 6)[0] & 0xFF, f"{f32(entry, 8):.5f}", f"{f32(entry, 0xC):.5f}"]
+        row += [f"{drawn:x}", int(blink), f"{u32(dme.read_bytes(table + 0x10 * drawn, 4), 0):08x}"]
+    else:
+        row += [""] * 5 + [f"{drawn:x}", int(blink), ""]
+    return row
+
+
 def main():
     out_path = "sadx_live.csv"
     seconds = None
@@ -161,6 +189,8 @@ def main():
               "cam_rot_x", "cam_rot_y", "cam_eye_x", "cam_eye_y", "cam_eye_z", "cam_target_x", "cam_target_y", "cam_target_z",
               "up_speed", "side_speed", "work0", "grip_excess", "ground_nx", "ground_ny", "ground_nz", "slope_cos", "wall_nx", "wall_ny", "wall_nz",
               "flags_04", "flags_5c", "flags_60", "flags_1e4", "counter_7e", "anim_id", "anim_prev", "anim_frame", "col_flags",
+              "anim_mode", "anim_next", "anim_frame2", "anim_flags", "anim_fwd_ptr_val", "anim_work_ptr_val",
+              "ent_nodes", "ent_mode", "ent_next", "ent_step", "ent_rate", "drawn_id", "ball_blink", "drawn_ptr",
               "vi_count", "w1_raw", "w2_raw", "w3_raw", "col_raw", "stick_raw", "pad_raw"]
     start = time.time()
     last_key = None
@@ -201,6 +231,7 @@ def main():
                     row += [f"{x:.4f}" for x in struct.unpack_from(">fff", w3, 0x50)] + [f"{f32(w3, 0x1C):.4f}"] + [f"{x:.4f}" for x in struct.unpack_from(">fff", w3, 0x44)]
                     row += [f"{u32(w3, 0x04):08x}", f"{u32(w3, 0x5C):08x}", f"{u32(w3, 0x60):08x}", f"{u32(w3, 0x1E4):08x}", struct.unpack_from(">H", w3, 0x7E)[0]]
                     row += list(struct.unpack_from(">HH", w3, 0x124)) + [f"{f32(w3, 0x130):.4f}", f"{struct.unpack_from('>H', col, 4)[0]:04x}"]
+                    row += read_motion(w1, w3)
                     row += [u32(dme.read_bytes(VI_RETRACE_COUNT, 4), 0), words_hex(w1), words_hex(w2), words_hex(w3), words_hex(col), words_hex(stick), words_hex(pad)]
                     writer.writerow(row)
                     rows += 1

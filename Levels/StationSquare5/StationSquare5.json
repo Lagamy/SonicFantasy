@@ -1,0 +1,14 @@
+{
+  "engine": "sadx",
+  "shader": "SA",
+  "position": [
+    0,
+    0,
+    0
+  ],
+  "landTable": {
+    "rel": "_Adv00.rel",
+    "offset": "0x20811C"
+  },
+  "textures": "advSS05.GVM"
+}

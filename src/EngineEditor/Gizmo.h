@@ -5,6 +5,7 @@
 #include "PoolId.h"
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
+#include <vector>
 
 namespace Graphics
 {
@@ -22,6 +23,9 @@ Undo (Ctrl+Z) is Editor's: it notices a finished change of the selected entity's
 /* The entity under the window position (x_, y_) in pixels as the camera sees it (UninitializedPoolId if none), for click to select (Editor::processInputs). Entities are picked by the exact box of their model, else by their bounding sphere, see the definition. */
 PoolId pickEntity(GLFWwindow* pWindow_, const Camera& rCamera_, double x_, double y_);
 
+/* The level whose bounds box the ray under the window position enters first (UninitializedPoolId if none), for click to select in the Map view when no entity is under the cursor. */
+PoolId pickLevel(GLFWwindow* pWindow_, const Camera& rCamera_, double x_, double y_);
+
 /* Where the ray under the window position (x_, y_) crosses the horizontal plane at height_ (world y), within the camera's far plane. False if the ray is level with the plane, points away from it or the window has no size. Used by Editor's paste. */
 bool pickPlanePoint(GLFWwindow* pWindow_, const Camera& rCamera_, double x_, double y_, float height_, glm::vec3& rPoint_);
 
@@ -38,13 +42,43 @@ struct Gizmo
 	/* True while a handle is being dragged: the camera must not start a button hold meanwhile. */
 	bool wantsMouse() const;
 
-	/* Picks the handle under the cursor, starts a drag on a left press on it, and applies / ends the running drag. Nothing without a selected entity. uiWantsMouse_: the cursor is on an ImGui window; cameraDragging_: the editor camera is in a button hold. */
-	void update(GLFWwindow* pWindow_, const Camera& rCamera_, PoolId selected_, bool uiWantsMouse_, bool cameraDragging_);
+	/*
+	Picks the handle under the cursor, starts a drag on a left press on it, and applies / ends the running drag. Nothing without a selected entity. uiWantsMouse_: the cursor is on an ImGui window; cameraDragging_: the editor camera is in a button hold.
+	rGroup_ is the selection, the primary one first. One entity: its own handles (Scale along its own axes). Several: one set of handles at the centre of their positions, on the world axes: Move moves them all by the same step, Rotate turns the group about the centre (each entity's
+	position goes round the centre and its rotation is turned in front, as for one entity), Scale scales the group about the centre along the world axes (positions from the centre, and each entity's own scale by the same factor, which is exact only for an entity aligned with the world axes).
+	*/
+	void update(GLFWwindow* pWindow_, const Camera& rCamera_, const std::vector<PoolId>& rGroup_, bool uiWantsMouse_, bool cameraDragging_);
 
-	/* Draws the handles of the mode for the selected entity (nothing without one). */
-	void draw(const Camera& rCamera_, PoolId selected_);
+	/* Draws the handles of the mode for the selection (nothing without an existing entity). */
+	void draw(const Camera& rCamera_, const std::vector<PoolId>& rGroup_);
+
+	/*
+	The same handles on the places of one or more levels in the map (the Map view, Editor::mapView): positions and rotations in degrees (MapLevel), Move and Rotate only (Scale has no handles), the group acting as above (one level: about its own position). updateLevels changes the values
+	being dragged and returns true when it did; the caller applies them (Level::setMapTransform) and keeps them (Map::set).
+	*/
+	bool updateLevels(GLFWwindow* pWindow_, const Camera& rCamera_, std::vector<glm::vec3>& rPositions_, std::vector<glm::vec3>& rRotationsDegrees_, bool uiWantsMouse_, bool cameraDragging_);
+	void drawLevels(const Camera& rCamera_, const std::vector<glm::vec3>& rPositions_);
+
+	/* What the handles work on: where they are drawn (origin), and the position, rotation and scale the drag changes. */
+	struct Target
+	{
+		glm::vec3 origin;
+		glm::vec3 position;
+		glm::mat4 rotation;
+		glm::vec3 scale;
+	};
 
 private:
+	/* The one drag logic of update and updateLevels (picks, starts, applies and ends a drag on rTarget_), and the drawing of the handles of one target. */
+	void drive(GLFWwindow* pWindow_, const Camera& rCamera_, Target& rTarget_, bool uiWantsMouse_, bool cameraDragging_);
+	void drawTarget(const Camera& rCamera_, const Target& rTarget_);
+
+	/* The group drag of update and updateLevels: the handles are at the centre of the members' positions; while a drag runs the members get their values from the ones they had when it started. True when rMembers_ was changed. */
+	bool driveGroup(GLFWwindow* pWindow_, const Camera& rCamera_, std::vector<Target>& rMembers_, bool uiWantsMouse_, bool cameraDragging_);
+
+	/* The members' values at the start of the group drag. */
+	std::vector<Target> groupStart;
+
 	/* The handle (axis 0..2) under the cursor, -1 none; the axis being dragged while dragging. */
 	int hovered = -1;
 	int dragAxis = -1;

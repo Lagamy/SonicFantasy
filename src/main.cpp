@@ -103,6 +103,7 @@ int main() {
 	registerPrefabs();
 	/* Their groups and the Shadow objects' placement layouts (Assets/External/Prefabs/Groups.json, STH2005/Placement.json). */
 	Loading::loadPrefabData();
+	Globals::Game::map.read();
 	/* The prefabs' Changed files (Assets/External/Prefabs/<game>/<KEY>/Changed/prefab.json) name behaviours, so after the scripts. */
 	Loading::loadChangedPrefabs();
 #ifdef EDITOR
@@ -156,7 +157,20 @@ int main() {
 	// double statTime = 0.0;
 	// Graphics::RenderStats statSum;
 
+	/*
+	SF_HITCH=<ms> (20 if empty or 0) prints to stderr every frame that took longer than that many milliseconds: the camera
+	position, the time of each part (gameplay, entity update, render submit, UI, swap) and the meshes and textures uploaded or
+	freed that frame. A swap that is long with nothing else is the driver or vsync, not the engine.
+	*/
+	const char* hitchEnv = std::getenv("SF_HITCH");
+	double hitchMs = hitchEnv ? std::atof(hitchEnv) : 0.0;
+	if(hitchEnv && hitchMs <= 0.0) hitchMs = 20.0;
+
 	while (!glfwWindowShouldClose(Globals::App::window)) {
+		double hitchFrameStart = glfwGetTime();
+		Graphics::renderStats.meshUploads = 0;
+		Graphics::renderStats.meshFrees = 0;
+		Graphics::renderStats.textureUploads = 0;
 		float currentFrame = glfwGetTime();
 		Globals::App::deltaTime = currentFrame - Globals::App::lastFrame;
 		Globals::App::lastFrame = currentFrame;
@@ -175,8 +189,9 @@ int main() {
         glfwPollEvents();
 		// double updateStart = glfwGetTime();
 		processInputs();
+		double hitchInputEnd = glfwGetTime();
 		Globals::Game::gameplaySystem.update(Globals::App::deltaTime);
-		// double gameplayEnd = glfwGetTime();
+		double hitchGameplayEnd = glfwGetTime();
 		for(uint32_t i = 0; i < Globals::Game::levels.objects.size(); i++)
 		{
 			if(Globals::Game::levels.alive[i]) Globals::Game::levels.objects[i].update(Globals::App::deltaTime);
@@ -187,6 +202,7 @@ int main() {
 		}
 		Globals::Game::gameEvents.drain();
 		if(entityExists(Globals::Game::cameraTarget)) updateFollowCamera(Globals::Game::cameraTarget);
+		double hitchUpdateEnd = glfwGetTime();
 		// double renderStart = glfwGetTime();
 		// Graphics::renderStats.resetFrame();
 		// if(statsOn) glBeginQuery(GL_TIME_ELAPSED, gpuQueries[frameNumber % 3]);
@@ -197,11 +213,27 @@ int main() {
 #endif
 		// if(statsOn) glEndQuery(GL_TIME_ELAPSED);
 		// double uiStart = glfwGetTime();
+		double hitchRenderEnd = glfwGetTime();
 #ifdef EDITOR
 		editor.draw();
 #endif
 		// double swapStart = glfwGetTime();
+		double hitchUiEnd = glfwGetTime();
 		glfwSwapBuffers(Globals::App::window);
+
+		if(hitchEnv)
+		{
+			double hitchEnd = glfwGetTime();
+			if((hitchEnd - hitchFrameStart) * 1000.0 > hitchMs)
+			{
+				const glm::vec3& rPosition = getMainCamera().position;
+				std::fprintf(stderr, "[hitch] %.1f ms at (%.0f, %.0f, %.0f) | gameplay %.1f update %.1f render %.1f ui %.1f swap %.1f | meshes +%u -%u textures +%u\n",
+					(hitchEnd - hitchFrameStart) * 1000.0, rPosition.x, rPosition.y, rPosition.z,
+					(hitchGameplayEnd - hitchInputEnd) * 1000.0, (hitchUpdateEnd - hitchGameplayEnd) * 1000.0, (hitchRenderEnd - hitchUpdateEnd) * 1000.0,
+					(hitchUiEnd - hitchRenderEnd) * 1000.0, (hitchEnd - hitchUiEnd) * 1000.0,
+					Graphics::renderStats.meshUploads, Graphics::renderStats.meshFrees, Graphics::renderStats.textureUploads);
+			}
+		}
 
 		// if(statsOn)
 		// {

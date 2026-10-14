@@ -1,6 +1,7 @@
 #pragma once 
 #include <string>
 #include <unordered_map>
+#include <memory>
 #include "SAInstance.h"
 #include "ONEInstance.h"
 #include "SALevelInstance.h"
@@ -37,7 +38,14 @@ namespace Graphics
 	inline PoolMap<Texture> textures = ("Textures");
 	inline PoolMap<VertexLayout> vertexLayouts = ("VertexLayouts");
 	inline ExternalPools externalProject("ProjectMeshes", "ProjectTextures", "ProjectModels");
-	inline ExternalPools externalLevel("LevelMeshes", "LevelTextures", "LevelModels");
+	/*
+	The level scope of the External assets: the pools of every loaded level by its name (made by Loading::scanExternalAssets, dropped by Loading::forgetExternalAssets when the level is destroyed, so an entity's pointer into
+	its level's pools stays valid while the entity exists). externalNoLevel is the empty set used while no level was scanned; externalLevel() is the set of the active scope (the level scanned last).
+	*/
+	inline std::unordered_map<std::string, std::unique_ptr<ExternalPools>> externalLevels;
+	inline ExternalPools externalNoLevel("LevelMeshes", "LevelTextures", "LevelModels");
+	inline ExternalPools* pExternalLevel = &externalNoLevel;
+	inline ExternalPools& externalLevel() { return *pExternalLevel; }
 	inline PoolMap<TextureSet> textureSets = ("TextureSets");
 	inline Pool<TextureBinding> textureBindings = ("TextureBindings");
 	inline PoolMap<Shader> shaders = ("Shaders");

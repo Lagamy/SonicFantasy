@@ -48,6 +48,7 @@ void BasicMesh::create()
 	}
 
 	this->alive = true; 
+	renderStats.meshUploads++;
 }
 
 void BasicMesh::draw()
@@ -70,6 +71,7 @@ void BasicMesh::destroy()
 		glDeleteBuffers(1, &this->VBO); 
 		if(!this->indicies.empty()) glDeleteBuffers(1, &this->EBO);
 		this->alive = false;
+		renderStats.meshFrees++;
 	}
 }
 }

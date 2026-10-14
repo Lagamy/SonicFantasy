@@ -41,7 +41,7 @@ private:
 	size_t renameIndex = 0;
 	char renameText[64] = "";
 
-	/* The switch of the "Every entity of <prefab>" boxes (all four tabs): false = the open level's edits (Prefab::level, saved with the level), true = every level's (Prefab::changed, the prefab's Changed file, saved at once). Not for an External prefab. */
+	/* The switch of the "Every entity of <prefab>" boxes (all four tabs): false = the open level's edits (the level's set in Prefab::inLevels, saved with the level), true = every level's (Prefab::changed, the prefab's Changed file, saved at once). Not for an External prefab. */
 	bool allLevels = false;
 
 	void drawScopeSwitch(PoolId prefabId_);
@@ -50,6 +50,7 @@ private:
 	void giveBehaviour(PoolId entityId_, bool forPrefab_, PoolId behaviorId_);
 	void acceptScript(PoolId entityId_, bool forPrefab_);
 	void drawTransform(PoolId entityId_);
+	void drawLevelPlace();
 	void drawBoundArea(PoolId entityId_);
 	void drawBoundAreaRules();
 	void drawPhysics(PoolId entityId_);

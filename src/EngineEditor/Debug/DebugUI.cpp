@@ -1,7 +1,9 @@
 #include "DebugUI.h"
 #include "Globals.h"
+#include "API.h"
 #include "GPU_Globals.h"
 #include "Editor.h"
+#include "Level.h"
 #include "GLTFImport.h"
 #include <glad/glad.h>
 #include "imgui.h"
@@ -62,7 +64,7 @@ void DebugUI::draw(Editor& rEditor_)
 			{
 				PoolId levelId = rEditor_.currentLevel();
 				std::string levelName = levelId != UninitializedPoolId ? Globals::Game::levels.names[levelId.id] : std::string();
-				if(ImGui::MenuItem("Save", nullptr, false, levelId != UninitializedPoolId)) rEditor_.saveLevel(levelName);
+				if(ImGui::MenuItem("Save", nullptr, false, levelId != UninitializedPoolId)) rEditor_.saveAllLevels();
 				if(ImGui::MenuItem("Save as...", nullptr, false, levelId != UninitializedPoolId))
 				{
 					std::snprintf(this->saveAsName, sizeof(this->saveAsName), "%s", levelName.c_str());
@@ -301,6 +303,9 @@ void DebugUI::draw(Editor& rEditor_)
 				ImGui::Text("Entities: %u static (%u kept by the last query), %u dynamic, %u active", static_cast<uint32_t>(Globals::Game::spatialIndex.items.size()), Globals::Game::spatialIndex.lastVisibleStatic, static_cast<uint32_t>(Globals::Game::spatialIndex.dynamicEntities.size()), static_cast<uint32_t>(Globals::Game::spatialIndex.activeEntities.size()));
 				if(ImGui::Checkbox("VSync", &Globals::App::vsync)) glfwSwapInterval(Globals::App::vsync ? 1 : 0);
 				ImGui::Text("Frame: %.1f ms, gameplay ticks this frame: %d (%.2f ms)", Globals::App::deltaTime * 1000.0f, Globals::Game::gameplaySystem.ticksLastFrame, Globals::Game::gameplaySystem.tickMillisecondsLastFrame);
+				/* The camera that is drawing: the editor's while editing, the gameplay main camera while playing. */
+				Camera* pRenderCamera = editor.active ? &editor.camera : (Globals::Game::mainCamera != UninitializedPoolId ? &getMainCamera() : nullptr);
+				if(pRenderCamera != nullptr && ImGui::SliderFloat("Render distance (far plane)", &pRenderCamera->farPlane, 100.0f, 500000.0f, "%.0f", ImGuiSliderFlags_Logarithmic)) pRenderCamera->refreshProjection();
 				ImGui::Checkbox("Log game events", &Globals::Game::gameEvents.logEvents);
 				ImGui::Checkbox("Extrapolate entities (off: interpolate, a tick behind)", &Globals::Game::gameplaySystem.extrapolate);
 				ImGui::EndTabItem();
@@ -343,7 +348,20 @@ void DebugUI::draw(Editor& rEditor_)
 	}
 
 	if(rEditor_.active) rEditor_.text.draw(rEditor_.camera);
-	if(rEditor_.active) rEditor_.gizmo.draw(rEditor_.camera, rEditor_.entityList.selected);
+	if(rEditor_.active)
+	{
+		if(!rEditor_.mapView) rEditor_.gizmo.draw(rEditor_.camera, rEditor_.entityList.selection());
+		else
+		{
+			std::vector<glm::vec3> positions;
+			for(const std::string& rName : rEditor_.mapSelection())
+			{
+				MapLevel place;
+				if(rEditor_.levelPlace(rName, place)) positions.push_back(place.position);
+			}
+			rEditor_.gizmo.drawLevels(rEditor_.camera, positions);
+		}
+	}
 
 	ImGui::Render();
 	glDisable(GL_FRAMEBUFFER_SRGB);

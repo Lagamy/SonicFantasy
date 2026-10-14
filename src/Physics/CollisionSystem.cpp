@@ -222,6 +222,42 @@ static void collectInteractions(const BABehavior& rA_, PoolId aEntity_, const BA
 }
 
 /*
+The contacts of the interactions that are called once per entry (BAInteraction::onEntry), by key: touchedLast = the pairs seen on the previous tick, touchedNow = on this one. A pair is called only if it is not in
+touchedLast. The key is the function, the parent's level, prefab and position (a level reset builds the parent again with a new PoolId, and the player standing in it must not count as a new entry) and the contact's
+PoolId. Moved on at the end of CollisionSystem::update.
+*/
+struct EntryKey
+{
+	int function;
+	uint32_t level;
+	uint32_t prefab;
+	glm::vec3 position;
+	PoolId contact;
+	bool operator==(const EntryKey& rOther_) const
+	{
+		return function == rOther_.function && level == rOther_.level && prefab == rOther_.prefab && position == rOther_.position && contact == rOther_.contact;
+	}
+};
+static std::vector<EntryKey> touchedLast;
+static std::vector<EntryKey> touchedNow;
+
+/* True if the interaction is to be called now: always, unless it is once per entry and the pair was already touching on the previous tick. */
+static bool shouldCall(const Interaction& rInteraction_)
+{
+	if(!rInteraction_.function.onEntry) return true;
+	EntryKey key{rInteraction_.function.scriptFunction, UninitializedPoolId.id, UninitializedPoolId.id, glm::vec3(0.0f), rInteraction_.contact};
+	if(rInteraction_.parent != UninitializedPoolId && Globals::Game::entities.alive[rInteraction_.parent.id])
+	{
+		const Entity& rParent = Globals::Game::entities.objects[rInteraction_.parent.id];
+		key.level = rParent.levelId.id;
+		key.prefab = rParent.prefabId.id;
+		key.position = rParent.position;
+	}
+	if(std::find(touchedNow.begin(), touchedNow.end(), key) == touchedNow.end()) touchedNow.push_back(key);
+	return std::find(touchedLast.begin(), touchedLast.end(), key) == touchedLast.end();
+}
+
+/*
 A ray (a start, a unit direction, a length) against the triangles the mover's behaviour is stopped by, two sided (the winding is unknown, hypothesis, like the rest of the system): the nearest hit. rDistance_ is how far along the ray it
 is, rNormal_ the triangle's normal turned to face the ray's start, rArea_ its collision behaviour. This is the game's FUN_800979e8 (external: returns the distance of the nearest hit, -1 on a miss, and the hit's position and normal on request).
 */
@@ -545,7 +581,7 @@ static void moveCapsules(uint32_t entityIndex_, const std::vector<Capsule>& rCap
 	for(const Interaction& rInteraction : interactions)
 	{
 		if(editorActive()) break;
-		rInteraction.function.call(rInteraction.parent, rInteraction.contact);
+		if(shouldCall(rInteraction)) rInteraction.function.call(rInteraction.parent, rInteraction.contact);
 	}
 }
 
@@ -931,7 +967,7 @@ static void updateEntityContacts()
 	for(const Interaction& rInteraction : interactions)
 	{
 		if(editorActive()) break;
-		rInteraction.function.call(rInteraction.parent, rInteraction.contact);
+		if(shouldCall(rInteraction)) rInteraction.function.call(rInteraction.parent, rInteraction.contact);
 	}
 }
 
@@ -1032,10 +1068,14 @@ void CollisionSystem::update()
 		for(const Interaction& rInteraction : interactions)
 		{
 			if(editorActive()) break;
-			rInteraction.function.call(rInteraction.parent, rInteraction.contact);
+			if(shouldCall(rInteraction)) rInteraction.function.call(rInteraction.parent, rInteraction.contact);
 		}
 	}
 
 	updateEntityContacts();
+
+	/* Once-per-entry interactions: this tick's pairs are the previous ones for the next. */
+	touchedLast.swap(touchedNow);
+	touchedNow.clear();
 }
 }

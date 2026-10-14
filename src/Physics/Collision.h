@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <glm/glm.hpp>
 #include <string>
 #include <unordered_map>
@@ -28,6 +29,8 @@ struct Collision
 	std::unordered_map<uint32_t, PoolId> behaviorByValue;
 	PoolId fallbackBehavior;
 	glm::vec3 position = glm::vec3(0.0f);
+	/* The vertices as loaded, kept only while setRotation has turned the mesh (empty = mesh.vertices are the loaded ones). */
+	std::vector<glm::vec3> baseVertices;
 	glm::vec3 boundsMin = glm::vec3(0.0f);
 	glm::vec3 boundsMax = glm::vec3(0.0f);
 
@@ -45,5 +48,11 @@ struct Collision
 
 	/* Moves the collision (and its bounds) to a new world position. Spatial structures built from it have to be built again. */
 	void setPosition(const glm::vec3& rPosition_);
+
+	/*
+	Turns the collision about its space's origin (a level's map rotation): mesh.vertices become rotation * the loaded vertices, so everything that reads the mesh and the position (the quad tree, the queries, the lines view) sees the turned
+	level without knowing about it, and the bounds are made again. The identity puts the loaded vertices back (and drops the copy). Appending to the mesh while turned is not allowed: turn it back first.
+	*/
+	void setRotation(const glm::mat3& rRotation_);
 };
 }

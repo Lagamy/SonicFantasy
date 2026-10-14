@@ -2,12 +2,19 @@
 -- START is the level at startup. Each level has a camera start and a start position per player (observed or placeholders, as they were in main.cpp).
 local START = "EmeraldCoast"
 
-local ORDER = {"EmeraldCoast", "Stg0100"}
+local ORDER = {"EmeraldCoast", "StationSquare4", "Stg0100"}
 local LEVELS = {
 	EmeraldCoast = {
 		game = "sadx",
 		camera = {-12.0, 30.0, 142.0},
 		players = {sonic = {0, 10, 5}, shadow = {0, 4, -5}},
+	},
+	-- Station Square levels are named by their land table (landtabless0N of _Adv00.rel = level "StationSquareN"); only StationSquare4 has a start of its own, the others get DEFAULT_START.
+	-- Placeholders: a spot above piece 24 of landtabless04 (centre -332, 0, 1715, radius 140, solid and visible; the table's piece nearest the median of its solid pieces), with the camera behind it as in EmeraldCoast; the real start is not known.
+	StationSquare4 = {
+		game = "sadx",
+		camera = {-332.0, 170.0, 1850.0},
+		players = {sonic = {-332, 150, 1715}, shadow = {-332, 150, 1735}},
 	},
 	-- The camera starts at the middle of the largest sector of the first section of stg0100 (observed in its world, with the 90 degree yaw of ONEInstance.h applied); the real start of the stage is not known.
 	Stg0100 = {
@@ -18,6 +25,10 @@ local LEVELS = {
 }
 -- A level without a start of its own (a file of Levels/ loaded from the editor) gets this one: placeholders.
 local DEFAULT_START = {camera = {0.0, 30.0, 100.0}, players = {sonic = {0, 10, 5}, shadow = {0, 4, -5}}}
+-- The other land tables of _Adv00.rel: SADX levels with the placeholder start.
+for _, name in ipairs({"StationSquare0", "StationSquare1", "StationSquare2", "StationSquare3", "StationSquare5"}) do
+	LEVELS[name] = {game = "sadx", camera = DEFAULT_START.camera, players = DEFAULT_START.players}
+end
 local CHARACTERS = {"sonic", "shadow"}
 
 local current = START

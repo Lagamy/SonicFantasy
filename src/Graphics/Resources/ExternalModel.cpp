@@ -13,13 +13,13 @@ void ExternalModel::draw(PoolId shaderId_, bool skinned_, const glm::mat4& rTran
 	if(skinned_) glUniform1i(SkinnedLocation, 0);
 	renderStats.uniformUploads++;
 	glUniformMatrix4fv(rShader.modelLocation, 1, GL_FALSE, glm::value_ptr(rTransform_));
-	ExternalPools& rOwn = this->inProject ? externalProject : externalLevel;
+	ExternalPools& rOwn = *this->pPools;
 	for(const ExternalSubmesh& rSubmesh : this->submeshes)
 	{
 		bool hasTexture = rSubmesh.textureId != UninitializedPoolId;
 		if(hasTexture)
 		{
-			Texture& rTexture = pOverrideTexture_ ? *pOverrideTexture_ : (rSubmesh.textureInProject ? externalProject : externalLevel).textures[rSubmesh.textureId];
+			Texture& rTexture = pOverrideTexture_ ? *pOverrideTexture_ : (rSubmesh.textureInProject ? externalProject : rOwn).textures[rSubmesh.textureId];
 			renderStats.texture(rTexture.textureId);
 			glBindTextureUnit(0, rTexture.textureId);
 		}

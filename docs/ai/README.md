@@ -13,6 +13,7 @@ Token-saving versions of the long human docs, in dense shorthand. The human doc 
 | jump, jumpdash, landing, drawn model, animation | + `STH2005_AIR_ANIM.md` | same |
 | the original SADX Sonic (task/struct layout, input, time, `sadxLiveLog.py`) | `SADX_SONIC.md` | `docs/SADX_SONIC_REFERENCE.md` |
 | using the engine: loading a level, level JSON, adding a level or a game, the Lua `sf` entry points | `ENGINE_USAGE.md` | `docs/ENGINE_USAGE.md` |
+| the SADX Station Square import (land tables, textures, level file) | `docs/STATION_SQUARE.md` (already compact, no twin) | same |
 | replay recording / comparison | `REPLAY.md` | `docs/REPLAY_COMPARISON.md` |
 | running a tool | skill `project-tools` | `docs/TOOLS.md` |
 | deciding what is left / parked as polish | `POLISH.md` | `docs/POLISH_NOTES.md` |

@@ -16,6 +16,18 @@ namespace Loading
 {
     PoolId loadLevel(const std::string& name_);
 
+    /*
+    The map's load (Map.h): removes the levels the last loadMap loaded beside its active one, loads the level named, makes it the map's active level (Map::active), and, when the map has an entry for it, loads every other level of the map too, each in its place (loadLevel
+    gives a level its place). A level that fails is on stderr and skipped; the named one failing throws like loadLevel. Returns the named level. What the scripts' sf.loadLevel and the editor's Load level / Stop use.
+    */
+    PoolId loadMap(const std::string& activeName_);
+
+    /*
+    Puts a loaded level back as its files have it, in place (the same PoolId, so scripts' handles stay valid): the level's entities are destroyed and made again from its recipe with its file's edits and its place in the map; its instance and collision are kept (not made again). In the editor, while playing, the editor's state kept at Play
+    is put on it (Editor::restoreKeptLevel); a build without the editor reads the files again and has no edits to keep. Nothing calls it by itself: a script does, through sf.resetLevel. A failure is on stderr and leaves the level without entities.
+    */
+    void resetLevel(PoolId levelId_);
+
 #ifdef EDITOR
     /*
     Writes the prefab's Changed file (Assets/External/Prefabs/<prefab name>/Changed/prefab.json, and External/Prefabs/... of the source tree) from Prefab::changed, or removes it when that is empty. Called by the prefab edit functions (Prefab.h) after a Global edit.
@@ -26,9 +38,9 @@ namespace Loading
     /*
     Writes the level's edits into its file (Assets/Levels/<name>/<name>.json, and Levels/<name>/<name>.json of the source tree) under the file name given (a name other than the level's copies the level's whole folder to the new name first), copying the rest of the level's file as it is: an "edits" object with
     "moved" (a level's own entity by index, its "position" and the "source" position the game's data gives) and "added" (an entity of "prefab" at "position"). loadLevel applies them after it has made the level's
-    own entities; no edits removes the object. Throws std::runtime_error if a file can't be read or written.
+    own entities; no edits removes the object. A file that already holds the same text is not written again; returns whether any file was written. Throws std::runtime_error if a file can't be read or written.
     */
-    void saveLevelEdits(PoolId levelId_, const std::string& fileName_);
+    bool saveLevelEdits(PoolId levelId_, const std::string& fileName_);
 
     /*
     File > Save Source Game Level: makes the level as it is now (the level file's source with its edits and the prefab edits of the level on top) the level's source, in the level's own folder. The file gets a "source" object (the format of "edits" without "prefabs", with the "added"
@@ -89,10 +101,10 @@ namespace Loading
     void loadChangedPrefabs();
 
     /*
-    Reads the level's Source Game Level prefab files (Assets/Levels/<level>/SourceGamePrefabs/<prefab name>/prefab.json, e.g. .../SADX/SPRING/prefab.json: the same object as a Changed file) into Prefab::source of every prefab (all others are emptied). A missing file is no edits; a bad one is printed
+    Reads the level's Source Game Level prefab files (Assets/Levels/<level>/SourceGamePrefabs/<prefab name>/prefab.json, e.g. .../SADX/SPRING/prefab.json: the same object as a Changed file) into the level's source set of every prefab (Prefab::inLevels[levelId_.id]; the set is emptied first). A missing file is no edits; a bad one is printed
     to stderr and skipped. loadLevel calls it before the level's entities are made (after the level's External prefabs exist).
     */
-    void loadSourcePrefabs(const std::string& levelName_);
+    void loadSourcePrefabs(const std::string& levelName_, PoolId levelId_);
 
     /* Calls the function for every entity key of the generated entity tables the registry names (and the ones a stage's own code creates), each table in turn: the source of the prefabs (Prefab.h). The keys live for the whole run. */
     void forEachSAEntityKey(const std::function<void(const SAEntityKey&)>& rFunction_);

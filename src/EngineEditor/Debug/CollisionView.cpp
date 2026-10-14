@@ -1,6 +1,7 @@
 #include "CollisionView.h"
 #include "GPU_API.h"
 #include "Globals.h"
+#include "API.h"
 #include "Editor.h"
 #include "SAMesh.h"
 #include "imgui.h"
@@ -318,14 +319,14 @@ static void addShapeLines(AddLine addLine_, const Physics::CollisionShape& rShap
 
 void CollisionView::draw(const Camera& rCamera_)
 {
-	if(!editor.active || (!this->enabled && !this->boundAreaTabActive && this->markers.empty())) return;
+	if(!editor.active || (!this->enabled && !this->boundAreaTabActive && this->markers.empty() && !editor.mapView)) return;
 
 	std::vector<PoolId> levelCollisions;
 	if(this->enabled)
 	{
 		for(uint32_t i = 0; i < Globals::Game::levels.objects.size(); i++)
 		{
-			if(!Globals::Game::levels.alive[i]) continue;
+			if(!Globals::Game::levels.alive[i] || !levelShown(Globals::Game::levels.objects[i].selfId)) continue;
 			PoolId id = Globals::Game::levels.objects[i].collisionId;
 			if(id != UninitializedPoolId) levelCollisions.push_back(id);
 		}
@@ -346,6 +347,7 @@ void CollisionView::draw(const Camera& rCamera_)
 	{
 		if(!Globals::Game::entities.alive[i]) continue;
 		const Entity& rEntity = Globals::Game::entities.objects[i];
+		if(!levelShown(rEntity.levelId)) continue;
 		glm::vec3 entityPosition = rEntity.renderPosition();
 		if(glm::distance(entityPosition, rCamera_.position) > distance) continue;
 
@@ -387,6 +389,7 @@ void CollisionView::draw(const Camera& rCamera_)
 
 	for(const Marker& rMarker : this->markers)
 	{
+		if(!levelShown(rMarker.levelId)) continue;
 		if(glm::distance(rMarker.position, rCamera_.position) > distance) continue;
 		constexpr float MarkerHalfSize = 8.0f;
 		glm::vec4 color = attributeColor(rMarker.value);

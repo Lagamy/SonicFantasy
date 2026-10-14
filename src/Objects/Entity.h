@@ -99,6 +99,8 @@ struct Entity
 	PoolId cameraId = UninitializedPoolId;
 	/* The prefab the entity was made from (Globals::Game::prefabs, set by spawnPrefab; UninitializedPoolId = none, e.g. a camera): the editor groups the entity list by it. */
 	PoolId prefabId = UninitializedPoolId;
+	/* The level the entity belongs to (Globals::Game::levels; set by spawnPrefab from SpawnParams::levelId, UninitializedPoolId = none: players, script spawns, cameras): its prefab edits are the level's own sets (Prefab::inLevels); without one the active level's apply. */
+	PoolId levelId = UninitializedPoolId;
 	/* The texture the editor gave the entity in place of its model's own (setEntityTexture in API.h; Default = none). defaultTexture is the model's own disc texture (discTexture), remembered by the first change so Default can put it back; hasDefaultTexture says it was. */
 	TextureChoice textureChoice;
 	std::string defaultTexture;
@@ -113,7 +115,9 @@ struct Entity
 	Graphics::Texture* pExternalTexture = nullptr;
 	/* The entity's table for what its script behaviours remember (sf.state, Scripting.h): a Lua registry reference, 0 = none yet; released by destroy. */
 	int scriptStateRef = 0;
-	/* The values the editor set for the external fields (ExternalField.h) of the entity's script behaviours: behaviour name -> field name -> value; a field not in it has its declared default. externalsApplied lists the behaviours whose fields Scripting::callBehavior has already written into the state table. */
+	/* Set when a script changed a value in the state table, at any depth (the table is a tracked proxy, Scripting.cpp); the fields written and what a behaviour does on its first run on the entity (its setup) do not set it. The level reset (5c) restores only entities with it set. */
+	bool scriptStateDirty = false;
+	/* The values the editor set for the external fields (ExternalField.h) of the entity's script behaviours: behaviour name -> field name -> value; a field not in it has its declared default. externalsApplied lists the behaviours Scripting::callBehavior has already run on the entity (their fields are written into the state table at that first run). */
 	std::map<std::string, std::map<std::string, ExternalValue>> externals;
 	std::vector<PoolId> externalsApplied;
 	/* Values of the level file that no declared field takes (the behaviour or field is not declared when the level loads, or the value does not fit its type), as their JSON text, behaviour name -> field name: kept so that saving the level does not lose them (Loading::saveLevelEdits writes them back). */

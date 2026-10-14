@@ -17,7 +17,8 @@ void SALevelInstance::draw(const glm::mat4& rBase_, const Camera& rCamera_)
 		glm::vec3 center = glm::vec3(rBase_ * glm::vec4(rPiece.center, 1.0f));
 		SAInstance& rInstance = saInstances[rPiece.saInstanceId];
 
-		switch(levelPieceAction(rCamera_, planes, center, rPiece.radius))
+		LevelPieceAction action = levelPieceAction(rCamera_, planes, center, rPiece.radius);
+		switch(action)
 		{
 		case LevelPieceAction::Unload:
 			saMeshes[rInstance.saMeshId].destroy();

@@ -22,6 +22,18 @@ void Collision::computeBounds()
 	this->boundsMax += this->position;
 }
 
+void Collision::setRotation(const glm::mat3& rRotation_)
+{
+	if(this->baseVertices.empty()) this->baseVertices = this->mesh.vertices;
+	for(size_t i = 0; i < this->baseVertices.size(); i++) this->mesh.vertices[i] = rRotation_ * this->baseVertices[i];
+	if(rRotation_ == glm::mat3(1.0f))
+	{
+		this->baseVertices.clear();
+		this->baseVertices.shrink_to_fit();
+	}
+	this->computeBounds();
+}
+
 void Collision::setPosition(const glm::vec3& rPosition_)
 {
 	glm::vec3 delta = rPosition_ - this->position;

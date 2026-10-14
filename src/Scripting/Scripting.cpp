@@ -28,6 +28,52 @@ static std::unordered_set<int> failed;
 /* The Lua registry reference of the function each prefab name has (sf.prefabBehavior). */
 static std::unordered_map<std::string, int> prefabBehaviors;
 
+/* Entity handles of entities that were removed and made again by a level reset (entityRemade) -> the id of the entity made in the first one's place. The key is the handle a script holds (the first one the entity had). */
+static std::unordered_map<int64_t, int64_t> remadeEntities;
+
+/* The reverse: the id of an entity a reset made -> the handle a script holds for it (entityHandle). */
+static std::unordered_map<int64_t, int64_t> canonicalHandles;
+
+static void registerTracked(lua_State* pLua_);
+
+void entityRemade(PoolId oldId_, PoolId newId_)
+{
+	int64_t oldId = toHandle(oldId_);
+	int64_t newId = toHandle(newId_);
+	auto known = canonicalHandles.find(oldId);
+	int64_t canonical = known != canonicalHandles.end() ? known->second : oldId;
+	if(known != canonicalHandles.end()) canonicalHandles.erase(known);
+	remadeEntities[canonical] = newId;
+	canonicalHandles[newId] = canonical;
+}
+
+void pruneRemadeEntities()
+{
+	for(auto it = remadeEntities.begin(); it != remadeEntities.end();)
+	{
+		if(entityExists(fromHandle(it->second)))
+		{
+			++it;
+			continue;
+		}
+		canonicalHandles.erase(it->second);
+		it = remadeEntities.erase(it);
+	}
+}
+
+PoolId currentEntity(PoolId id_)
+{
+	if(entityExists(id_)) return id_;
+	auto found = remadeEntities.find(toHandle(id_));
+	return found != remadeEntities.end() ? fromHandle(found->second) : id_;
+}
+
+int64_t entityHandle(PoolId id_)
+{
+	auto found = canonicalHandles.find(toHandle(id_));
+	return found != canonicalHandles.end() ? found->second : toHandle(id_);
+}
+
 lua_State* state()
 {
 	return pState;
@@ -104,6 +150,7 @@ void init()
 	lua_setglobal(pState, "loadfile");
 	lua_pushcfunction(pState, scriptPrint);
 	lua_setglobal(pState, "print");
+	registerTracked(pState);
 	registerAPI(pState);
 }
 
@@ -152,26 +199,324 @@ void loadExternalScripts()
 static void pushVector(float x_, float y_, float z_);
 
 /*
-Writes the declared fields (EntityBehavior::fields) of a behaviour into the entity's sf.state table, once per entity and behaviour: the value the editor set (Entity::externals) or the declared default. An entity that is gone (a reference
-to it was kept) or a prefab that is gone reads as sf.none (-1) / nil. An entity's state table is made here if it has none yet, as sf.state does.
+The state table of an entity is a tracked proxy: an empty table whose metatable (registry "sf.tracked") reads and writes a hidden real table, so that a write that changes a value, at any depth, sets Entity::scriptStateDirty (the level
+reset, step 5c, restores only entities that are dirty). The real table of a proxy is kept in a weak-key registry table, the entity it belongs to in another, so the proxy has no keys of its own (scripts read it with
+indexing, pairs, next, ipairs, # and table.insert/remove, which go through the metamethods). A table read from the proxy comes back as a proxy of its own, the same one each time. A raw table written into a proxy (state.t = tbl, table.insert, rawset) is turned into a proxy in place (adoptTracked), so the reference the
+script kept to it writes through the tracking too. rawset, rawget, rawlen and next on a proxy work (the globals are replaced, below). Not covered: a table that has a metatable of its own (it is wrapped when read, as a copy of the
+reference, not adopted) and a table that is in the states of two entities (its writes dirty the entity that got it first).
 */
-static void applyFields(PoolId entityId_, PoolId behaviorId_)
+static const char* const trackedMeta = "sf.tracked";
+static const char* const trackedReal = "sf.trackedReal";
+static const char* const trackedOwner = "sf.trackedOwner";
+
+/* Pushes the real table of the proxy at index_ (nil if it is not one). */
+static void pushReal(lua_State* pLua_, int index_)
+{
+	index_ = lua_absindex(pLua_, index_);
+	luaL_getsubtable(pLua_, LUA_REGISTRYINDEX, trackedReal);
+	lua_pushvalue(pLua_, index_);
+	lua_rawget(pLua_, -2);
+	lua_remove(pLua_, -2);
+}
+
+static bool isTracked(lua_State* pLua_, int index_)
+{
+	if(!lua_istable(pLua_, index_) || !lua_getmetatable(pLua_, index_)) return false;
+	luaL_getmetatable(pLua_, trackedMeta);
+	bool same = lua_rawequal(pLua_, -1, -2) != 0;
+	lua_pop(pLua_, 2);
+	return same;
+}
+
+/* Replaces the raw table on top of the stack by a proxy of it belonging to the entity owner_ (a handle). */
+static void wrapTracked(lua_State* pLua_, int64_t owner_)
+{
+	lua_newtable(pLua_);
+	luaL_setmetatable(pLua_, trackedMeta);
+	luaL_getsubtable(pLua_, LUA_REGISTRYINDEX, trackedReal);
+	lua_pushvalue(pLua_, -2);
+	lua_pushvalue(pLua_, -4);
+	lua_rawset(pLua_, -3);
+	lua_pop(pLua_, 1);
+	luaL_getsubtable(pLua_, LUA_REGISTRYINDEX, trackedOwner);
+	lua_pushvalue(pLua_, -2);
+	lua_pushinteger(pLua_, owner_);
+	lua_rawset(pLua_, -3);
+	lua_pop(pLua_, 1);
+	lua_remove(pLua_, -2);
+}
+
+static int64_t trackedOwnerOf(lua_State* pLua_, int index_)
+{
+	index_ = lua_absindex(pLua_, index_);
+	luaL_getsubtable(pLua_, LUA_REGISTRYINDEX, trackedOwner);
+	lua_pushvalue(pLua_, index_);
+	lua_rawget(pLua_, -2);
+	int64_t owner = lua_tointeger(pLua_, -1);
+	lua_pop(pLua_, 2);
+	return owner;
+}
+
+/*
+Makes the raw table at index_ a proxy of the entity owner_ (a handle) in place: its entries move to a new real table and it gets the proxy metatable, so every reference to it, the script's own included, is the proxy. The tables
+inside it are adopted the same way. A value that is not a table, is a proxy already or has a metatable of its own is left as it is.
+*/
+static void adoptTracked(lua_State* pLua_, int index_, int64_t owner_)
+{
+	index_ = lua_absindex(pLua_, index_);
+	if(!lua_istable(pLua_, index_) || isTracked(pLua_, index_)) return;
+	if(lua_getmetatable(pLua_, index_))
+	{
+		lua_pop(pLua_, 1);
+		return;
+	}
+	luaL_checkstack(pLua_, 8, "state table too deep");
+	lua_newtable(pLua_);
+	lua_pushnil(pLua_);
+	while(lua_next(pLua_, index_))
+	{
+		lua_pushvalue(pLua_, -2);
+		lua_pushvalue(pLua_, -2);
+		lua_rawset(pLua_, -5);
+		lua_pop(pLua_, 1);
+		lua_pushvalue(pLua_, -1);
+		lua_pushnil(pLua_);
+		lua_rawset(pLua_, index_);
+	}
+	lua_pushvalue(pLua_, index_);
+	luaL_setmetatable(pLua_, trackedMeta);
+	lua_pop(pLua_, 1);
+	luaL_getsubtable(pLua_, LUA_REGISTRYINDEX, trackedReal);
+	lua_pushvalue(pLua_, index_);
+	lua_pushvalue(pLua_, -3);
+	lua_rawset(pLua_, -3);
+	lua_pop(pLua_, 1);
+	luaL_getsubtable(pLua_, LUA_REGISTRYINDEX, trackedOwner);
+	lua_pushvalue(pLua_, index_);
+	lua_pushinteger(pLua_, owner_);
+	lua_rawset(pLua_, -3);
+	lua_pop(pLua_, 1);
+	lua_pushnil(pLua_);
+	while(lua_next(pLua_, -2))
+	{
+		adoptTracked(pLua_, -1, owner_);
+		lua_pop(pLua_, 1);
+	}
+	lua_pop(pLua_, 1);
+}
+
+/* The value at key_ of the real table (on top), wrapped if it is a raw table and kept wrapped from then on. Leaves the value on top, the real table below it. */
+static void getTracked(lua_State* pLua_, int keyIndex_, int64_t owner_)
+{
+	keyIndex_ = lua_absindex(pLua_, keyIndex_);
+	lua_pushvalue(pLua_, keyIndex_);
+	lua_rawget(pLua_, -2);
+	if(lua_istable(pLua_, -1) && !isTracked(pLua_, -1))
+	{
+		wrapTracked(pLua_, owner_);
+		lua_pushvalue(pLua_, keyIndex_);
+		lua_pushvalue(pLua_, -2);
+		lua_rawset(pLua_, -4);
+	}
+}
+
+static int trackedIndex(lua_State* pLua_)
+{
+	pushReal(pLua_, 1);
+	if(!lua_istable(pLua_, -1)) return 0;
+	getTracked(pLua_, 2, trackedOwnerOf(pLua_, 1));
+	return 1;
+}
+
+/*
+The entity whose behaviour is running its setup (callBehavior), none otherwise: a write that creates a key in its own state during that run is its initialisation, which a rebuilt entity does again, so it does not make the entity dirty.
+Every other write does: a change of an existing value, and any write to another entity's state (that entity, if rebuilt, would not get it again).
+*/
+static bool setupRunning = false;
+static PoolId setupEntity = UninitializedPoolId;
+
+static int trackedNewIndex(lua_State* pLua_)
+{
+	pushReal(pLua_, 1);
+	if(!lua_istable(pLua_, -1)) return 0;
+	adoptTracked(pLua_, 3, trackedOwnerOf(pLua_, 1));
+	lua_pushvalue(pLua_, 2);
+	lua_rawget(pLua_, -2);
+	bool same = lua_rawequal(pLua_, -1, 3) != 0;
+	bool created = lua_isnil(pLua_, -1);
+	lua_pop(pLua_, 1);
+	if(!same)
+	{
+		PoolId owner = currentEntity(fromHandle(trackedOwnerOf(pLua_, 1)));
+		if(entityExists(owner) && !(created && setupRunning && owner == setupEntity)) Globals::Game::entities[owner].scriptStateDirty = true;
+	}
+	lua_pushvalue(pLua_, 2);
+	lua_pushvalue(pLua_, 3);
+	lua_rawset(pLua_, -3);
+	return 0;
+}
+
+static int trackedLen(lua_State* pLua_)
+{
+	pushReal(pLua_, 1);
+	lua_pushinteger(pLua_, lua_istable(pLua_, -1) ? static_cast<lua_Integer>(lua_rawlen(pLua_, -1)) : 0);
+	return 1;
+}
+
+static int trackedNext(lua_State* pLua_)
+{
+	pushReal(pLua_, 1);
+	lua_pushvalue(pLua_, 2);
+	if(!lua_next(pLua_, -2))
+	{
+		lua_pushnil(pLua_);
+		return 1;
+	}
+	if(lua_istable(pLua_, -1) && !isTracked(pLua_, -1))
+	{
+		lua_pop(pLua_, 1);
+		lua_pushvalue(pLua_, -2);
+		getTracked(pLua_, -2, trackedOwnerOf(pLua_, 1));
+		lua_remove(pLua_, -2);
+	}
+	return 2;
+}
+
+static int trackedPairs(lua_State* pLua_)
+{
+	lua_pushcfunction(pLua_, trackedNext);
+	lua_pushvalue(pLua_, 1);
+	lua_pushnil(pLua_);
+	return 3;
+}
+
+/*
+The global rawset, rawget, rawlen and next, replaced so that they treat a proxy like its real table: a proxy has no keys of its own, so the originals would read nothing from it and a rawset would write to the empty proxy. Each calls the
+metamethod's function for a proxy and the original (upvalue 1) for anything else.
+*/
+static int rawSetTracked(lua_State* pLua_)
+{
+	if(!isTracked(pLua_, 1))
+	{
+		lua_pushvalue(pLua_, lua_upvalueindex(1));
+		lua_insert(pLua_, 1);
+		lua_call(pLua_, lua_gettop(pLua_) - 1, 1);
+		return 1;
+	}
+	trackedNewIndex(pLua_);
+	lua_settop(pLua_, 3);
+	lua_pushvalue(pLua_, 1);
+	return 1;
+}
+
+static int rawGetTracked(lua_State* pLua_)
+{
+	if(!isTracked(pLua_, 1))
+	{
+		lua_pushvalue(pLua_, lua_upvalueindex(1));
+		lua_insert(pLua_, 1);
+		lua_call(pLua_, lua_gettop(pLua_) - 1, 1);
+		return 1;
+	}
+	lua_settop(pLua_, 2);
+	if(trackedIndex(pLua_) == 0) lua_pushnil(pLua_);
+	return 1;
+}
+
+static int rawLenTracked(lua_State* pLua_)
+{
+	if(!isTracked(pLua_, 1))
+	{
+		lua_pushvalue(pLua_, lua_upvalueindex(1));
+		lua_insert(pLua_, 1);
+		lua_call(pLua_, lua_gettop(pLua_) - 1, 1);
+		return 1;
+	}
+	lua_settop(pLua_, 1);
+	return trackedLen(pLua_);
+}
+
+static int nextTracked(lua_State* pLua_)
+{
+	if(!isTracked(pLua_, 1))
+	{
+		int top = lua_gettop(pLua_);
+		lua_pushvalue(pLua_, lua_upvalueindex(1));
+		lua_insert(pLua_, 1);
+		lua_call(pLua_, top, LUA_MULTRET);
+		return lua_gettop(pLua_);
+	}
+	lua_settop(pLua_, 2);
+	return trackedNext(pLua_);
+}
+
+static void replaceGlobal(lua_State* pLua_, const char* pName_, lua_CFunction function_)
+{
+	lua_getglobal(pLua_, pName_);
+	lua_pushcclosure(pLua_, function_, 1);
+	lua_setglobal(pLua_, pName_);
+}
+
+/* Registers the proxy metatable and makes the weak tables; once, when the state is made. */
+static void registerTracked(lua_State* pLua_)
+{
+	luaL_newmetatable(pLua_, trackedMeta);
+	lua_pushcfunction(pLua_, trackedIndex);
+	lua_setfield(pLua_, -2, "__index");
+	lua_pushcfunction(pLua_, trackedNewIndex);
+	lua_setfield(pLua_, -2, "__newindex");
+	lua_pushcfunction(pLua_, trackedLen);
+	lua_setfield(pLua_, -2, "__len");
+	lua_pushcfunction(pLua_, trackedPairs);
+	lua_setfield(pLua_, -2, "__pairs");
+	lua_pop(pLua_, 1);
+	replaceGlobal(pLua_, "rawset", rawSetTracked);
+	replaceGlobal(pLua_, "rawget", rawGetTracked);
+	replaceGlobal(pLua_, "rawlen", rawLenTracked);
+	replaceGlobal(pLua_, "next", nextTracked);
+	for(const char* pName : {trackedReal, trackedOwner})
+	{
+		luaL_getsubtable(pLua_, LUA_REGISTRYINDEX, pName);
+		lua_newtable(pLua_);
+		lua_pushstring(pLua_, "k");
+		lua_setfield(pLua_, -2, "__mode");
+		lua_setmetatable(pLua_, -2);
+		lua_pop(pLua_, 1);
+	}
+}
+
+void pushEntityState(lua_State* pLua_, PoolId entityId_)
 {
 	Entity& rEntity = Globals::Game::entities[entityId_];
-	const EntityBehavior& rBehavior = Globals::Game::entityBehaviorTypes[behaviorId_];
-	if(rBehavior.fields.empty() || std::find(rEntity.externalsApplied.begin(), rEntity.externalsApplied.end(), behaviorId_) != rEntity.externalsApplied.end()) return;
-	rEntity.externalsApplied.push_back(behaviorId_);
-
 	if(rEntity.scriptStateRef == 0)
 	{
-		lua_newtable(pState);
-		lua_pushvalue(pState, -1);
-		rEntity.scriptStateRef = luaL_ref(pState, LUA_REGISTRYINDEX);
+		lua_newtable(pLua_);
+		wrapTracked(pLua_, entityHandle(entityId_));
+		lua_pushvalue(pLua_, -1);
+		rEntity.scriptStateRef = luaL_ref(pLua_, LUA_REGISTRYINDEX);
 	}
 	else
 	{
-		lua_rawgeti(pState, LUA_REGISTRYINDEX, rEntity.scriptStateRef);
+		lua_rawgeti(pLua_, LUA_REGISTRYINDEX, rEntity.scriptStateRef);
 	}
+}
+
+/*
+Writes the declared fields (EntityBehavior::fields) of a behaviour into the entity's sf.state table, once per entity and behaviour: the value the editor set (Entity::externals) or the declared default. An entity that is gone (a reference
+to it was kept) or a prefab that is gone reads as sf.none (-1) / nil. An entity's state table is made here if it has none yet, as sf.state does.
+Returns true on the first call for the entity and behaviour (also for a behaviour without fields), which callBehavior treats as the behaviour's setup.
+*/
+static bool applyFields(PoolId entityId_, PoolId behaviorId_)
+{
+	Entity& rEntity = Globals::Game::entities[entityId_];
+	const EntityBehavior& rBehavior = Globals::Game::entityBehaviorTypes[behaviorId_];
+	if(std::find(rEntity.externalsApplied.begin(), rEntity.externalsApplied.end(), behaviorId_) != rEntity.externalsApplied.end()) return false;
+	rEntity.externalsApplied.push_back(behaviorId_);
+	if(rBehavior.fields.empty()) return true;
+
+	/* Writing the fields is not a change of the entity: the flag is put back as it was. */
+	bool wasDirty = rEntity.scriptStateDirty;
+	pushEntityState(pState, entityId_);
 	const std::map<std::string, ExternalValue>* pSet = nullptr;
 	auto set = rEntity.externals.find(Globals::Game::entityBehaviorTypes.names[behaviorId_.id]);
 	if(set != rEntity.externals.end()) pSet = &set->second;
@@ -199,7 +544,7 @@ static void applyFields(PoolId entityId_, PoolId behaviorId_)
 			pushVector(pValue->vector.x, pValue->vector.y, pValue->vector.z);
 			break;
 		case ExternalType::Entity:
-			lua_pushinteger(pState, entityExists(pValue->entity) ? toHandle(pValue->entity) : toHandle(UninitializedPoolId));
+			lua_pushinteger(pState, entityExists(pValue->entity) ? entityHandle(pValue->entity) : toHandle(UninitializedPoolId));
 			break;
 		case ExternalType::Prefab:
 		{
@@ -212,27 +557,35 @@ static void applyFields(PoolId entityId_, PoolId behaviorId_)
 		lua_setfield(pState, -2, rField.name.c_str());
 	}
 	lua_pop(pState, 1);
+	rEntity.scriptStateDirty = wasDirty;
+	return true;
 }
 
 void callBehavior(int scriptFunction_, PoolId entityId_, PoolId behaviorId_)
 {
 	if(pState == nullptr || failed.contains(scriptFunction_)) return;
-	applyFields(entityId_, behaviorId_);
+	bool setup = applyFields(entityId_, behaviorId_);
+	bool outerRunning = setupRunning;
+	PoolId outerEntity = setupEntity;
+	setupRunning = setup;
+	setupEntity = entityId_;
 	lua_rawgeti(pState, LUA_REGISTRYINDEX, scriptFunction_);
-	lua_pushinteger(pState, toHandle(entityId_));
+	lua_pushinteger(pState, entityHandle(entityId_));
 	if(!protectedCall(1, 0))
 	{
 		failed.insert(scriptFunction_);
 		reportError("that behaviour is switched off.");
 	}
+	setupRunning = outerRunning;
+	setupEntity = outerEntity;
 }
 
 void callInteraction(int scriptFunction_, PoolId parentEntity_, PoolId contactEntity_)
 {
 	if(pState == nullptr || failed.contains(scriptFunction_)) return;
 	lua_rawgeti(pState, LUA_REGISTRYINDEX, scriptFunction_);
-	lua_pushinteger(pState, toHandle(parentEntity_));
-	lua_pushinteger(pState, toHandle(contactEntity_));
+	lua_pushinteger(pState, entityHandle(parentEntity_));
+	lua_pushinteger(pState, entityHandle(contactEntity_));
 	if(!protectedCall(2, 0))
 	{
 		failed.insert(scriptFunction_);
@@ -276,7 +629,7 @@ void setupPrefab(PoolId entityId_, const char* prefabName_, const Ninja::SAPlace
 	auto found = prefabBehaviors.find(prefabName_);
 	if(found == prefabBehaviors.end() || failed.contains(found->second)) return;
 	lua_rawgeti(pState, LUA_REGISTRYINDEX, found->second);
-	lua_pushinteger(pState, toHandle(entityId_));
+	lua_pushinteger(pState, entityHandle(entityId_));
 	if(pPlacement_ == nullptr)
 	{
 		lua_pushnil(pState);
@@ -309,7 +662,7 @@ void attachPlayer(PoolId entityId_)
 		lua_pop(pState, 1);
 		return;
 	}
-	lua_pushinteger(pState, toHandle(entityId_));
+	lua_pushinteger(pState, entityHandle(entityId_));
 	protectedCall(1, 0);
 }
 

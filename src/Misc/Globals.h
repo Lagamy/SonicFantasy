@@ -8,6 +8,7 @@
 #include "RenderTarget.h"
 #include "Entity.h"
 #include "Level.h"
+#include "Map.h"
 #include "Prefab.h"
 #include "BABehavior.h"
 #include "BABehaviors.h"
@@ -50,6 +51,8 @@ namespace Globals {
 		inline Pool<Graphics::RenderTarget> renderTargets = ("RenderTargets");
 		inline PoolMap<Entity> entities = ("Entities"); 
 		inline PoolMap<Level> levels = ("Levels"); 
+		/* Where the levels sit in the one space and which one is active (Map.h). */
+		inline Map map;
 
 		/* The kinds of entity there are (Prefab.h), named "<game>/<key name>"; filled once by registerPrefabs. */
 		inline PoolMap<Prefab> prefabs = ("Prefabs");

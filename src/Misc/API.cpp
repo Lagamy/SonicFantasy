@@ -7,6 +7,9 @@
 #include "DebugSetup.h"
 #include "ExternalAssets.h"
 #include "GPU_API.h"
+#ifdef EDITOR
+#include "Editor.h"
+#endif
 #include <algorithm>
 #include <cstdio>
 #include <format>
@@ -45,7 +48,36 @@ Entity& getEntityByName(const char* name_)
 
 PoolId addLevel(const char* name_, glm::vec3 position_)
 {
-    return Globals::Game::levels.add(name_, Level{SA_NINJA, UninitializedPoolId, position_}); 
+    PoolId id = Globals::Game::levels.add(name_, Level{SA_NINJA, UninitializedPoolId, position_});
+    Globals::Game::levels[id].selfId = id;
+    return id;
+}
+
+PoolId activeLevelId()
+{
+    /* The level the map names; none loaded under that name (a level made another way) = the lowest alive slot. */
+    if(!Globals::Game::map.active.empty())
+    {
+        for(uint32_t i = 0; i < Globals::Game::levels.objects.size(); i++)
+        {
+            if(Globals::Game::levels.alive[i] && Globals::Game::levels.names[i] == Globals::Game::map.active) return PoolId(i, Globals::Game::levels.generation[i]);
+        }
+    }
+    for(uint32_t i = 0; i < Globals::Game::levels.objects.size(); i++)
+    {
+        if(Globals::Game::levels.alive[i]) return PoolId(i, Globals::Game::levels.generation[i]);
+    }
+    return UninitializedPoolId;
+}
+
+bool levelShown(PoolId levelId_)
+{
+#ifdef EDITOR
+    if(!editor.active || editor.mapView || levelId_ == UninitializedPoolId) return true;
+    return levelId_ == activeLevelId();
+#else
+    return true;
+#endif
 }
 
 /* Adds a collision tag (a category, see BATag) under a name. */
@@ -390,6 +422,7 @@ PoolId spawnPrefab(PoolId prefabId_, PoolId shaderId_, const SpawnParams& rParam
     {
         Entity& rEntity = (*pPool_)[id];
         rEntity.prefabId = prefabId_;
+        rEntity.levelId = rParams_.levelId;
         rEntity.setRotation(rParams_.rotation);
         switch(rPrefab.kind)
         {
@@ -420,25 +453,25 @@ PoolId spawnPrefab(PoolId prefabId_, PoolId shaderId_, const SpawnParams& rParam
             rEntity.setExternalOnly(Graphics::getShaderId("GLTF"));
             if(inScene) Scripting::setupPrefab(rEntity.selfId, Globals::Game::prefabs.names[prefabId_.id].c_str(), nullptr);
             /* Set on the entity itself, not through setEntityMesh / setEntityTexture, which name the game's pool (this may be the thumbnails'). A missing asset is reported and the entity is made without it. */
-            if(rPrefab.level.mesh.kind == MeshChoiceKind::External)
+            if(rPrefab.definition.mesh.kind == MeshChoiceKind::External)
             {
-                const Graphics::ExternalModel* pModel = Loading::findExternalModel(rPrefab.level.mesh.name);
+                const Graphics::ExternalModel* pModel = Loading::findExternalModel(rPrefab.definition.mesh.name);
                 if(pModel != nullptr)
                 {
                     rEntity.setOverrideModel(pModel);
-                    rEntity.meshChoice = rPrefab.level.mesh;
+                    rEntity.meshChoice = rPrefab.definition.mesh;
                 }
-                else std::fprintf(stderr, "Spawn: %s %s: there is no external model named %s\n", rPrefab.name.c_str(), rParams_.what.c_str(), rPrefab.level.mesh.name.c_str());
+                else std::fprintf(stderr, "Spawn: %s %s: there is no external model named %s\n", rPrefab.name.c_str(), rParams_.what.c_str(), rPrefab.definition.mesh.name.c_str());
             }
-            if(rPrefab.level.texture.kind == TextureChoiceKind::External)
+            if(rPrefab.definition.texture.kind == TextureChoiceKind::External)
             {
-                Graphics::Texture* pTexture = Loading::findExternalTexture(rPrefab.level.texture.name);
+                Graphics::Texture* pTexture = Loading::findExternalTexture(rPrefab.definition.texture.name);
                 if(pTexture != nullptr)
                 {
                     rEntity.setOverrideTexture(pTexture);
-                    rEntity.textureChoice = rPrefab.level.texture;
+                    rEntity.textureChoice = rPrefab.definition.texture;
                 }
-                else std::fprintf(stderr, "Spawn: %s %s: there is no external texture named %s\n", rPrefab.name.c_str(), rParams_.what.c_str(), rPrefab.level.texture.name.c_str());
+                else std::fprintf(stderr, "Spawn: %s %s: there is no external texture named %s\n", rPrefab.name.c_str(), rParams_.what.c_str(), rPrefab.definition.texture.name.c_str());
             }
             break;
         }

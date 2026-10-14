@@ -21,6 +21,24 @@ constexpr float RingFraction = 0.85f;
 constexpr int RingSegments = 64;
 constexpr float MinScale = 0.01f;
 
+/* A level's map rotation (Level::mapMatrix: degrees, rotY * rotX * rotZ) as a matrix, and back (the angles of that product read off its entries). */
+glm::mat4 levelRotation(const glm::vec3& rDegrees_)
+{
+	glm::mat4 matrix(1.0f);
+	matrix = glm::rotate(matrix, glm::radians(rDegrees_.y), glm::vec3(0.0f, 1.0f, 0.0f));
+	matrix = glm::rotate(matrix, glm::radians(rDegrees_.x), glm::vec3(1.0f, 0.0f, 0.0f));
+	matrix = glm::rotate(matrix, glm::radians(rDegrees_.z), glm::vec3(0.0f, 0.0f, 1.0f));
+	return matrix;
+}
+
+glm::vec3 levelRotationDegrees(const glm::mat4& rMatrix_)
+{
+	float x = std::asin(glm::clamp(-rMatrix_[2][1], -1.0f, 1.0f));
+	float y = std::atan2(rMatrix_[2][0], rMatrix_[2][2]);
+	float z = std::atan2(rMatrix_[0][1], rMatrix_[1][1]);
+	return glm::degrees(glm::vec3(x, y, z));
+}
+
 struct Ray
 {
 	glm::vec3 origin;
@@ -36,17 +54,17 @@ struct Frame
 	float unitsPerPixel;
 };
 
-Frame makeFrame(const Camera& rCamera_, const Entity& rEntity_, Gizmo::Mode mode_)
+Frame makeFrame(const Camera& rCamera_, const Gizmo::Target& rTarget_, Gizmo::Mode mode_)
 {
 	Frame frame;
-	frame.origin = rEntity_.renderPosition();
+	frame.origin = rTarget_.origin;
 
 	/* Scale works along the entity's own axes (Entity::scale is applied before the rotation), move and rotate along the world's. */
 	for(int i = 0; i < 3; i++)
 	{
 		frame.axes[i] = glm::vec3(0.0f);
 		frame.axes[i][i] = 1.0f;
-		if(mode_ == Gizmo::Scale) frame.axes[i] = glm::normalize(glm::vec3(rEntity_.rotation[i]));
+		if(mode_ == Gizmo::Scale) frame.axes[i] = glm::normalize(glm::vec3(rTarget_.rotation[i]));
 	}
 	float depth = std::max(glm::dot(frame.origin - rCamera_.position, rCamera_.front), rCamera_.nearPlane);
 	frame.unitsPerPixel = 2.0f * depth * std::tan(glm::radians(rCamera_.fov) * 0.5f) / static_cast<float>(std::max(rCamera_.viewportSize().y, 1u));
@@ -203,19 +221,124 @@ bool Gizmo::wantsMouse() const
 	return this->dragging;
 }
 
-void Gizmo::update(GLFWwindow* pWindow_, const Camera& rCamera_, PoolId selected_, bool uiWantsMouse_, bool cameraDragging_)
+void Gizmo::update(GLFWwindow* pWindow_, const Camera& rCamera_, const std::vector<PoolId>& rGroup_, bool uiWantsMouse_, bool cameraDragging_)
+{
+	std::vector<PoolId> group;
+	for(PoolId id : rGroup_)
+	{
+		if(id != UninitializedPoolId && entityExists(id)) group.push_back(id);
+	}
+	if(group.empty())
+	{
+		this->leftWasDown = glfwGetMouseButton(pWindow_, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+		this->hovered = -1;
+		this->dragging = false;
+		return;
+	}
+	if(group.size() == 1)
+	{
+		Entity& rEntity = getEntity(group[0]);
+		Target target{rEntity.renderPosition(), rEntity.position, rEntity.rotation, rEntity.scale};
+		Target start = target;
+		this->drive(pWindow_, rCamera_, target, uiWantsMouse_, cameraDragging_);
+		if(target.position != start.position) rEntity.setPosition(target.position);
+		if(target.rotation != start.rotation) rEntity.setRotation(target.rotation);
+		if(target.scale != start.scale) rEntity.setScale(target.scale);
+		return;
+	}
+	std::vector<Target> members;
+	for(PoolId id : group)
+	{
+		const Entity& rEntity = getEntity(id);
+		members.push_back(Target{rEntity.position, rEntity.position, rEntity.rotation, rEntity.scale});
+	}
+	if(!this->driveGroup(pWindow_, rCamera_, members, uiWantsMouse_, cameraDragging_)) return;
+	for(size_t i = 0; i < group.size(); i++)
+	{
+		Entity& rEntity = getEntity(group[i]);
+		if(members[i].position != rEntity.position) rEntity.setPosition(members[i].position);
+		if(members[i].rotation != rEntity.rotation) rEntity.setRotation(members[i].rotation);
+		if(members[i].scale != rEntity.scale) rEntity.setScale(members[i].scale);
+	}
+}
+
+bool Gizmo::updateLevels(GLFWwindow* pWindow_, const Camera& rCamera_, std::vector<glm::vec3>& rPositions_, std::vector<glm::vec3>& rRotationsDegrees_, bool uiWantsMouse_, bool cameraDragging_)
+{
+	/* Scale has no meaning for a level's place: the handles are the entity's Move and Rotate only. */
+	if(this->mode == Scale || rPositions_.empty())
+	{
+		this->leftWasDown = glfwGetMouseButton(pWindow_, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
+		this->hovered = -1;
+		this->dragging = false;
+		return false;
+	}
+	std::vector<Target> members;
+	for(size_t i = 0; i < rPositions_.size(); i++) members.push_back(Target{rPositions_[i], rPositions_[i], levelRotation(rRotationsDegrees_[i]), glm::vec3(1.0f)});
+	std::vector<Target> before = members;
+	if(!this->driveGroup(pWindow_, rCamera_, members, uiWantsMouse_, cameraDragging_)) return false;
+	bool changed = false;
+	for(size_t i = 0; i < members.size(); i++)
+	{
+		if(members[i].position != before[i].position)
+		{
+			rPositions_[i] = members[i].position;
+			changed = true;
+		}
+		if(members[i].rotation != before[i].rotation)
+		{
+			rRotationsDegrees_[i] = levelRotationDegrees(members[i].rotation);
+			changed = true;
+		}
+	}
+	return changed;
+}
+
+/*
+The handles sit at the centre of the members' positions with the world's axes and the identity rotation and scale, so the drag of drive gives a step: the position moved, the rotation turned or the scale factor. Each member is then worked out from its values at the start of the drag (groupStart),
+so nothing builds up over frames: position = centre + step + turn * ((start position - centre) * factor), rotation = turn * start rotation, scale = start scale * factor (kept above MinScale).
+*/
+bool Gizmo::driveGroup(GLFWwindow* pWindow_, const Camera& rCamera_, std::vector<Target>& rMembers_, bool uiWantsMouse_, bool cameraDragging_)
+{
+	/*
+	The centre is the one of the start of the drag while it runs: the members already moved by the earlier frames of the drag would give a centre that is off by the move so far, and step (measured from the start) would be applied
+	from the wrong centre, putting the members back by the previous frame's move every frame.
+	*/
+	bool wasDragging = this->dragging;
+	const std::vector<Target>& rCenterSource = wasDragging && this->groupStart.size() == rMembers_.size() ? this->groupStart : rMembers_;
+	glm::vec3 center(0.0f);
+	for(const Target& rMember : rCenterSource) center += rMember.position;
+	center /= static_cast<float>(rCenterSource.size());
+
+	Target group{center, center, glm::mat4(1.0f), glm::vec3(1.0f)};
+	this->drive(pWindow_, rCamera_, group, uiWantsMouse_, cameraDragging_);
+	if(!this->dragging) return false;
+	if(!wasDragging) this->groupStart = rMembers_;
+	if(this->groupStart.size() != rMembers_.size()) return false;
+
+	glm::vec3 step = group.position - center;
+	glm::mat3 turn = glm::mat3(group.rotation);
+	for(size_t i = 0; i < rMembers_.size(); i++)
+	{
+		const Target& rStart = this->groupStart[i];
+		rMembers_[i].position = center + step + turn * ((rStart.position - center) * group.scale);
+		rMembers_[i].rotation = group.rotation * rStart.rotation;
+		rMembers_[i].scale = glm::max(rStart.scale * group.scale, glm::vec3(MinScale));
+	}
+	return true;
+}
+
+void Gizmo::drive(GLFWwindow* pWindow_, const Camera& rCamera_, Target& rTarget_, bool uiWantsMouse_, bool cameraDragging_)
 {
 	bool leftDown = glfwGetMouseButton(pWindow_, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
 	bool pressed = leftDown && !this->leftWasDown;
 	this->leftWasDown = leftDown;
 	this->hovered = -1;
 	Ray ray;
-	if(selected_ == UninitializedPoolId || !entityExists(selected_) || !cursorRay(pWindow_, rCamera_, ray))
+	if(!cursorRay(pWindow_, rCamera_, ray))
 	{
 		this->dragging = false;
 		return;
 	}
-	Entity& rEntity = getEntity(selected_);
 
 	if(this->dragging)
 	{
@@ -230,7 +353,7 @@ void Gizmo::update(GLFWwindow* pWindow_, const Camera& rCamera_, PoolId selected
 		case Move:
 		{
 			float t = 0.0f;
-			if(rayToLine(ray, this->grabOrigin, this->grabDirection, t)) rEntity.setPosition(this->startPosition + this->grabDirection * (t - this->grabValue));
+			if(rayToLine(ray, this->grabOrigin, this->grabDirection, t)) rTarget_.position = this->startPosition + this->grabDirection * (t - this->grabValue);
 			break;
 		}
 		case Rotate:
@@ -241,7 +364,7 @@ void Gizmo::update(GLFWwindow* pWindow_, const Camera& rCamera_, PoolId selected
 			if(rayAngle(ray, this->grabOrigin, axes, this->dragAxis, angle))
 			{
 				float delta = std::remainder(angle - this->grabValue, glm::two_pi<float>());
-				rEntity.setRotation(glm::rotate(glm::mat4(1.0f), delta, this->grabDirection) * this->startRotation);
+				rTarget_.rotation = glm::rotate(glm::mat4(1.0f), delta, this->grabDirection) * this->startRotation;
 			}
 			break;
 		}
@@ -253,7 +376,7 @@ void Gizmo::update(GLFWwindow* pWindow_, const Camera& rCamera_, PoolId selected
 			{
 				glm::vec3 scale = this->startScale;
 				scale[this->dragAxis] = std::max(this->startScale[this->dragAxis] * (1.0f + (t - this->grabValue) / this->grabLength), MinScale);
-				rEntity.setScale(scale);
+				rTarget_.scale = scale;
 			}
 			break;
 		}
@@ -262,7 +385,7 @@ void Gizmo::update(GLFWwindow* pWindow_, const Camera& rCamera_, PoolId selected
 	}
 
 	if(uiWantsMouse_ || cameraDragging_) return;
-	Frame frame = makeFrame(rCamera_, rEntity, this->mode);
+	Frame frame = makeFrame(rCamera_, rTarget_, this->mode);
 	this->hovered = pick(this->mode, frame, ray);
 	if(!pressed || this->hovered < 0) return;
 
@@ -277,9 +400,9 @@ void Gizmo::update(GLFWwindow* pWindow_, const Camera& rCamera_, PoolId selected
 	this->grabOrigin = frame.origin;
 	this->grabDirection = frame.axes[this->dragAxis];
 	this->grabLength = frame.length;
-	this->startPosition = rEntity.position;
-	this->startRotation = rEntity.rotation;
-	this->startScale = rEntity.scale;
+	this->startPosition = rTarget_.position;
+	this->startRotation = rTarget_.rotation;
+	this->startScale = rTarget_.scale;
 }
 
 /*
@@ -299,6 +422,7 @@ PoolId pickEntity(GLFWwindow* pWindow_, const Camera& rCamera_, double x_, doubl
 	{
 		if(!Globals::Game::entities.alive[i]) continue;
 		Entity& rEntity = Globals::Game::entities.objects[i];
+		if(!levelShown(rEntity.levelId)) continue;
 		float hitDistance = 0.0f;
 		bool hasTriangles = false;
 		if(rEntity.rayHitsModel(ray.origin, ray.direction, hitDistance, hasTriangles))
@@ -327,6 +451,50 @@ PoolId pickEntity(GLFWwindow* pWindow_, const Camera& rCamera_, double x_, doubl
 	return best;
 }
 
+/*
+A level is hit where the ray enters its bounds box (Level::boundsMin / boundsMax), taken in the level's own space: the ray goes back through the inverse of the map place and the level's position, so a turned level has a turned box. Of the levels the ray hits the nearest entry wins.
+Used by the Map view for a level that has no entity under the click.
+*/
+PoolId pickLevel(GLFWwindow* pWindow_, const Camera& rCamera_, double x_, double y_)
+{
+	Ray ray;
+	if(!rayAt(pWindow_, rCamera_, x_, y_, ray)) return UninitializedPoolId;
+	PoolId best = UninitializedPoolId;
+	float bestDistance = 0.0f;
+	for(uint32_t i = 0; i < Globals::Game::levels.objects.size(); i++)
+	{
+		if(!Globals::Game::levels.alive[i]) continue;
+		const Level& rLevel = Globals::Game::levels.objects[i];
+		if(!rLevel.hasBounds) continue;
+		glm::mat4 inverse = glm::inverse(rLevel.mapMatrix());
+		glm::vec3 origin = glm::vec3(inverse * glm::vec4(ray.origin, 1.0f)) - rLevel.position;
+		glm::vec3 direction = glm::vec3(inverse * glm::vec4(ray.direction, 0.0f));
+		float tMin = 0.0f;
+		float tMax = rCamera_.farPlane;
+		bool hit = true;
+		for(int axis = 0; axis < 3 && hit; axis++)
+		{
+			if(std::abs(direction[axis]) < 1e-8f)
+			{
+				hit = origin[axis] >= rLevel.boundsMin[axis] && origin[axis] <= rLevel.boundsMax[axis];
+				continue;
+			}
+			float t0 = (rLevel.boundsMin[axis] - origin[axis]) / direction[axis];
+			float t1 = (rLevel.boundsMax[axis] - origin[axis]) / direction[axis];
+			tMin = std::max(tMin, std::min(t0, t1));
+			tMax = std::min(tMax, std::max(t0, t1));
+			hit = tMin <= tMax;
+		}
+		if(!hit) continue;
+		if(best == UninitializedPoolId || tMin < bestDistance)
+		{
+			best = PoolId(i, Globals::Game::levels.generation[i]);
+			bestDistance = tMin;
+		}
+	}
+	return best;
+}
+
 bool pickPlanePoint(GLFWwindow* pWindow_, const Camera& rCamera_, double x_, double y_, float height_, glm::vec3& rPoint_)
 {
 	Ray ray;
@@ -337,10 +505,39 @@ bool pickPlanePoint(GLFWwindow* pWindow_, const Camera& rCamera_, double x_, dou
 	return true;
 }
 
-void Gizmo::draw(const Camera& rCamera_, PoolId selected_)
+void Gizmo::draw(const Camera& rCamera_, const std::vector<PoolId>& rGroup_)
 {
-	if(selected_ == UninitializedPoolId || !entityExists(selected_)) return;
-	Frame frame = makeFrame(rCamera_, getEntity(selected_), this->mode);
+	glm::vec3 center(0.0f);
+	std::vector<PoolId> group;
+	for(PoolId id : rGroup_)
+	{
+		if(id == UninitializedPoolId || !entityExists(id)) continue;
+		group.push_back(id);
+		center += getEntity(id).position;
+	}
+	if(group.empty()) return;
+	if(group.size() == 1)
+	{
+		const Entity& rEntity = getEntity(group[0]);
+		this->drawTarget(rCamera_, Target{rEntity.renderPosition(), rEntity.position, rEntity.rotation, rEntity.scale});
+		return;
+	}
+	center /= static_cast<float>(group.size());
+	this->drawTarget(rCamera_, Target{center, center, glm::mat4(1.0f), glm::vec3(1.0f)});
+}
+
+void Gizmo::drawLevels(const Camera& rCamera_, const std::vector<glm::vec3>& rPositions_)
+{
+	if(this->mode == Scale || rPositions_.empty()) return;
+	glm::vec3 center(0.0f);
+	for(const glm::vec3& rPosition : rPositions_) center += rPosition;
+	center /= static_cast<float>(rPositions_.size());
+	this->drawTarget(rCamera_, Target{center, center, glm::mat4(1.0f), glm::vec3(1.0f)});
+}
+
+void Gizmo::drawTarget(const Camera& rCamera_, const Target& rTarget_)
+{
+	Frame frame = makeFrame(rCamera_, rTarget_, this->mode);
 	ImDrawList* pList = ImGui::GetBackgroundDrawList();
 	ImVec2 size = ImGui::GetIO().DisplaySize;
 	glm::mat4 viewProjection = rCamera_.projection * rCamera_.view;

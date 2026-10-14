@@ -50,6 +50,8 @@ private:
 	std::array<std::array<std::vector<PoolId>, 5>, 2> tiles;
 	std::array<std::vector<PoolId>, 2> externalTiles;
 	uint32_t listedRevision = 0;
+	/* The level whose Level folder the tiles show (Loading::levelPrefabScope when they were made). */
+	std::string listedLevel;
 
 	/* The prefab of a tile being dragged, remembered across frames so that the release can be told from the frame it happens in. */
 	PoolId dragged = UninitializedPoolId;

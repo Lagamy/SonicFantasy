@@ -76,7 +76,7 @@ void Renderer::run(Camera& rCamera_, bool clearColor_)
 
 	for(uint32_t i = 0; i < Globals::Game::levels.objects.size(); i++)
 	{
-		if(Globals::Game::levels.alive[i]) Globals::Game::levels.objects[i].draw(rCamera_);
+		if(Globals::Game::levels.alive[i] && levelShown(Globals::Game::levels.objects[i].selfId)) Globals::Game::levels.objects[i].draw(rCamera_);
 	}
 
 	/* Entities out of the view or farther than the far plane (the render distance) are not drawn. */

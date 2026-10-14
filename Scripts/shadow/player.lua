@@ -5,58 +5,85 @@
 -- Not ported: homing attack, spin dash, skate, Chaos Control, weapons, sliding, the standing turn-around.
 -- state.heading = where he faces (radians, forward = (cos, sin) over x and z), state.speed = the game's speed word (the acceleration's length), state.holdTime = what is left of the jump's held boost.
 
+-- File layout, top to bottom: constants by system, utilities, physics (jump start, ground, air), animation (state and motion), model (facing and orientation), the behavior (one tick:
+-- input, ground contact, heading, speeds, animation, model, saved state) and the entry points main.lua calls. New code goes in the block of its system.
+
+-- ==== Constants: ground speed word and acceleration ====
 local MIN_SPEED = 1000                     -- external (FUN_80082cc8): the acceleration's length at rest
 local MAX_SPEED = 15000                    -- external (FUN_80082cc8): x the factor of table index player+0x64 (1.0 for the live player)
 local GROUND_DRAG = 20                     -- external (FUN_80093728)
-local AIR_DRAG_SIDE = 3                    -- external: drag in the ground plane in the air (hypothesis: FUN_8040f990's second output is the planar part)
-local AIR_DRAG_UP = 1                      -- external: drag along the up axis in the air
-local AIR_GRAVITY = -320                  -- external (FUN_800a7700, DAT_805f2bd8); the engine's gravity is off for him (weight 0)
-local GROUND_GRAVITY = -800               -- external (DAT_805f2bd4): straight down, along the normal from GROUND_GRAVITY_FAST on; REF "Gravity"
-local AIR_ACCEL = 220                      -- external (Fall, FUN_80080828); 110 with player flag 0x1e (not ported)
-local JUMP_SPEED = 100                     -- external (Jump, table 0x804b0558)
-local JUMP_HOLD_ACCEL = 270                -- external (same table): along the jump direction while held
-local JUMP_HOLD_TIME = 0.75                -- external (DAT_805f2794)
-local DASH_SPEED = 180                      -- external (FUN_800882a4, DAT_805f27a8), observed: added once along the facing
--- observed (live_jumpdash_all 7.5603 s, live_uphill_jump; 2 jumps): the Jump behavior, and its animation, ends 2 ticks after the vertical speed first drops to 0 or below, not on that tick. Counted in ticks.
-local JUMP_FALL_DELAY = 2
--- observed (live Landing entries, docs/ai/REPLAY.md: Fall lasts 14 to 26 ticks after a Jump, 1 to 4 after a JumpDash) and by the user (a plain jump's landing started for 2 frames with its effect when it should not): the airborne Landing cannot start in a jump (no dash) until this many ticks after the vertical speed first dropped to 0 or below.
-local JUMP_LANDING_MIN_TICKS = JUMP_FALL_DELAY + 14
-local DASH_UPDATES = 25                     -- observed (live_jumpdash_holdstick2, 5 dashes): the push is in the acceleration of 25 updates, the entry one and 24 more (external DAT_805f27a0 = 0.4 s = 24 ticks); counted in ticks, a float 0.4 s ended it after 23 or 24. Then the Fall state
-local DASH_PUSH_TIME = 2.0                  -- external (DAT_805f27a4): the push's countdown (outlasts the dash)
-local DASH_PUSH_ACCEL = 430                 -- external (DAT_805f27b0), observed: every tick of the dash along the facing
 local FAST_SPEED = 30                     -- external (DAT_805f2668): below this the target does not grow
 local COSINE_START = 0.766                 -- external: stick / facing cosine from which the target grows to the maximum at 1
 local ACCEL_SHARE = 0.25                   -- external (DAT_805f26ac): growth a second, share of (max - min), x cosine^8
 local NO_STICK_FULL_SPEED = 537.5          -- observed: with no stick the word is 1000 + 14000 x min(1, speed / 537.5), from speed 30
 local STICK_FULL = 0.9                  -- observed (live_half), external: below this stick length the word decays
 local STICK_DECAY = 0.9                    -- external: the word's factor per update below STICK_FULL
-local TURN_SLOW = 15                       -- external (FUN_800831d8): turn rate up to speed 150
-local TURN_FAST = 2                        -- external: turn rate from 300
 local TURN_FAST_FROM = 150                 -- external (FUN_800838f4, DAT_805f26b8), observed: above it (last tick's 3D speed) and stick >= STICK_FULL the acceleration follows the facing; REF "The ground acceleration +0x24"
-local AIR_TURN = 15                        -- external (Fall)
-local JUMP_TURN = 6.5                      -- external (Jump, DAT_805f2788)
 local IDLE_SPEED = 1                     -- placeholder, see the animation block
-local SLOPE_NORMAL_Y = 0.95               -- a ground whose normal's height is under this counts as a slope for the animation (the recorded slope is 0.866)
-local SLOPE_WALK_SPEED = 12.5               -- the speed the Ground animation is held to on a slope with no stick until he stops: rate 1, the walk (no idle pair in between)
-local ANIM_IDLE_SPEED = 0.2                -- observed: the original goes Ground to Idle with no stick when the planar speed falls under about 0.2 (27 transitions in the recordings: planar after 0.145 to 0.199, before 0.156 to 0.278)
 local HOLD_PLANAR_SPEED = 110              -- hypothesis: round value in the observed (105.9, 119.8] (live_fence_headon 1.80 s held at 119.8; was 150 in (105.9, 153]); REF section 20
+
+-- ==== Constants: ground slopes and gravity ====
+local GROUND_GRAVITY = -800               -- external (DAT_805f2bd4): straight down, along the normal from GROUND_GRAVITY_FAST on; REF "Gravity"
+local GROUND_GRAVITY_FAST = 250             -- observed (live_slopes 1.52 to 1.58 s): 3D speed from which gravity stops pulling along the surface
+local UPHILL_TARGET_SHIFT = math.rad(7.6)        -- observed fit (live_slopes 7.0 to 8.4 s): turn target offset per unit sin(tilt) on fast uphill rows
+local SLIDE_MAX_NORMAL_Y = 0.87             -- hypothesis: with no stick the slope pull acts only this steep or steeper; observed: slides on at 0.866 with speed 17 (live_jumpdash), stands still at 0.872 from rest (live_jumpdash_all 16.35 s, 190 rows)
+
+-- ==== Constants: skid and landing ====
 local SKID_MIN_PLANAR = 200                -- hypothesis: round value in the observed (151.8, 221.65]; REF "Skid at planar 221.65"
 local SKID_COSINE = 0                      -- hypothesis: 90 degrees, observed range (44, 93]
 local SKID_END_PLANAR = 0.2                -- observed (live_flick): threshold or first speed below it, unknown
 local LANDING_FACTOR = 0.7166               -- observed (16 landings): probably the ground drag e^(-1/3); REF "Landing tick"
+
+-- ==== Constants: turning ====
+local TURN_SLOW = 15                       -- external (FUN_800831d8): turn rate up to speed 150
+local TURN_FAST = 2                        -- external: turn rate from 300
+local AIR_TURN = 15                        -- external (Fall)
+local JUMP_TURN = 6.5                      -- external (Jump, DAT_805f2788)
+
+-- ==== Constants: air ====
+local AIR_DRAG_SIDE = 3                    -- external: drag in the ground plane in the air (hypothesis: FUN_8040f990's second output is the planar part)
+local AIR_DRAG_UP = 1                      -- external: drag along the up axis in the air
+local AIR_GRAVITY = -320                  -- external (FUN_800a7700, DAT_805f2bd8); the engine's gravity is off for him (weight 0)
+local AIR_ACCEL = 220                      -- external (Fall, FUN_80080828); 110 with player flag 0x1e (not ported)
+
+-- ==== Constants: jump ====
+local JUMP_SPEED = 100                     -- external (Jump, table 0x804b0558)
+local JUMP_HOLD_ACCEL = 270                -- external (same table): along the jump direction while held
+local JUMP_HOLD_TIME = 0.75                -- external (DAT_805f2794)
+-- observed (live_jumpdash_all 7.5603 s, live_uphill_jump; 2 jumps): the Jump behavior, and its animation, ends 2 ticks after the vertical speed first drops to 0 or below, not on that tick. Counted in ticks.
+local JUMP_FALL_DELAY = 2
+-- observed (live Landing entries, docs/ai/REPLAY.md: Fall lasts 14 to 26 ticks after a Jump, 1 to 4 after a JumpDash) and by the user (a plain jump's landing started for 2 frames with its effect when it should not): the airborne Landing cannot start in a jump (no dash) until this many ticks after the vertical speed first dropped to 0 or below.
+local JUMP_LANDING_MIN_TICKS = JUMP_FALL_DELAY + 14
+local JUMP_GRACE_TICKS = 2                 -- placeholder: ticks after a jump in which the last move may still report the ground
+
+-- ==== Constants: jump dash and the airborne Landing ====
+local DASH_SPEED = 180                      -- external (FUN_800882a4, DAT_805f27a8), observed: added once along the facing
+local DASH_UPDATES = 25                     -- observed (live_jumpdash_holdstick2, 5 dashes): the push is in the acceleration of 25 updates, the entry one and 24 more (external DAT_805f27a0 = 0.4 s = 24 ticks); counted in ticks, a float 0.4 s ended it after 23 or 24. Then the Fall state
+local DASH_PUSH_TIME = 2.0                  -- external (DAT_805f27a4): the push's countdown (outlasts the dash)
+local DASH_PUSH_ACCEL = 430                 -- external (DAT_805f27b0), observed: every tick of the dash along the facing
 local DASH_END_LANDING_GAP_PER_SPEED = 0.25
 local DASH_END_LANDING_TICKS = 8
 local LANDING_GAP_PER_SPEED = 0.118          -- fitted (27 landings, 18 fit; fixed 9.7 fit 10): Landing starts when the gap below is at most this times the fall speed. REF "Landing trigger vs the recordings"
 local LANDING_PROBE = 40                    -- placeholder: longest gap the Landing test looks down for
-local GROUND_GRAVITY_FAST = 250             -- observed (live_slopes 1.52 to 1.58 s): 3D speed from which gravity stops pulling along the surface
-local UPHILL_TARGET_SHIFT = math.rad(7.6)        -- observed fit (live_slopes 7.0 to 8.4 s): turn target offset per unit sin(tilt) on fast uphill rows
-local SLIDE_MAX_NORMAL_Y = 0.87             -- hypothesis: with no stick the slope pull acts only this steep or steeper; observed: slides on at 0.866 with speed 17 (live_jumpdash), stands still at 0.872 from rest (live_jumpdash_all 16.35 s, 190 rows)
-local JUMP_BALL_DELAY_TICKS = 15           -- ball A starts this many ticks into the jump motion (live measurement: 14 and 15)
-local BRAKE_SPEED = 150                  -- placeholder: Brake motion from this speed with the stick pointing back
+
+-- ==== Constants: ground snap ====
 local GROUND_SNAP = 1                      -- only switches the ground probe on (the engine knows its length, see attachShadowPlayer); it acts only when he was on the ground the tick before (the game's player flag 2), and is off after a jump
 local SNAP_MEMORY_TICKS = 2              -- placeholder: ticks after the last ground contact the probe still acts (the contact flickers)
+
+-- ==== Constants: animation ====
+local SLOPE_NORMAL_Y = 0.95               -- a ground whose normal's height is under this counts as a slope for the animation (the recorded slope is 0.866)
+local SLOPE_WALK_SPEED = 12.5               -- the speed the Ground animation is held to on a slope with no stick until he stops: rate 1, the walk (no idle pair in between)
+local ANIM_IDLE_SPEED = 0.2                -- observed: the original goes Ground to Idle with no stick when the planar speed falls under about 0.2 (27 transitions in the recordings: planar after 0.145 to 0.199, before 0.156 to 0.278)
+local JUMP_BALL_DELAY_TICKS = 15           -- ball A starts this many ticks into the jump motion (live measurement: 14 and 15)
+local BRAKE_SPEED = 150                  -- placeholder: Brake motion from this speed with the stick pointing back
+local AIR_ANIMATION_TICKS = 8             -- placeholder: ticks without ground before the air motions (contact flickers)
+local LAND_ANIMATION_TICKS = 3            -- placeholder: ticks of ground in a row before the ground motions again
+
+-- ==== Constants: model facing and keyboard hacks ====
 -- Keyboard hack, NOT in the original (docs/CHANGED_FROM_ORIGINAL.md): a mouse flick at speed looks like a sharp stick turn and slowed him for no visible reason (observed, 8 to 12% lost in a tick).
 -- Above COSINE_DEAD_MIN_SPEED the stick / heading angle counts COSINE_DEAD_ANGLE smaller in the speed cosine only; the acceleration still follows the real stick.
+local COSINE_DEAD_ANGLE = math.rad(30)
+local COSINE_DEAD_MIN_SPEED = 150
 -- Facing hack, NOT in the original: keys and mouse change the stick at once, so the velocity leaves the slow heading (observed: skating sideways). Above FACE_FOLLOW_SPEED the model
 -- faces the planar velocity, smoothed at the original's visual rate 30 a second (FUN_800a750c).
 local FACE_FOLLOW_SPEED = 30
@@ -65,13 +92,9 @@ local FACE_SMOOTHING = 30
 -- and GROUND_ALIGN_MAX_T of the way a frame. Approximation: a normalized mix instead of a slerp. REF section 16.
 local GROUND_ALIGN_ANGLE = math.rad(15)
 local GROUND_ALIGN_MAX_T = 0.2
-local COSINE_DEAD_ANGLE = math.rad(30)
-local COSINE_DEAD_MIN_SPEED = 150
-local JUMP_GRACE_TICKS = 2                 -- placeholder: ticks after a jump in which the last move may still report the ground
 local FACE_YAW_OFFSET = math.pi             -- observed: the model's front is -Z in the file and the instance and engine world each turn 90 degrees, so rotation pi - h faces heading h (0 and -pi/2 were tried and wrong)
-local AIR_ANIMATION_TICKS = 8             -- placeholder: ticks without ground before the air motions (contact flickers)
-local LAND_ANIMATION_TICKS = 3            -- placeholder: ticks of ground in a row before the ground motions again
 
+-- ==== Utilities ====
 local function wrapAngle(angle)
 	return angle - 2 * math.pi * math.floor((angle + math.pi) / (2 * math.pi))
 end
@@ -112,126 +135,9 @@ local function turnByGround(x, y, z, nx, ny, nz, sign)
 	return x * c + (-az * y) * s + ax * dot * (1 - c), y * c + (az * x - ax * z) * s, z * c + (ax * y) * s + az * dot * (1 - c)
 end
 
-sf.behavior("ShadowPlayer", function(entity)
-	local state = sf.state(entity)
-	local dt = sf.tickTime()
-
-	-- The camera's heading over the ground, and the way to its right.
-	local fx, _, fz = sf.cameraForward()
-	local length = math.sqrt(fx * fx + fz * fz)
-	if length > 1e-4 then fx, fz = fx / length, fz / length else fx, fz = 0, -1 end
-	if state.heading == nil then state.heading = math.atan(fz, fx) end
-
-	-- A replay of a recorded run (replay.lua) takes the place of the keyboard and of the camera's heading while it runs.
-	local replay = ShadowReplay.step()
-	local controlled = state.active and not sf.debugMode()
-	local wx, wz = 0, 0
-	if replay ~= nil then
-		wx, wz = replay.wx, replay.wz
-	else
-		local rx, rz = -fz, fx
-		if controlled and sf.key("W") then wx, wz = wx + fx, wz + fz end
-		if controlled and sf.key("S") then wx, wz = wx - fx, wz - fz end
-		if controlled and sf.key("D") then wx, wz = wx + rx, wz + rz end
-		if controlled and sf.key("A") then wx, wz = wx - rx, wz - rz end
-	end
-	local wishLength = math.sqrt(wx * wx + wz * wz)
-	local hasStick = wishLength > 1e-4
-	local mag = math.min(wishLength, 1)
-	local sx, sz = 0, 0
-	if hasStick then sx, sz = wx / wishLength, wz / wishLength end
-
-	local vx, vy, vz = sf.velocity(entity)
-	-- The velocity as the engine step left it, before this tick changes anything, for the replay log (ShadowReplay.log).
-	state.logV0x, state.logV0y, state.logV0z = vx, vy, vz
-	local grounded = sf.grounded(entity)
-	if (state.jumpGrace or 0) > 0 then
-		state.jumpGrace = state.jumpGrace - 1
-		grounded = false
-	end
-	-- Rising after a jump he is in the air whatever the last move reports (observed: the contact lasted a few ticks after the jump and reset it).
-	local speed = math.sqrt(vx * vx + vy * vy + vz * vz)
-	-- On the ground the speed is the one along the surface (observed, live_slope 2.9 to 3.5 s: the original turned at the 3D speed's rate; hypothesis: the engine already removed the part into the floor). REF "Turn rate by speed".
-	if grounded then
-		local gnx, gny, gnz = sf.groundNormal(entity)
-		if gny > 1e-3 and gny < 1 then
-			-- Without the last press's horizontal part (observed, live_slopes 1.27 to 1.33 s: the press along a tilted normal cut the horizontal 6, the reading fell under GROUND_GRAVITY_FAST on every other tick and the slope pull
-			-- switched on: in-plane speed alternated +5 / -1.5 against the original's smooth +1; hypothesis for the cause). Only on a tick that follows a ground tick.
-			local pressed = 0
-			if not state.wasAir then pressed = state.lastPressNormal or 0 end
-			local hx, hz = vx - pressed * gnx, vz - pressed * gnz
-			local planeVy = -(gnx * hx + gnz * hz) / gny
-			speed = math.sqrt(hx * hx + planeVy * planeVy + hz * hz)
-		end
-	end
-	local planarBefore = math.sqrt(vx * vx + vz * vz)
-	-- The ground probe (see GROUND_SNAP): on while he was on the ground a moment ago and has not jumped; its length is the engine's: the move of the frame is added by the body's snap mode (attachPlayer).
-	state.sinceGround = grounded and 0 or (state.sinceGround or SNAP_MEMORY_TICKS + 1) + 1
-	local snapping = state.sinceGround <= SNAP_MEMORY_TICKS and not state.jumped
-	sf.setGroundSnap(entity, snapping and GROUND_SNAP or 0)
-
-	local pressed = controlled and sf.key("SPACE")
-	if replay ~= nil then pressed = replay.a end
-	local justPressed = pressed and not state.spaceHeld
-	state.spaceHeld = pressed
-
-	-- Heading (external, FUN_80093af8, FUN_80093ba0): towards the stick by min(rate x dt, 1) of the short way (hypothesis). The update on which a skid ends is drag only, turn and word held
-	-- (observed, live_skid, three skids). REF "The tick after a skid ends is drag only".
-	local skidEnding = false
-	if state.skid and (not grounded or planarBefore < SKID_END_PLANAR) then
-		state.skid = false
-		state.speed = MIN_SPEED
-		skidEnding = grounded
-	end
-	local heading = state.heading
-	local headingBefore = heading
-	local stickAngle = hasStick and math.atan(sz, sx) or nil
-	local cosine = 0
-	if hasStick then
-		cosine = sx * math.cos(heading) + sz * math.sin(heading)
-		-- The skid (observed, live_flick, live_flick2, live_skid; thresholds hypotheses): stick 90 degrees or more away at speed gives drag only, heading and word frozen, stick ignored until planar 0.2.
-		if grounded and not state.skid and planarBefore >= SKID_MIN_PLANAR and cosine <= SKID_COSINE then state.skid = true end
-		-- The keyboard hack is off in replays: their stick is the original's pad (observed: with it the port outran the original in turns by 50 to 80).
-		if replay == nil and planarBefore >= COSINE_DEAD_MIN_SPEED then
-			cosine = math.cos(math.max(0, math.acos(math.max(-1, math.min(1, cosine))) - COSINE_DEAD_ANGLE))
-		end
-		local rate
-		if grounded then rate = turnRate(speed)
-		elseif state.jumped then rate = JUMP_TURN
-		else rate = AIR_TURN end
-		state.turnRate, state.turnSpeed = rate, speed
-		-- The turn target (external, FUN_80093ba0; observed arithmetic on live_slopes). Below GROUND_GRAVITY_FAST 3D speed it is the horizontal stick taken into the ground basis (slow slope windows: yaw model rms 0.99 deg, mean 0.03,
-		-- against 1.74 and 0.86 with the horizontal target); the yaw then lives in the basis, so the same angle is the growth angle (slow downhill 0.65 deg mean error against the original's angle word, horizontal 1.60;
-		-- slow uphill keeps the 3D rule below, 1.30). From GROUND_GRAVITY_FAST the target stays the horizontal stick, shifted on uphill rows (UPHILL_TARGET_SHIFT below); the original's rule there is the stick in the basis
-		-- turned by the camera direction taken into the basis (0.0 deg on 13 rows, 7.0 to 8.4 s), not ported: the shift fixed the heading at 7.5 to 8.4 s without the camera's pitch. REF "The camera and the stick's world direction".
-		local targetAngle = stickAngle
-		local gnx, gny, gnz = sf.groundNormal(entity)
-		if grounded and gny > 1e-3 and gny < 0.999 then
-			local lx, lz
-			if speed >= GROUND_GRAVITY_FAST then
-				-- Fast rows climbing: the original's turn target sits tilt x 7.6 deg off the horizontal stick (observed, live_slopes 7.0 to 8.4 s: fit rms 1.08 deg against 1.62; downhill rows 0; cause unknown). REF "Turn-target offset splits by climb direction" and "Uphill offset fit".
-				if vy > 0 then targetAngle = stickAngle - UPHILL_TARGET_SHIFT * math.sqrt(gnx * gnx + gnz * gnz) end
-			else
-				lx, _, lz = turnByGround(sx, 0, sz, gnx, gny, gnz, -1)
-			end
-			if lx ~= nil then
-				targetAngle = math.atan(lz, lx)
-				local hx, hz = math.cos(heading), math.sin(heading)
-				if speed >= GROUND_GRAVITY_FAST or gnx * hx + gnz * hz >= 0 then cosine = math.cos(turnDifference(targetAngle - heading)) end
-			end
-		end
-		-- The airborne Landing state does not turn the facing (observed, live_jumpdash_holdstick2, 5 landings: it turns on the entry row, then 0.0 per tick through the Landing rows and the first Ground row). REF "After the 25-update dash".
-		-- The first Ground row after any landing keeps the facing too (observed after the airborne Landing state; the same for a touchdown without it is a hypothesis, live_jumpdash_holdstick2 landing at 2.5 s, where the port's turn there made the growth cosine 0.73 against the original's 0.84 and dropped the word to 1000).
-		if not state.skid and not skidEnding and not state.airLanding and not (state.wasAir and grounded) then heading = heading + turnDifference(targetAngle - heading) * math.min(rate * dt, 1) end
-	end
-	state.heading = heading
-	if not hasStick then state.turnRate, state.turnSpeed = nil, nil end
-
-	local acceleration = 0
-	local animSpeed, animVx, animVz
-	local k = GROUND_DRAG
-	local startJump = grounded and justPressed
-	if startJump then
+-- ==== Physics: jump start ====
+-- The jump's start from the ground: the velocity's part along the ground normal becomes JUMP_SPEED, no integration that frame; the jump's state is set. Returns the velocity.
+local function jumpStart(entity, state, vx, vy, vz, planarBefore)
 		-- The jump's start (external, FUN_800877c0; observed): the velocity's part along the ground normal becomes JUMP_SPEED; no integration that frame. REF section 20.
 		local nx, ny, nz = sf.groundNormal(entity)
 		if nx * nx + ny * ny + nz * nz < 0.0001 then nx, ny, nz = 0, 1, 0 end
@@ -244,7 +150,16 @@ sf.behavior("ShadowPlayer", function(entity)
 		state.airLanding = false
 		state.firstGrowthAfterLanding = false
 		state.speed = MIN_SPEED
-	elseif grounded then
+	return vx, vy, vz
+end
+
+-- ==== Physics: ground ====
+-- One tick on the ground (no jump press): the speed word and the acceleration, the landing tick, the slope pull, the drag, the plane rules and the ground press. speed = the 3D (or in-plane) speed the turn used,
+-- cosine = the growth cosine of the heading step. Returns the velocity and the speed and velocity the animation reads (before the press).
+local function groundPhysics(entity, state, vx, vy, vz, speed, cosine, heading, headingBefore, hasStick, mag, sx, sz, planarBefore, skidEnding, dt)
+	local k = GROUND_DRAG
+	local acceleration = 0
+	local animSpeed, animVx, animVz
 		-- The speed word (external, FUN_800831d8, FUN_80082c48): target MIN_SPEED + share x range, share from COSINE_START (only from FAST_SPEED); grows by cosine^8 x dt x ACCEL_SHARE x range.
 		-- With no stick it follows the NO_STICK_FULL_SPEED line and the acceleration is zero. REF section 8.
 		state.speed = state.speed or MIN_SPEED
@@ -414,7 +329,12 @@ sf.behavior("ShadowPlayer", function(entity)
 		state.dashed, state.dashTime = false, nil
 		sf.setDashTrail(entity, false)
 		state.airLanding = false
-	else
+	return vx, vy, vz, animSpeed, animVx, animVz
+end
+
+-- ==== Physics: air ====
+-- One tick in the air: AIR_ACCEL along the stick, the drags, the jump's hold, the jump dash and the airborne Landing state. Returns the velocity.
+local function airPhysics(entity, state, vx, vy, vz, sx, sz, justPressed, pressed, headingBefore, dt)
 		-- In the air (external, Fall, Jump, FUN_80093728): AIR_ACCEL along the stick, drags AIR_DRAG_SIDE / AIR_DRAG_UP; JUMP_HOLD_ACCEL along the jump direction while the button is held, at most
 		-- JUMP_HOLD_TIME (observed: release ends it). REF section 20.
 		state.speed = MIN_SPEED
@@ -458,8 +378,13 @@ sf.behavior("ShadowPlayer", function(entity)
 		vx = ax / AIR_DRAG_SIDE + (vx - ax / AIR_DRAG_SIDE) * ex
 		vz = az / AIR_DRAG_SIDE + (vz - az / AIR_DRAG_SIDE) * ex
 		vy = up / AIR_DRAG_UP + (vy - up / AIR_DRAG_UP) * math.exp(-AIR_DRAG_UP * dt)
-	end
+	return vx, vy, vz
+end
 
+-- ==== Animation ====
+-- The animation state and the motion of the tick (the debounced ground contact, the landing, the effect balls, the reverse and the slope hold) and the call into animation.lua. animSpeed, animVx, animVz = what groundPhysics
+-- returned (nil in the air). Returns the motion's name.
+local function updateAnimation(entity, state, grounded, hasStick, cosine, vx, vy, vz, animSpeed, animVx, animVz)
 	-- Animation state (see animation.lua): air = jump while rising after a jump, else fall; ground = landing (until its motion ends), idle (no stick and below ANIM_IDLE_SPEED), brake (placeholder rule)
 	-- or the ground blend. The contact is debounced so a flicker does not change the state.
 	if grounded then
@@ -512,6 +437,13 @@ sf.behavior("ShadowPlayer", function(entity)
 	local _, slopeNy = sf.groundNormal(entity)
 	if motion == "ground" and not hasStick and grounded and slopeNy < SLOPE_NORMAL_Y then ratedSpeed = math.max(ratedSpeed, SLOPE_WALK_SPEED) end
 	if ShadowAnimation.update(entity, state, motion, {speed = ratedSpeed, jumpPlanar = state.jumpPlanar or 0, reverse = reverse}) then state.landing = false end
+	return motion
+end
+
+-- ==== Model ====
+-- The model's facing and its smoothed ground normal, from the velocity the tick ended with.
+local function orientModel(entity, state, heading, grounded, vx, vz, dt)
+	local planar = math.sqrt(vx * vx + vz * vz)
 	local faceHeading = heading
 	if planar >= FACE_FOLLOW_SPEED then faceHeading = math.atan(vz, vx) end
 	state.faceHeading = state.faceHeading or faceHeading
@@ -529,6 +461,145 @@ sf.behavior("ShadowPlayer", function(entity)
 	end
 	state.normalX, state.normalY, state.normalZ = sx0, sy0, sz0
 	sf.orient(entity, FACE_YAW_OFFSET - state.faceHeading, sx0, sy0, sz0)
+end
+
+-- ==== Behavior ====
+sf.behavior("ShadowPlayer", function(entity)
+	local state = sf.state(entity)
+	local dt = sf.tickTime()
+
+	-- ==== input ====
+	-- The camera's heading over the ground, and the way to its right.
+	local fx, _, fz = sf.cameraForward()
+	local length = math.sqrt(fx * fx + fz * fz)
+	if length > 1e-4 then fx, fz = fx / length, fz / length else fx, fz = 0, -1 end
+	if state.heading == nil then state.heading = math.atan(fz, fx) end
+
+	-- A replay of a recorded run (replay.lua) takes the place of the keyboard and of the camera's heading while it runs.
+	local replay = ShadowReplay.step()
+	local controlled = state.active and not sf.debugMode()
+	local wx, wz = 0, 0
+	if replay ~= nil then
+		wx, wz = replay.wx, replay.wz
+	else
+		local rx, rz = -fz, fx
+		if controlled and sf.key("W") then wx, wz = wx + fx, wz + fz end
+		if controlled and sf.key("S") then wx, wz = wx - fx, wz - fz end
+		if controlled and sf.key("D") then wx, wz = wx + rx, wz + rz end
+		if controlled and sf.key("A") then wx, wz = wx - rx, wz - rz end
+	end
+	local wishLength = math.sqrt(wx * wx + wz * wz)
+	local hasStick = wishLength > 1e-4
+	local mag = math.min(wishLength, 1)
+	local sx, sz = 0, 0
+	if hasStick then sx, sz = wx / wishLength, wz / wishLength end
+
+	-- ==== ground contact ====
+	local vx, vy, vz = sf.velocity(entity)
+	-- The velocity as the engine step left it, before this tick changes anything, for the replay log (ShadowReplay.log).
+	state.logV0x, state.logV0y, state.logV0z = vx, vy, vz
+	local grounded = sf.grounded(entity)
+	if (state.jumpGrace or 0) > 0 then
+		state.jumpGrace = state.jumpGrace - 1
+		grounded = false
+	end
+	-- Rising after a jump he is in the air whatever the last move reports (observed: the contact lasted a few ticks after the jump and reset it).
+	local speed = math.sqrt(vx * vx + vy * vy + vz * vz)
+	-- On the ground the speed is the one along the surface (observed, live_slope 2.9 to 3.5 s: the original turned at the 3D speed's rate; hypothesis: the engine already removed the part into the floor). REF "Turn rate by speed".
+	if grounded then
+		local gnx, gny, gnz = sf.groundNormal(entity)
+		if gny > 1e-3 and gny < 1 then
+			-- Without the last press's horizontal part (observed, live_slopes 1.27 to 1.33 s: the press along a tilted normal cut the horizontal 6, the reading fell under GROUND_GRAVITY_FAST on every other tick and the slope pull
+			-- switched on: in-plane speed alternated +5 / -1.5 against the original's smooth +1; hypothesis for the cause). Only on a tick that follows a ground tick.
+			local pressed = 0
+			if not state.wasAir then pressed = state.lastPressNormal or 0 end
+			local hx, hz = vx - pressed * gnx, vz - pressed * gnz
+			local planeVy = -(gnx * hx + gnz * hz) / gny
+			speed = math.sqrt(hx * hx + planeVy * planeVy + hz * hz)
+		end
+	end
+	local planarBefore = math.sqrt(vx * vx + vz * vz)
+	-- The ground probe (see GROUND_SNAP): on while he was on the ground a moment ago and has not jumped; its length is the engine's: the move of the frame is added by the body's snap mode (attachPlayer).
+	state.sinceGround = grounded and 0 or (state.sinceGround or SNAP_MEMORY_TICKS + 1) + 1
+	local snapping = state.sinceGround <= SNAP_MEMORY_TICKS and not state.jumped
+	sf.setGroundSnap(entity, snapping and GROUND_SNAP or 0)
+
+	-- ==== buttons ====
+	local pressed = controlled and sf.key("SPACE")
+	if replay ~= nil then pressed = replay.a end
+	local justPressed = pressed and not state.spaceHeld
+	state.spaceHeld = pressed
+
+	-- ==== heading ====
+	-- Heading (external, FUN_80093af8, FUN_80093ba0): towards the stick by min(rate x dt, 1) of the short way (hypothesis). The update on which a skid ends is drag only, turn and word held
+	-- (observed, live_skid, three skids). REF "The tick after a skid ends is drag only".
+	local skidEnding = false
+	if state.skid and (not grounded or planarBefore < SKID_END_PLANAR) then
+		state.skid = false
+		state.speed = MIN_SPEED
+		skidEnding = grounded
+	end
+	local heading = state.heading
+	local headingBefore = heading
+	local stickAngle = hasStick and math.atan(sz, sx) or nil
+	local cosine = 0
+	if hasStick then
+		cosine = sx * math.cos(heading) + sz * math.sin(heading)
+		-- The skid (observed, live_flick, live_flick2, live_skid; thresholds hypotheses): stick 90 degrees or more away at speed gives drag only, heading and word frozen, stick ignored until planar 0.2.
+		if grounded and not state.skid and planarBefore >= SKID_MIN_PLANAR and cosine <= SKID_COSINE then state.skid = true end
+		-- The keyboard hack is off in replays: their stick is the original's pad (observed: with it the port outran the original in turns by 50 to 80).
+		if replay == nil and planarBefore >= COSINE_DEAD_MIN_SPEED then
+			cosine = math.cos(math.max(0, math.acos(math.max(-1, math.min(1, cosine))) - COSINE_DEAD_ANGLE))
+		end
+		local rate
+		if grounded then rate = turnRate(speed)
+		elseif state.jumped then rate = JUMP_TURN
+		else rate = AIR_TURN end
+		state.turnRate, state.turnSpeed = rate, speed
+		-- The turn target (external, FUN_80093ba0; observed arithmetic on live_slopes). Below GROUND_GRAVITY_FAST 3D speed it is the horizontal stick taken into the ground basis (slow slope windows: yaw model rms 0.99 deg, mean 0.03,
+		-- against 1.74 and 0.86 with the horizontal target); the yaw then lives in the basis, so the same angle is the growth angle (slow downhill 0.65 deg mean error against the original's angle word, horizontal 1.60;
+		-- slow uphill keeps the 3D rule below, 1.30). From GROUND_GRAVITY_FAST the target stays the horizontal stick, shifted on uphill rows (UPHILL_TARGET_SHIFT below); the original's rule there is the stick in the basis
+		-- turned by the camera direction taken into the basis (0.0 deg on 13 rows, 7.0 to 8.4 s), not ported: the shift fixed the heading at 7.5 to 8.4 s without the camera's pitch. REF "The camera and the stick's world direction".
+		local targetAngle = stickAngle
+		local gnx, gny, gnz = sf.groundNormal(entity)
+		if grounded and gny > 1e-3 and gny < 0.999 then
+			local lx, lz
+			if speed >= GROUND_GRAVITY_FAST then
+				-- Fast rows climbing: the original's turn target sits tilt x 7.6 deg off the horizontal stick (observed, live_slopes 7.0 to 8.4 s: fit rms 1.08 deg against 1.62; downhill rows 0; cause unknown). REF "Turn-target offset splits by climb direction" and "Uphill offset fit".
+				if vy > 0 then targetAngle = stickAngle - UPHILL_TARGET_SHIFT * math.sqrt(gnx * gnx + gnz * gnz) end
+			else
+				lx, _, lz = turnByGround(sx, 0, sz, gnx, gny, gnz, -1)
+			end
+			if lx ~= nil then
+				targetAngle = math.atan(lz, lx)
+				local hx, hz = math.cos(heading), math.sin(heading)
+				if speed >= GROUND_GRAVITY_FAST or gnx * hx + gnz * hz >= 0 then cosine = math.cos(turnDifference(targetAngle - heading)) end
+			end
+		end
+		-- The airborne Landing state does not turn the facing (observed, live_jumpdash_holdstick2, 5 landings: it turns on the entry row, then 0.0 per tick through the Landing rows and the first Ground row). REF "After the 25-update dash".
+		-- The first Ground row after any landing keeps the facing too (observed after the airborne Landing state; the same for a touchdown without it is a hypothesis, live_jumpdash_holdstick2 landing at 2.5 s, where the port's turn there made the growth cosine 0.73 against the original's 0.84 and dropped the word to 1000).
+		if not state.skid and not skidEnding and not state.airLanding and not (state.wasAir and grounded) then heading = heading + turnDifference(targetAngle - heading) * math.min(rate * dt, 1) end
+	end
+	state.heading = heading
+	if not hasStick then state.turnRate, state.turnSpeed = nil, nil end
+
+	-- ==== speeds (physics) ====
+	local animSpeed, animVx, animVz
+	if grounded and justPressed then
+		vx, vy, vz = jumpStart(entity, state, vx, vy, vz, planarBefore)
+	elseif grounded then
+		vx, vy, vz, animSpeed, animVx, animVz = groundPhysics(entity, state, vx, vy, vz, speed, cosine, heading, headingBefore, hasStick, mag, sx, sz, planarBefore, skidEnding, dt)
+	else
+		vx, vy, vz = airPhysics(entity, state, vx, vy, vz, sx, sz, justPressed, pressed, headingBefore, dt)
+	end
+
+	-- ==== animation ====
+	local motion = updateAnimation(entity, state, grounded, hasStick, cosine, vx, vy, vz, animSpeed, animVx, animVz)
+
+	-- ==== model ====
+	orientModel(entity, state, heading, grounded, vx, vz, dt)
+
+	-- ==== saved state and output ====
 	state.wasAir = not grounded
 	state.hadStick = hasStick
 	state.lastVx, state.lastVy, state.lastVz = vx, vy, vz
@@ -536,6 +607,7 @@ sf.behavior("ShadowPlayer", function(entity)
 	ShadowReplay.log(entity, motion, wx, wz, pressed, fx, fz)
 end)
 
+-- ==== Entry points ====
 -- Called by main.lua's attachPlayer for the Shadow entity.
 -- The player's state table as it starts (also after the engine's reset: resetPlayers, main.lua).
 function initShadowState(state)
@@ -552,3 +624,4 @@ function attachShadowPlayer(entity)
 	sf.setMeanVelocityMove(entity, true)
 	sf.setUncullable(entity, true)
 end
+

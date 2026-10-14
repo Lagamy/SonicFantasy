@@ -18,10 +18,12 @@ sf.onTouch("Basics/AddRing", function(parent, contact)
 end)
 
 -- One more ring, and removes the entity that owns the area (a pickup). Each tick it is touched counts once, so a second touch before the removal is ignored.
-local collected = {}
+-- The mark is in the entity's own sf.state, which a level reset gives back with the entity; a table kept here would outlive it.
 sf.onTouch("Basics/Collect", function(parent, contact)
-	if not sf.exists(parent) or collected[parent] then return end
-	collected[parent] = true
+	if not sf.exists(parent) then return end
+	local state = sf.state(parent)
+	if state.collected then return end
+	state.collected = true
 	sf.setRings(sf.rings() + 1)
 	sf.destroy(parent)
 end)

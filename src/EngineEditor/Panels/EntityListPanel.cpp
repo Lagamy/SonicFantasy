@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <filesystem>
+#include <system_error>
 #include <format>
 #include <functional>
 #include <string>
@@ -55,26 +57,132 @@ void EntityListPanel::draw()
 	ImGui::Begin("Level", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings);
 	this->width = ImGui::GetWindowSize().x;
 
-	if(ImGui::BeginTabBar("LeftTabs"))
+	ImGuiTabItemFlags levelFlags = this->focusLevelTab ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+	this->focusLevelTab = false;
+	if(ImGui::BeginTabBar("ViewTabs"))
 	{
-		if(ImGui::BeginTabItem("Entities"))
+		if(ImGui::BeginTabItem("Level", nullptr, levelFlags))
 		{
-			this->drawEntities();
+			editor.mapView = false;
+			if(ImGui::BeginTabBar("LeftTabs"))
+			{
+				if(ImGui::BeginTabItem("Entities"))
+				{
+					this->drawEntities();
+					ImGui::EndTabItem();
+				}
+				if(ImGui::BeginTabItem("Collision"))
+				{
+					editor.collisionView.drawPanel();
+					ImGui::EndTabItem();
+				}
+				if(ImGui::BeginTabItem("Editor camera"))
+				{
+					this->drawCameraSettings();
+					ImGui::EndTabItem();
+				}
+				ImGui::EndTabBar();
+			}
 			ImGui::EndTabItem();
 		}
-		if(ImGui::BeginTabItem("Collision"))
+		if(ImGui::BeginTabItem("Map"))
 		{
-			editor.collisionView.drawPanel();
-			ImGui::EndTabItem();
-		}
-		if(ImGui::BeginTabItem("Editor camera"))
-		{
-			this->drawCameraSettings();
+			editor.mapView = true;
+			if(ImGui::BeginTabBar("MapTabs"))
+			{
+				if(ImGui::BeginTabItem("Levels"))
+				{
+					this->drawMap();
+					ImGui::EndTabItem();
+				}
+				if(ImGui::BeginTabItem("Entities"))
+				{
+					this->drawEntities();
+					ImGui::EndTabItem();
+				}
+				ImGui::EndTabBar();
+			}
 			ImGui::EndTabItem();
 		}
 		ImGui::EndTabBar();
 	}
 	ImGui::End();
+}
+
+std::vector<PoolId> EntityListPanel::selection() const
+{
+	std::vector<PoolId> result;
+	if(this->selected != UninitializedPoolId) result.push_back(this->selected);
+	for(PoolId id : this->extraSelected)
+	{
+		if(id != this->selected && std::find(result.begin(), result.end(), id) == result.end()) result.push_back(id);
+	}
+	return result;
+}
+
+void EntityListPanel::selectOnly(PoolId id_)
+{
+	this->selected = id_;
+	this->extraSelected.clear();
+}
+
+void EntityListPanel::toggleSelected(PoolId id_)
+{
+	if(id_ == UninitializedPoolId) return;
+	if(id_ == this->selected)
+	{
+		this->selected = UninitializedPoolId;
+		if(!this->extraSelected.empty())
+		{
+			this->selected = this->extraSelected.back();
+			this->extraSelected.pop_back();
+		}
+		return;
+	}
+	auto found = std::find(this->extraSelected.begin(), this->extraSelected.end(), id_);
+	if(found != this->extraSelected.end())
+	{
+		this->extraSelected.erase(found);
+		return;
+	}
+	if(this->selected != UninitializedPoolId) this->extraSelected.push_back(this->selected);
+	this->selected = id_;
+}
+
+void EntityListPanel::drawMap()
+{
+	/* The levels in RAM, the active one marked; one not in Map.json is shown too (it is only loaded beside the active one if it has an entry). */
+	if(editor.mapSelected.empty()) editor.mapSelected = Globals::Game::map.active;
+	for(uint32_t i = 0; i < Globals::Game::levels.objects.size(); i++)
+	{
+		if(!Globals::Game::levels.alive[i]) continue;
+		const std::string& rName = Globals::Game::levels.objects[i].name;
+		bool inMap = Globals::Game::map.find(rName) != nullptr;
+		std::string label = std::format("{}{}{}", rName, rName == Globals::Game::map.active ? " (active)" : "", inMap ? "" : " (not in map)");
+		if(ImGui::Selectable(label.c_str(), editor.mapIsSelected(rName))) editor.selectMapLevel(rName, ImGui::GetIO().KeyShift || ImGui::GetIO().KeyCtrl);
+	}
+	ImGui::Separator();
+
+	/* The level folders that are not loaded yet; picking one adds it to the map and loads it (Editor::addLevelToMap). */
+	if(ImGui::BeginCombo("Add level to map", "pick a level"))
+	{
+		std::error_code error;
+		std::vector<std::string> names;
+		for(const std::filesystem::directory_entry& rFile : std::filesystem::directory_iterator("Assets/Levels", error))
+		{
+			std::string name = rFile.path().filename().string();
+			if(rFile.is_directory() && std::filesystem::exists(rFile.path() / (name + ".json"))) names.push_back(name);
+		}
+		std::sort(names.begin(), names.end());
+		for(const std::string& rName : names)
+		{
+			MapLevel place;
+			if(editor.levelPlace(rName, place)) continue;
+			if(ImGui::Selectable(rName.c_str())) editor.addLevelToMap(rName);
+		}
+		ImGui::EndCombo();
+	}
+	ImGui::TextWrapped("Drag the handles in the scene or use the Inspector. Changes are written to Map.json when let go.");
 }
 
 void EntityListPanel::drawCameraSettings()
@@ -113,6 +221,12 @@ void EntityListPanel::drawEntities()
 
 	/* A selection whose entity was removed is dropped, and so are the folder assignments of removed entities. */
 	if(this->selected != UninitializedPoolId && !entityExists(this->selected)) this->selected = UninitializedPoolId;
+	std::erase_if(this->extraSelected, [](PoolId id_) { return !entityExists(id_); });
+	if(this->selected == UninitializedPoolId && !this->extraSelected.empty())
+	{
+		this->selected = this->extraSelected.back();
+		this->extraSelected.pop_back();
+	}
 	for(auto it = this->entityFolder.begin(); it != this->entityFolder.end();)
 	{
 		PoolId id(static_cast<uint32_t>(it->first & 0xFFFFFFFFu), static_cast<uint32_t>(it->first >> 32));
@@ -178,6 +292,7 @@ void EntityListPanel::drawEntities()
 	for(uint32_t i = 0; i < Globals::Game::entities.objects.size(); i++)
 	{
 		if(!Globals::Game::entities.alive[i]) continue;
+		if(!levelShown(Globals::Game::entities.objects[i].levelId)) continue;
 		liveCount++;
 		if(filtering)
 		{
@@ -283,9 +398,11 @@ void EntityListPanel::drawEntities()
 				uint32_t index = rRow.entity;
 				PoolId id(index, Globals::Game::entities.generation[index]);
 				ImGui::PushID(static_cast<int>(index));
-				if(ImGui::Selectable(Globals::Game::entities.names[index].c_str(), id == this->selected))
+				bool inSelection = id == this->selected || std::find(this->extraSelected.begin(), this->extraSelected.end(), id) != this->extraSelected.end();
+				if(ImGui::Selectable(Globals::Game::entities.names[index].c_str(), inSelection))
 				{
-					this->selected = id;
+					if(ImGui::GetIO().KeyShift || ImGui::GetIO().KeyCtrl) this->toggleSelected(id);
+					else this->selectOnly(id);
 					this->selectedFolder = -1;
 				}
 				if(ImGui::BeginDragDropSource())

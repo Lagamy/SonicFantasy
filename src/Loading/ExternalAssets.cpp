@@ -63,6 +63,7 @@ void registerModel(Graphics::ExternalPools& rPools_, bool inProject_, External::
 	model.name = rData_.name;
 	model.bounds = rData_.bounds;
 	model.inProject = inProject_;
+	model.pPools = &rPools_;
 	try
 	{
 		for(size_t i = 0; i < rData_.submeshes.size(); i++)
@@ -144,7 +145,7 @@ Graphics::ExternalPools& poolsOf(ExternalScope scope_)
 {
 	if(scope_ == ExternalScope::Project) return Graphics::externalProject;
 	if(levelScopeName.empty()) throw std::runtime_error("External assets: no level is open for the level scope");
-	return Graphics::externalLevel;
+	return Graphics::externalLevel();
 }
 
 fs::path folderOf(ExternalScope scope_)
@@ -183,13 +184,38 @@ void scanExternalAssets(const std::string& levelName_)
 		scanFolder(Graphics::externalProject, true, ExternalRoot);
 		revision++;
 	}
-	if(levelScopeName != levelName_)
+	/*
+	The level scope is one set of pools per level: a level that is already loaded keeps its own (entities hold pointers into it), the scan only makes the set of a level that has none and makes it the active one.
+	*/
+	auto found = Graphics::externalLevels.find(levelName_);
+	if(found == Graphics::externalLevels.end())
 	{
-		Graphics::externalLevel.clear();
+		std::unique_ptr<Graphics::ExternalPools> pools = std::make_unique<Graphics::ExternalPools>("LevelMeshes", "LevelTextures", "LevelModels");
 		levelScopeName = levelName_;
-		scanFolder(Graphics::externalLevel, false, folderOf(ExternalScope::Level));
+		scanFolder(*pools, false, folderOf(ExternalScope::Level));
+		found = Graphics::externalLevels.emplace(levelName_, std::move(pools)).first;
 		revision++;
 	}
+	if(Graphics::pExternalLevel != found->second.get())
+	{
+		Graphics::pExternalLevel = found->second.get();
+		revision++;
+	}
+	levelScopeName = levelName_;
+}
+
+void forgetExternalAssets(const std::string& levelName_)
+{
+	auto found = Graphics::externalLevels.find(levelName_);
+	if(found == Graphics::externalLevels.end()) return;
+	if(Graphics::pExternalLevel == found->second.get())
+	{
+		Graphics::pExternalLevel = &Graphics::externalNoLevel;
+		levelScopeName.clear();
+	}
+	found->second->clear();
+	Graphics::externalLevels.erase(found);
+	revision++;
 }
 
 void importExternalTexture(const std::string& name_, Graphics::Texture texture_, ExternalScope scope_)
@@ -231,7 +257,7 @@ uint32_t externalRevision()
 
 const Graphics::ExternalModel* findExternalModel(const std::string& name_)
 {
-	for(Graphics::ExternalPools* pPools : {&Graphics::externalLevel, &Graphics::externalProject})
+	for(Graphics::ExternalPools* pPools : {&Graphics::externalLevel(), &Graphics::externalProject})
 	{
 		auto found = pPools->models.nameToId.find(name_);
 		if(found != pPools->models.nameToId.end()) return &pPools->models[found->second];
@@ -241,7 +267,7 @@ const Graphics::ExternalModel* findExternalModel(const std::string& name_)
 
 Graphics::Texture* findExternalTexture(const std::string& name_)
 {
-	for(Graphics::ExternalPools* pPools : {&Graphics::externalLevel, &Graphics::externalProject})
+	for(Graphics::ExternalPools* pPools : {&Graphics::externalLevel(), &Graphics::externalProject})
 	{
 		auto found = pPools->textures.nameToId.find(name_);
 		if(found != pPools->textures.nameToId.end()) return &pPools->textures[found->second];

@@ -1,0 +1,22 @@
+[build] EmeraldCoast: prefabs 0 gpu 126 collision 132 entities 159 edits 3 place 88 ms
+[build] StationSquare4: prefabs 0 gpu 138 collision 100 entities 0 edits 87 place 92 ms
+[build] StationSquare0: prefabs 0 gpu 38 collision 129 entities 0 edits 0 place 109 ms
+[build] StationSquare1: prefabs 0 gpu 64 collision 147 entities 0 edits 0 place 132 ms
+[build] StationSquare2: prefabs 0 gpu 15 collision 152 entities 0 edits 0 place 146 ms
+[build] StationSquare3: prefabs 0 gpu 60 collision 183 entities 0 edits 0 place 166 ms
+[hitch] 52.3 ms at (0, 28, 75) | gameplay 0.0 update 0.2 render 1.4 ui 47.2 swap 0.2 | meshes +10 -0 textures +0
+[build] StationSquare4: prefabs 0 gpu 48 collision 173 entities 0 edits 163 place 162 ms
+[reset] StationSquare4: destroy 150 index 2 total 699 ms
+[hitch] 706.7 ms at (-463, 39, 28) | gameplay 701.2 update 1.2 render 4.2 ui 0.0 swap 0.2 | meshes +497 -457 textures +92
+[build] StationSquare4: prefabs 0 gpu 48 collision 172 entities 0 edits 161 place 163 ms
+[reset] StationSquare4: destroy 147 index 2 total 694 ms
+[hitch] 699.5 ms at (-464, 35, 16) | gameplay 696.7 update 0.2 render 2.4 ui 0.0 swap 0.2 | meshes +456 -456 textures +92
+[build] StationSquare4: prefabs 1 gpu 53 collision 173 entities 0 edits 164 place 167 ms
+[reset] StationSquare4: destroy 154 index 2 total 714 ms
+[hitch] 719.2 ms at (-463, 40, 4) | gameplay 716.6 update 0.2 render 2.2 ui 0.0 swap 0.2 | meshes +456 -456 textures +92
+[build] StationSquare4: prefabs 0 gpu 48 collision 174 entities 0 edits 160 place 164 ms
+[reset] StationSquare4: destroy 148 index 2 total 696 ms
+[hitch] 703.9 ms at (-471, 42, 21) | gameplay 698.4 update 1.3 render 4.0 ui 0.0 swap 0.2 | meshes +497 -457 textures +92
+[build] StationSquare4: prefabs 0 gpu 51 collision 177 entities 0 edits 162 place 168 ms
+[reset] StationSquare4: destroy 160 index 2 total 720 ms
+[hitch] 724.5 ms at (-473, 25, 17) | gameplay 721.8 update 0.2 render 2.2 ui 0.0 swap 0.2 | meshes +456 -456 textures +92

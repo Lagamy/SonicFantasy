@@ -1,6 +1,7 @@
 #include "GLTFFile.h"
 #include "BasicMesh.h"
 #include <cgltf.h>
+#include <nlohmann/json.hpp>
 #include <stb_image.h>
 #include <algorithm>
 #include <cstdio>
@@ -9,6 +10,7 @@
 #include <filesystem>
 #include <format>
 #include <functional>
+#include <fstream>
 #include <map>
 #include <stdexcept>
 #include <glm/gtc/type_ptr.hpp>
@@ -317,5 +319,195 @@ Physics::CollisionMesh readGLTFCollision(const std::string& rPath_)
 	});
 	if(mesh.pieces.empty()) throw std::runtime_error(std::format("glTF '{}': no triangle mesh in the file.", rPath_));
 	return mesh;
+}
+
+void writeGLTF(const std::string& rPath_, const GLTFScene& rScene_, FieldEncoding encoding_)
+{
+	using Json = nlohmann::ordered_json;
+	constexpr uint32_t FloatType = 5126, UintType = 5125, ArrayTarget = 34962, ElementTarget = 34963, MaxExactFloat = 16777215;
+
+	auto fail = [&](const std::string& rWhat_) { throw std::runtime_error(std::format("glTF '{}': {}", rPath_, rWhat_)); };
+	std::filesystem::path gltfPath(rPath_);
+	std::filesystem::path binPath = gltfPath;
+	binPath.replace_extension(".bin");
+
+	std::vector<unsigned char> blob;
+	Json bufferViews = Json::array();
+	Json accessors = Json::array();
+
+	/* Every element is 4 bytes, so each array starts aligned. Returns the accessor index. */
+	auto addAccessor = [&](const void* pData_, size_t count_, size_t components_, uint32_t componentType_, uint32_t target_, const char* pType_, const Json& rBounds_) -> int
+	{
+		size_t bytes = count_ * components_ * 4;
+		Json view = {{"buffer", 0}, {"byteOffset", blob.size()}, {"byteLength", bytes}, {"target", target_}};
+		const unsigned char* pBytes = static_cast<const unsigned char*>(pData_);
+		blob.insert(blob.end(), pBytes, pBytes + bytes);
+		bufferViews.push_back(view);
+		Json accessor = {{"bufferView", bufferViews.size() - 1}, {"componentType", componentType_}, {"count", count_}, {"type", pType_}};
+		if(!rBounds_.is_null()) { accessor["min"] = rBounds_["min"]; accessor["max"] = rBounds_["max"]; }
+		accessors.push_back(accessor);
+		return static_cast<int>(accessors.size() - 1);
+	};
+	auto vec3Accessor = [&](const std::vector<glm::vec3>& rValues_, uint32_t target_, bool bounds_) -> int
+	{
+		Json bounds;
+		if(bounds_ && !rValues_.empty())
+		{
+			glm::vec3 minimum = rValues_[0], maximum = rValues_[0];
+			for(const glm::vec3& rValue : rValues_) { minimum = glm::min(minimum, rValue); maximum = glm::max(maximum, rValue); }
+			bounds = {{"min", {minimum.x, minimum.y, minimum.z}}, {"max", {maximum.x, maximum.y, maximum.z}}};
+		}
+		return addAccessor(rValues_.data(), rValues_.size(), 3, FloatType, target_, "VEC3", bounds);
+	};
+	auto checkSize = [&](size_t size_, size_t count_, const char* pName_, size_t mesh_)
+	{
+		if(size_ != 0 && size_ != count_) fail(std::format("mesh {}: {} has {} entries for {} positions.", mesh_, pName_, size_, count_));
+	};
+
+	Json meshes = Json::array();
+	for(size_t m = 0; m < rScene_.meshes.size(); m++)
+	{
+		const GLTFMesh& rMesh = rScene_.meshes[m];
+		Json primitives = Json::array();
+		for(const GLTFPrimitive& rPrimitive : rMesh.primitives)
+		{
+			size_t count = rPrimitive.positions.size();
+			checkSize(rPrimitive.normals.size(), count, "normals", m);
+			checkSize(rPrimitive.uvs.size(), count, "uvs", m);
+			checkSize(rPrimitive.colors.size(), count, "colors", m);
+			checkSize(rPrimitive.src.size(), count, "src", m);
+			checkSize(rPrimitive.srcFlag.size(), count, "srcFlag", m);
+			checkSize(rPrimitive.srcIdx.size(), count, "srcIdx", m);
+			checkSize(rPrimitive.orig.size(), count, "orig", m);
+			if(rPrimitive.indices.size() % 3 != 0) fail(std::format("mesh {}: the index count is not a multiple of 3.", m));
+			for(uint32_t index : rPrimitive.indices)
+			{
+				if(index >= count) fail(std::format("mesh {}: an index is past the vertices.", m));
+			}
+			if(rPrimitive.material >= static_cast<int>(rScene_.materials.size())) fail(std::format("mesh {}: bad material index {}.", m, rPrimitive.material));
+
+			Json attributes = Json::object();
+			attributes["POSITION"] = vec3Accessor(rPrimitive.positions, ArrayTarget, true);
+			if(!rPrimitive.normals.empty()) attributes["NORMAL"] = vec3Accessor(rPrimitive.normals, ArrayTarget, false);
+			if(!rPrimitive.uvs.empty()) attributes["TEXCOORD_0"] = addAccessor(rPrimitive.uvs.data(), count, 2, FloatType, ArrayTarget, "VEC2", Json());
+			if(!rPrimitive.colors.empty()) attributes["COLOR_0"] = addAccessor(rPrimitive.colors.data(), count, 4, FloatType, ArrayTarget, "VEC4", Json());
+
+			bool hasSource = !rPrimitive.src.empty() || !rPrimitive.srcFlag.empty() || !rPrimitive.srcIdx.empty();
+			bool hasOrig = !rPrimitive.orig.empty();
+			if(encoding_ == FieldEncoding::Custom)
+			{
+				if(!rPrimitive.src.empty()) attributes["_SRC"] = addAccessor(rPrimitive.src.data(), count, 1, UintType, ArrayTarget, "SCALAR", Json());
+				if(!rPrimitive.srcFlag.empty()) attributes["_SRCFLAG"] = addAccessor(rPrimitive.srcFlag.data(), count, 1, UintType, ArrayTarget, "SCALAR", Json());
+				if(!rPrimitive.srcIdx.empty()) attributes["_SRCIDX"] = addAccessor(rPrimitive.srcIdx.data(), count, 1, UintType, ArrayTarget, "SCALAR", Json());
+				if(hasOrig) attributes["_ORIG"] = vec3Accessor(rPrimitive.orig, ArrayTarget, false);
+			}
+			else
+			{
+				auto exact = [&](const std::vector<uint32_t>& rValues_, size_t i_, const char* pName_) -> float
+				{
+					if(rValues_.empty()) return 0.0f;
+					if(rValues_[i_] > MaxExactFloat) fail(std::format("mesh {}: {} {} is past 2^24 - 1, too large for the TexCoord encoding.", m, pName_, rValues_[i_]));
+					return static_cast<float>(rValues_[i_]);
+				};
+				if(hasSource)
+				{
+					std::vector<glm::vec2> srcSet(count);
+					for(size_t i = 0; i < count; i++) srcSet[i] = glm::vec2(exact(rPrimitive.src, i, "SRC"), exact(rPrimitive.srcFlag, i, "SRCFLAG"));
+					attributes["TEXCOORD_1"] = addAccessor(srcSet.data(), count, 2, FloatType, ArrayTarget, "VEC2", Json());
+				}
+				if(hasOrig || !rPrimitive.srcIdx.empty())
+				{
+					std::vector<glm::vec2> xySet(count), zIdxSet(count);
+					for(size_t i = 0; i < count; i++)
+					{
+						glm::vec3 orig = hasOrig ? rPrimitive.orig[i] : glm::vec3(0.0f);
+						xySet[i] = glm::vec2(orig.x, orig.y);
+						zIdxSet[i] = glm::vec2(orig.z, exact(rPrimitive.srcIdx, i, "SRCIDX"));
+					}
+					attributes["TEXCOORD_2"] = addAccessor(xySet.data(), count, 2, FloatType, ArrayTarget, "VEC2", Json());
+					attributes["TEXCOORD_3"] = addAccessor(zIdxSet.data(), count, 2, FloatType, ArrayTarget, "VEC2", Json());
+				}
+			}
+
+			Json primitive = {{"attributes", attributes}, {"mode", 4}};
+			if(!rPrimitive.indices.empty()) primitive["indices"] = addAccessor(rPrimitive.indices.data(), rPrimitive.indices.size(), 1, UintType, ElementTarget, "SCALAR", Json());
+			if(rPrimitive.material >= 0) primitive["material"] = rPrimitive.material;
+			primitives.push_back(primitive);
+		}
+		meshes.push_back({{"name", rMesh.name}, {"primitives", primitives}});
+	}
+
+	Json nodes = Json::array();
+	for(size_t n = 0; n < rScene_.nodes.size(); n++)
+	{
+		const GLTFNode& rNode = rScene_.nodes[n];
+		Json node = {{"name", rNode.name}};
+		if(rNode.mesh >= static_cast<int>(rScene_.meshes.size())) fail(std::format("node {}: bad mesh index {}.", n, rNode.mesh));
+		if(rNode.mesh >= 0) node["mesh"] = rNode.mesh;
+		if(!rNode.children.empty())
+		{
+			for(int child : rNode.children)
+			{
+				if(child < 0 || child >= static_cast<int>(rScene_.nodes.size())) fail(std::format("node {}: bad child index {}.", n, child));
+			}
+			node["children"] = rNode.children;
+		}
+		if(rNode.translation != glm::vec3(0.0f)) node["translation"] = {rNode.translation.x, rNode.translation.y, rNode.translation.z};
+		if(rNode.rotation != glm::quat(1.0f, 0.0f, 0.0f, 0.0f)) node["rotation"] = {rNode.rotation.x, rNode.rotation.y, rNode.rotation.z, rNode.rotation.w};
+		if(rNode.scale != glm::vec3(1.0f)) node["scale"] = {rNode.scale.x, rNode.scale.y, rNode.scale.z};
+		if(!rNode.extras.empty())
+		{
+			Json extras = Json::object();
+			for(const auto& [key, value] : rNode.extras) extras[key] = value;
+			node["extras"] = extras;
+		}
+		nodes.push_back(node);
+	}
+	for(int root : rScene_.rootNodes)
+	{
+		if(root < 0 || root >= static_cast<int>(rScene_.nodes.size())) fail(std::format("bad root node index {}.", root));
+	}
+
+	/* One texture per image, one shared sampler (linear, repeat; glTF's v = 0 is the first row, as in the stored textures). */
+	Json materials = Json::array();
+	for(size_t i = 0; i < rScene_.materials.size(); i++)
+	{
+		const GLTFMaterial& rMaterial = rScene_.materials[i];
+		if(rMaterial.image >= static_cast<int>(rScene_.images.size())) fail(std::format("material {}: bad image index {}.", i, rMaterial.image));
+		Json pbr = {{"baseColorFactor", {rMaterial.baseColor.r, rMaterial.baseColor.g, rMaterial.baseColor.b, rMaterial.baseColor.a}}, {"metallicFactor", 0.0}, {"roughnessFactor", 1.0}};
+		if(rMaterial.image >= 0) pbr["baseColorTexture"] = {{"index", rMaterial.image}};
+		materials.push_back({{"name", rMaterial.name}, {"pbrMetallicRoughness", pbr}});
+	}
+	Json images = Json::array(), textures = Json::array();
+	for(size_t i = 0; i < rScene_.images.size(); i++)
+	{
+		images.push_back({{"uri", rScene_.images[i]}});
+		textures.push_back({{"source", i}, {"sampler", 0}});
+	}
+
+	Json root = {{"asset", {{"version", "2.0"}, {"generator", "SonicSunset"}}}, {"scene", 0}, {"scenes", {{{"nodes", rScene_.rootNodes}}}}};
+	root["nodes"] = nodes;
+	root["meshes"] = meshes;
+	if(!materials.empty()) root["materials"] = materials;
+	if(!images.empty())
+	{
+		root["images"] = images;
+		root["textures"] = textures;
+		root["samplers"] = Json::array({{{"magFilter", 9729}, {"minFilter", 9729}, {"wrapS", 10497}, {"wrapT", 10497}}});
+	}
+	root["accessors"] = accessors;
+	root["bufferViews"] = bufferViews;
+	root["buffers"] = Json::array({{{"uri", binPath.filename().string()}, {"byteLength", blob.size()}}});
+
+	std::ofstream bin(binPath, std::ios::binary);
+	if(!bin) fail(std::format("can't open {} for writing.", binPath.string()));
+	bin.write(reinterpret_cast<const char*>(blob.data()), static_cast<std::streamsize>(blob.size()));
+	bin.close();
+	if(!bin) fail(std::format("can't write {}.", binPath.string()));
+	std::ofstream text(gltfPath);
+	if(!text) fail("can't open the file for writing.");
+	text << root.dump(1, '\t') << '\n';
+	text.close();
+	if(!text) fail("can't write the file.");
 }
 }

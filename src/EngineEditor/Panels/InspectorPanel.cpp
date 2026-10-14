@@ -28,6 +28,14 @@ void InspectorPanel::draw(PoolId selected_)
 	ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings);
 	this->width = ImGui::GetWindowSize().x;
 
+	/* The Map view edits the selected level's place, not an entity. */
+	if(editor.mapView)
+	{
+		this->drawLevelPlace();
+		ImGui::End();
+		return;
+	}
+
 	if(selected_ == UninitializedPoolId || !entityExists(selected_))
 	{
 		ImGui::TextDisabled("Select an entity in the list.");
@@ -131,6 +139,36 @@ void InspectorPanel::drawTransform(PoolId entityId_)
 	if(rEntity.cameraId != UninitializedPoolId) ImGui::TextWrapped("This entity carries a camera: its position is not kept in step with the camera's (Cameras tab).");
 }
 
+/*
+The Map view's inspector: the selected level's place in the map (MapLevel: position and rotation in degrees, Level::mapMatrix), set with Editor::setLevelPlace; the gizmo's Move and Rotate buttons as in the Transform tab. "Choose as active" is Load level for this level
+(Editor::chooseActive), and goes to the Level tab.
+*/
+void InspectorPanel::drawLevelPlace()
+{
+	MapLevel place;
+	if(!editor.levelPlace(editor.mapSelected, place))
+	{
+		ImGui::TextDisabled("Select a level in the Map tab.");
+		return;
+	}
+	ImGui::Text("%s", place.name.c_str());
+	ImGui::Separator();
+	bool changed = ImGui::DragFloat3("Position", &place.position.x, 0.5f);
+	gizmoButton("Move##levelPosition", Gizmo::Move);
+	changed = ImGui::DragFloat3("Rotation", &place.rotation.x, 0.5f) || changed;
+	gizmoButton("Rotate##levelRotation", Gizmo::Rotate);
+	if(changed) editor.setLevelPlace(place);
+	ImGui::Text("In Map.json: %s", Globals::Game::map.find(place.name) ? "yes" : "no (set a place to add it)");
+	ImGui::Separator();
+	ImGui::BeginDisabled(place.name == Globals::Game::map.active);
+	if(ImGui::Button("Choose as active")) editor.chooseActive(place.name);
+	ImGui::EndDisabled();
+	ImGui::TextWrapped("Loads the level as File > Load level does: unsaved edits are gone.");
+	ImGui::BeginDisabled(!Globals::Game::map.find(place.name));
+	if(ImGui::Button("Remove from map")) editor.removeLevelFromMap(place.name);
+	ImGui::EndDisabled();
+}
+
 /* One line for a prefab-wide shape in the list: form, size and centre. */
 /* The scope the prefab-wide boxes edit: Global only when the switch says so and the prefab can have a Changed file (not External). */
 static PrefabScope scopeOf(bool allLevels_, PoolId prefabId_)
@@ -142,7 +180,14 @@ static PrefabScope scopeOf(bool allLevels_, PoolId prefabId_)
 static PrefabEdits editsOf(PoolId prefabId_, PrefabScope scope_)
 {
 	const Prefab& rPrefab = Globals::Game::prefabs[prefabId_];
-	return scope_ == PrefabScope::Global ? rPrefab.changed : mergePrefabEdits(rPrefab.source, rPrefab.level);
+	if(scope_ == PrefabScope::Global) return rPrefab.changed;
+	PrefabEdits edits = mergePrefabEdits(prefabSourceEdits(rPrefab, UninitializedPoolId), prefabLevelEdits(rPrefab, UninitializedPoolId));
+	if(rPrefab.kind == PrefabKind::External)
+	{
+		edits.mesh = rPrefab.definition.mesh;
+		edits.texture = rPrefab.definition.texture;
+	}
+	return edits;
 }
 
 /* The switch under the title of a prefab-wide box. Nothing for an External prefab (it has no Changed file). */
@@ -1209,12 +1254,12 @@ std::string InspectorPanel::pickExternalModel(const char* id_)
 	{
 		for(int level = 0; level < 2; level++)
 		{
-			ExternalPools& rPools = level == 0 ? externalLevel : externalProject;
+			ExternalPools& rPools = level == 0 ? externalLevel() : externalProject;
 			for(size_t i = 0; i < rPools.models.allocatedSize(); i++)
 			{
 				if(!rPools.models.alive[i]) continue;
 				const std::string& rName = rPools.models.names[i];
-				if(level == 1 && externalLevel.models.nameToId.contains(rName)) continue;
+				if(level == 1 && externalLevel().models.nameToId.contains(rName)) continue;
 				if(ImGui::Selectable(std::format("{}{}", rName, level == 0 ? " (level)" : "").c_str())) picked = rName;
 			}
 		}
@@ -1336,12 +1381,12 @@ std::string InspectorPanel::pickExternalTexture(const char* id_)
 	{
 		for(int level = 0; level < 2; level++)
 		{
-			ExternalPools& rPools = level == 0 ? externalLevel : externalProject;
+			ExternalPools& rPools = level == 0 ? externalLevel() : externalProject;
 			for(size_t i = 0; i < rPools.textures.allocatedSize(); i++)
 			{
 				if(!rPools.textures.alive[i]) continue;
 				const std::string& rName = rPools.textures.names[i];
-				if(level == 1 && externalLevel.textures.nameToId.contains(rName)) continue;
+				if(level == 1 && externalLevel().textures.nameToId.contains(rName)) continue;
 				if(ImGui::Selectable(std::format("{}{}", rName, level == 0 ? " (level)" : "").c_str())) picked = rName;
 			}
 		}
